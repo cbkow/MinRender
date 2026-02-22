@@ -1,8 +1,8 @@
-# MidRender
+# MinRender
 
 A lightweight render farm coordinator for small VFX teams and freelancers.
 
-![MidRender](docs/images/midrender_iyinJkrW2D.png)
+![MinRender](docs/images/midrender_iyinJkrW2D.png)
 
 ## Features
 
@@ -29,9 +29,9 @@ Download the latest `.exe` from releases and install on every node.
 > [!WARNING]
 > The installer opens HTTP port 8420 and UDP port 4243 in the Windows Firewall. It also installs a shortcut in your startup folder.
 
-In the settings panel, browse to or paste a shared directory that every node can access. This can be an SMB share on a NAS or a shared folder in a file sync service like LucidLink, Dropbox, Synology Drive, Resilio, Syncthing, or others. This folder holds the node phonebook and all logs (MidRender logs and DCC stdout logs). Press Save.
+In the settings panel, browse to or paste a shared directory that every node can access. This can be an SMB share on a NAS or a shared folder in a file sync service like LucidLink, Dropbox, Synology Drive, Resilio, Syncthing, or others. This folder holds the node phonebook and all logs (MinRender logs and DCC stdout logs). Press Save.
 
-![MidRender Settings](docs/images/midrender_EQ0rnOsLs2.png)
+![MinRender Settings](docs/images/midrender_EQ0rnOsLs2.png)
 
 ---
 
@@ -39,7 +39,7 @@ In the settings panel, browse to or paste a shared directory that every node can
 
 Tags control which DCCs each node can render and influence leader election. Set them as comma-separated values in Settings (e.g. `ae, blend, leader`).
 
-![MidRender Tags](docs/images/midrender_8VMaMk0sEq.png)
+![MinRender Tags](docs/images/midrender_8VMaMk0sEq.png)
 
 | Tag | Purpose |
 |---|---|
@@ -55,7 +55,7 @@ Tags control which DCCs each node can render and influence leader election. Set 
 
 If you render to a synced folder setup (LucidLink, Dropbox, etc.), you'll want this option checked in the settings panel. Instead of rendering directly to the synced folder, it will create a temp staging area in `%localappdata%\MidRender`, render there, then move files to your final render folder. By staging renders like this, you avoid classic file contention issues on synced file services. 
 
-![MidRender Tags](docs/images/midrender_bu9J9djzIL.png)
+![MinRender Tags](docs/images/midrender_bu9J9djzIL.png)
 
 ---
 
@@ -63,11 +63,11 @@ If you render to a synced folder setup (LucidLink, Dropbox, etc.), you'll want t
 
 To submit a job, click on the `New Job` button, then select a job template.
 
-![MidRender Tags](docs/images/midrender_EsF6MqxRNr.png)
+![MinRender Tags](docs/images/midrender_EsF6MqxRNr.png)
 
 Fill out the form. Fields with an asterisk are mandatory; everything else will be ignored or left to DCC settings if left empty. Press Submit.
 
-![MidRender Tags](docs/images/midrender_zosjXAiCNe.png)
+![MinRender Tags](docs/images/midrender_zosjXAiCNe.png)
 
 > [!NOTE]
 > It's very easy to create your own templates with only the fields you want/use. Navigate to your shared folder and duplicate the provided templates in the `templates\examples` folder. Delete flags you don't want and prefill in data. See here for a structural overview: [Job Template Documentation](docs/job-templates.md)
@@ -76,11 +76,11 @@ Fill out the form. Fields with an asterisk are mandatory; everything else will b
 
 ## DCC Submitters
 
-You can submit jobs directly from the MidRender app, or use the optional DCC plugins. Plugin files are in the shared farm folder under `plugins/`.
+You can submit jobs directly from the MinRender app, or use the optional DCC plugins. Plugin files are in the shared farm folder under `plugins/`.
 
 ### After Effects
 
-Install `plugins/afterEffects/MidRender.jsx` into your After Effects `Scripts/ScriptUI Panels` folder. Press `Scan Render Queue` to load active items, set options, and press `Submit`.
+Install `plugins/afterEffects/MinRender.jsx` into your After Effects `Scripts/ScriptUI Panels` folder. Press `Scan Render Queue` to load active items, set options, and press `Submit`.
 
 ![After Effects Submitter](docs/images/AfterFX_FcOV6mcLiw.png)
 
@@ -89,13 +89,13 @@ Install `plugins/afterEffects/MidRender.jsx` into your After Effects `Scripts/Sc
 
 ### Blender
 
-Use `Install from Disk` in Blender's Add-ons settings. The MidRender submitter appears in the Render panels. It auto-collects your output and frame range settings, but you can adjust them before pressing `Submit to Farm`.
+Use `Install from Disk` in Blender's Add-ons settings. The MinRender submitter appears in the Render panels. It auto-collects your output and frame range settings, but you can adjust them before pressing `Submit to Farm`.
 
 ![Blender Submitter](docs/images/blender_RQADDXgy9f.png)
 
 ### Cinema 4D
 
-Copy `plugins/cinema4d/MidRender.py` to your `%appdata%\Maxon\<C4D version>\library\scripts` folder. Run it from `Extensions > User Scripts > MidRender`. It pulls render paths and frame ranges from your scene settings. Press `Submit to Farm` when ready.
+Copy `plugins/cinema4d/MinRender.py` to your `%appdata%\Maxon\<C4D version>\library\scripts` folder. Run it from `Extensions > User Scripts > MinRender`. It pulls render paths and frame ranges from your scene settings. Press `Submit to Farm` when ready.
 
 ![Cinema 4D Submitter](docs/images/Cinema_4D_0cGq7BI1CC.png)
 
@@ -108,7 +108,7 @@ Copy `plugins/cinema4d/MidRender.py` to your `%appdata%\Maxon\<C4D version>\libr
 
 When a job is submitted, click it in the Jobs panel to monitor its progress. Progress bars show chunk progress. The frame grid represents the current frame progress. In the logs viewer, you can select the current task to see the DCC logs--aggregated from all nodes. In the shared folder, these logs are saved in the file system if you want to inspect them in detail. They will remain until you delete the job in the monitor app.
 
-![System Tray](docs/images/midrender_G1LMygOLCs.png)
+![System Tray](docs/images/minrender_G1LMygOLCs.png)
 
 #### Frame Grid Colors
 
@@ -121,7 +121,7 @@ When a job is submitted, click it in the Jobs panel to monitor its progress. Pro
 
 ## Minimize to Tray
 
-When you close the app, it minimizes to the system tray. Running MidRender minimized on your render nodes is recommended — it disengages window drawing and releases resources to a minimal state, keeping only communication, coordination, and a lightweight Rust agent to manage render processes.
+When you close the app, it minimizes to the system tray. Running MinRender minimized on your render nodes is recommended — it disengages window drawing and releases resources to a minimal state, keeping only communication, coordination, and a lightweight Rust agent to manage render processes.
 
 ![System Tray](docs/images/explorer_dM0xlpmQs3.png)
 
