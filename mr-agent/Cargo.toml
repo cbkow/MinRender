@@ -1,8 +1,8 @@
 [package]
 name = "mr-agent"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2021"
-description = "MidRender headless render agent"
+description = "MinRender headless render agent"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
