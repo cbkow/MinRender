@@ -20,7 +20,7 @@
 
 namespace MR {
 
-static ImVec4 getAccentColor()
+ImVec4 getAccentColor()
 {
 #ifdef _WIN32
     DWORD color = 0;
@@ -81,21 +81,21 @@ void setupStyle()
     ImVec4* c = style.Colors;
     ImVec4 accent = getAccentColor();
 
-    c[ImGuiCol_Text]                  = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
-    c[ImGuiCol_TextDisabled]          = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
-    c[ImGuiCol_WindowBg]              = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
+    c[ImGuiCol_Text]                  = ImVec4(0.91f, 0.91f, 0.91f, 1.00f);
+    c[ImGuiCol_TextDisabled]          = ImVec4(0.41f, 0.41f, 0.41f, 1.00f);
+    c[ImGuiCol_WindowBg]              = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
     c[ImGuiCol_ChildBg]               = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    c[ImGuiCol_PopupBg]               = ImVec4(0.128f, 0.128f, 0.128f, 1.00f);
-    c[ImGuiCol_Border]                = ImVec4(0.19f, 0.19f, 0.19f, 0.50f);
+    c[ImGuiCol_PopupBg]               = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
+    c[ImGuiCol_Border]                = ImVec4(0.25f, 0.25f, 0.25f, 0.27f);
     c[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    c[ImGuiCol_FrameBg]               = ImVec4(0.160f, 0.160f, 0.160f, 0.40f);
-    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.199f, 0.199f, 0.199f, 1.00f);
+    c[ImGuiCol_FrameBg]               = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
+    c[ImGuiCol_FrameBgHovered]        = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     c[ImGuiCol_FrameBgActive]         = ImVec4(0.15f, 0.15f, 0.15f, 1.00f);
-    c[ImGuiCol_TitleBg]               = ImVec4(0.172f, 0.172f, 0.172f, 1.00f);
-    c[ImGuiCol_TitleBgActive]         = ImVec4(0.172f, 0.172f, 0.172f, 1.00f);
+    c[ImGuiCol_TitleBg]               = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
+    c[ImGuiCol_TitleBgActive]         = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
     c[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.00f, 0.00f, 0.00f, 0.51f);
-    c[ImGuiCol_MenuBarBg]             = ImVec4(0.121f, 0.121f, 0.121f, 1.00f);
-    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.02f, 0.02f, 0.02f, 0.53f);
+    c[ImGuiCol_MenuBarBg]             = ImVec4(0.125f, 0.125f, 0.125f, 1.00f);
+    c[ImGuiCol_ScrollbarBg]           = ImVec4(0.085f, 0.085f, 0.085f, 0.53f);
     c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
     c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.41f, 0.41f, 0.41f, 1.00f);
     c[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.51f, 0.51f, 0.51f, 1.00f);
@@ -105,22 +105,22 @@ void setupStyle()
     c[ImGuiCol_Button]                = ImVec4(0.28f, 0.28f, 0.28f, 0.50f);
     c[ImGuiCol_ButtonHovered]         = ImVec4(0.32f, 0.32f, 0.32f, 1.00f);
     c[ImGuiCol_ButtonActive]          = ImVec4(0.15f, 0.15f, 0.15f, 1.00f);
-    c[ImGuiCol_Header]                = ImVec4(0.20f, 0.20f, 0.20f, 0.55f);
-    c[ImGuiCol_HeaderHovered]         = ImVec4(0.314f, 0.314f, 0.314f, 0.80f);
+    c[ImGuiCol_Header]                = ImVec4(0.19f, 0.19f, 0.19f, 0.55f);
+    c[ImGuiCol_HeaderHovered]         = ImVec4(0.28f, 0.28f, 0.28f, 0.80f);
     c[ImGuiCol_HeaderActive]          = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
-    c[ImGuiCol_Separator]             = ImVec4(0.28f, 0.28f, 0.28f, 0.29f);
+    c[ImGuiCol_Separator]             = ImVec4(0.30f, 0.30f, 0.30f, 0.44f);
     c[ImGuiCol_SeparatorHovered]      = ImVec4(0.44f, 0.44f, 0.44f, 0.29f);
-    c[ImGuiCol_SeparatorActive]       = ImVec4(0.40f, 0.44f, 0.47f, 1.00f);
+    c[ImGuiCol_SeparatorActive]       = ImVec4(0.47f, 0.47f, 0.47f, 1.00f);
     c[ImGuiCol_ResizeGrip]            = ImVec4(0.28f, 0.28f, 0.28f, 0.29f);
-    c[ImGuiCol_ResizeGripHovered]     = ImVec4(0.44f, 0.44f, 0.44f, 0.29f);
-    c[ImGuiCol_ResizeGripActive]      = ImVec4(0.40f, 0.44f, 0.47f, 1.00f);
-    c[ImGuiCol_Tab]                   = ImVec4(0.172f, 0.172f, 0.172f, 1.00f);
-    c[ImGuiCol_TabHovered]            = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-    c[ImGuiCol_TabActive]             = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
-    c[ImGuiCol_TabSelectedOverline]   = ImVec4(0.09f, 0.09f, 0.09f, 0.10f);
-    c[ImGuiCol_TabUnfocused]          = ImVec4(0.172f, 0.172f, 0.172f, 1.00f);
-    c[ImGuiCol_TabUnfocusedActive]    = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
-    c[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.18f, 0.18f, 0.18f, 0.10f);
+    c[ImGuiCol_ResizeGripHovered]     = ImVec4(0.72f, 0.72f, 0.72f, 0.29f);
+    c[ImGuiCol_ResizeGripActive]      = accent;
+    c[ImGuiCol_Tab]                   = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);       // Transparent
+    c[ImGuiCol_TabHovered]            = ImVec4(0.28f, 0.28f, 0.28f, 0.50f);    // Fill on hover
+    c[ImGuiCol_TabActive]             = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);    // Solid (selected)
+    c[ImGuiCol_TabSelectedOverline]   = ImVec4(0.22f, 0.22f, 0.22f, 0.10f);
+    c[ImGuiCol_TabUnfocused]          = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);       // Transparent
+    c[ImGuiCol_TabUnfocusedActive]    = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);   // Dimmer
+    c[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.11f, 0.11f, 0.11f, 0.10f);
     c[ImGuiCol_DockingPreview]        = ImVec4(0.60f, 0.60f, 0.60f, 0.70f);
     c[ImGuiCol_DockingEmptyBg]        = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     c[ImGuiCol_PlotLines]             = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
@@ -137,7 +137,7 @@ void setupStyle()
     c[ImGuiCol_TableBorderStrong]     = ImVec4(0.31f, 0.31f, 0.31f, 0.20f);
     c[ImGuiCol_TableBorderLight]      = ImVec4(0.23f, 0.23f, 0.23f, 0.20f);
     c[ImGuiCol_TableRowBg]            = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    c[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.01f);
+    c[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.03f);
 
     style.WindowPadding     = ImVec2(12.0f, 12.0f);
     style.FramePadding      = ImVec2(8.0f, 6.0f);
@@ -155,8 +155,8 @@ void setupStyle()
     style.TabBorderSize     = 1.0f;
     style.WindowRounding    = 0.0f;
     style.ChildRounding     = 0.0f;
-    style.FrameRounding     = 4.0f;
-    style.PopupRounding     = 4.0f;
+    style.FrameRounding     = 1.0f;
+    style.PopupRounding     = 1.0f;
     style.ScrollbarRounding = 2.0f;
     style.GrabRounding      = 3.0f;
     style.LogSliderDeadzone = 4.0f;
@@ -172,13 +172,27 @@ void enableDarkTitleBar([[maybe_unused]] GLFWwindow* window)
 #endif
 }
 
-bool panelHeader(const char* title, bool& visible)
+bool panelHeader(const char* title, const char* icon, bool& visible)
 {
     bool closed = false;
+
+    // Faded text color for panel header (matching UnionPlayer)
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+
+    // Draw icon if available
+    if (icon && Fonts::icons)
+    {
+        ImGui::PushFont(Fonts::icons);
+        ImGui::TextUnformatted(icon);
+        ImGui::PopFont();
+        ImGui::SameLine();
+    }
 
     if (Fonts::bold) ImGui::PushFont(Fonts::bold);
     ImGui::TextUnformatted(title);
     if (Fonts::bold) ImGui::PopFont();
+
+    ImGui::PopStyleColor(); // faded text
 
     float buttonSize = ImGui::GetFontSize() + 4.0f;
     ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - buttonSize);
@@ -224,6 +238,60 @@ bool panelHeader(const char* title, bool& visible)
 
     ImGui::Separator();
     return closed;
+}
+
+bool modalCloseButton(const char* id)
+{
+    (void)id;
+    float buttonSize = ImGui::GetFrameHeight();
+    float pad = ImGui::GetStyle().FramePadding.x;
+
+    // Place button in the title bar (screen-space)
+    ImVec2 winPos = ImGui::GetWindowPos();
+    float winW = ImGui::GetWindowWidth();
+    float titleBarH = ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.y;
+    ImVec2 btnMin(winPos.x + winW - buttonSize - pad,
+                  winPos.y + (titleBarH - buttonSize) - 6.0f);
+    ImVec2 btnMax(btnMin.x + buttonSize, btnMin.y + buttonSize);
+
+    // Manual hit-test (title bar area is outside the content region)
+    ImVec2 mouse = ImGui::GetMousePos();
+    bool hovered = (mouse.x >= btnMin.x && mouse.x <= btnMax.x &&
+                    mouse.y >= btnMin.y && mouse.y <= btnMax.y);
+    bool clicked = hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+
+    // Draw on foreground draw list (not clipped by window)
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+
+    if (Fonts::icons)
+    {
+        ImGui::PushFont(Fonts::icons);
+        const char* closeIcon = Icons::Close;
+        ImVec2 iconSize = ImGui::CalcTextSize(closeIcon);
+        ImVec2 iconPos(
+            btnMin.x + (buttonSize - iconSize.x) * 0.5f,
+            btnMin.y + (buttonSize - iconSize.y) * 0.5f);
+        ImU32 col = hovered
+            ? ImGui::GetColorU32(ImGuiCol_Text)
+            : ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        float fontSize = ImGui::GetFontSize();
+        drawList->AddText(Fonts::icons, fontSize, iconPos, col, closeIcon);
+        ImGui::PopFont();
+    }
+    else
+    {
+        const char* x = "x";
+        ImVec2 xSize = ImGui::CalcTextSize(x);
+        ImVec2 xPos(
+            btnMin.x + (buttonSize - xSize.x) * 0.5f,
+            btnMin.y + (buttonSize - xSize.y) * 0.5f);
+        ImU32 col = hovered
+            ? ImGui::GetColorU32(ImGuiCol_Text)
+            : ImGui::GetColorU32(ImGuiCol_TextDisabled);
+        drawList->AddText(xPos, col, x);
+    }
+
+    return clicked;
 }
 
 } // namespace MR

@@ -1,10 +1,10 @@
-# MidRender.py — Farm submitter for Cinema 4D
+# MinRender.py — Farm submitter for Cinema 4D
 # Install via: Script > Script Manager > Import Script
 # Or copy to your C4D scripts folder and run from the Script menu.
 #
 # Reads the active document's render settings, lets you pick a Take,
-# and submits a render job to MidRender via the local submissions dropbox.
-# The running MidRender Monitor picks up submissions and routes them to the leader.
+# and submits a render job to MinRender via the local submissions dropbox.
+# The running MinRender Monitor picks up submissions and routes them to the leader.
 
 import c4d
 import json
@@ -19,11 +19,11 @@ import time
 def get_config_dir():
     s = platform.system()
     if s == "Windows":
-        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "MidRender")
+        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "MinRender")
     elif s == "Darwin":
-        return os.path.expanduser("~/Library/Application Support/MidRender")
+        return os.path.expanduser("~/Library/Application Support/MinRender")
     xdg = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
-    return os.path.join(xdg, "MidRender")
+    return os.path.join(xdg, "MinRender")
 
 
 def get_submissions_dir():
@@ -47,7 +47,7 @@ def get_farm_path():
     config = read_config()
     if not config or not config.get("sync_root"):
         return None
-    farm = os.path.join(config["sync_root"], "MidRender-v2")
+    farm = os.path.join(config["sync_root"], "MinRender-v2")
     return farm if os.path.isdir(farm) else None
 
 
@@ -114,7 +114,7 @@ ID_SCENE_LABEL     = 10011
 ID_RANGE_LABEL     = 10012
 
 
-class MidRenderDialog(c4d.gui.GeDialog):
+class MinRenderDialog(c4d.gui.GeDialog):
 
     def __init__(self):
         super().__init__()
@@ -124,7 +124,7 @@ class MidRenderDialog(c4d.gui.GeDialog):
         self.scene_output = ""
 
     def CreateLayout(self):
-        self.SetTitle("MidRender")
+        self.SetTitle("MinRender")
 
         doc = c4d.documents.GetActiveDocument()
         rd = doc.GetActiveRenderData()
@@ -243,7 +243,7 @@ class MidRenderDialog(c4d.gui.GeDialog):
         if not farm:
             config = read_config()
             if not config:
-                self.SetString(ID_STATUS_TEXT, "MidRender config not found.")
+                self.SetString(ID_STATUS_TEXT, "MinRender config not found.")
             elif not config.get("sync_root"):
                 self.SetString(ID_STATUS_TEXT, "Sync root not set in Monitor.")
             else:
@@ -271,7 +271,7 @@ class MidRenderDialog(c4d.gui.GeDialog):
         # -- Validate farm --
         farm = get_farm_path()
         if not farm:
-            c4d.gui.MessageDialog("Farm not connected.\nIs MidRender Monitor running?")
+            c4d.gui.MessageDialog("Farm not connected.\nIs MinRender Monitor running?")
             return
 
         doc = c4d.documents.GetActiveDocument()
@@ -382,7 +382,7 @@ class MidRenderDialog(c4d.gui.GeDialog):
 # -- Entry point (Script Manager) ----------------------------------------------
 
 def main():
-    dlg = MidRenderDialog()
+    dlg = MinRenderDialog()
     dlg.Open(c4d.DLG_TYPE_MODAL_RESIZEABLE, defaultw=420, defaulth=320)
 
 

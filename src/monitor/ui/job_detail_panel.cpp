@@ -1,5 +1,6 @@
 #include "monitor/ui/job_detail_panel.h"
 #include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "monitor/monitor_app.h"
 #include "monitor/template_manager.h"
 #include "core/platform.h"
@@ -81,7 +82,7 @@ void JobDetailPanel::render()
 
     if (ImGui::Begin("Job Detail", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
-        panelHeader("Job Detail", visible);
+        panelHeader("Job Detail", Icons::Detail, visible);
 
         if (!m_app || !m_app->isFarmRunning())
         {
@@ -268,8 +269,10 @@ void JobDetailPanel::renderSubmissionMode()
     {
         fieldHelp("Choose a job template to begin submission.");
         ImGui::Separator();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Cancel"))
             m_mode = DetailMode::Empty;
+        PopOutlineButtonStyle();
         return;
     }
 
@@ -290,6 +293,7 @@ void JobDetailPanel::renderSubmissionMode()
         ImGui::SetNextItemWidth(-browseReserve);
         ImGui::InputText("##CmdPath", m_cmdPathBuf, sizeof(m_cmdPathBuf));
         ImGui::SameLine();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Browse##Cmd"))
         {
             nfdu8char_t* outPath = nullptr;
@@ -299,6 +303,7 @@ void JobDetailPanel::renderSubmissionMode()
                 NFD_FreePathU8(outPath);
             }
         }
+        PopOutlineButtonStyle();
         ImGui::Separator();
     }
 
@@ -326,6 +331,7 @@ void JobDetailPanel::renderSubmissionMode()
             ImGui::SameLine();
 
             std::string browseId = "Browse##" + std::to_string(i);
+            PushOutlineButtonStyle();
             if (ImGui::Button(browseId.c_str()))
             {
                 nfdu8filteritem_t filter = {};
@@ -351,6 +357,7 @@ void JobDetailPanel::renderSubmissionMode()
                     needResolve = true;
                 }
             }
+            PopOutlineButtonStyle();
         }
         else
         {
@@ -383,6 +390,7 @@ void JobDetailPanel::renderSubmissionMode()
             ImGui::SameLine();
 
             std::string browseId = "Browse##OutDir" + std::to_string(ob.flagIdx);
+            PushOutlineButtonStyle();
             if (ImGui::Button(browseId.c_str()))
             {
                 nfdu8char_t* outPath = nullptr;
@@ -393,6 +401,7 @@ void JobDetailPanel::renderSubmissionMode()
                     ob.overridden = true;
                 }
             }
+            PopOutlineButtonStyle();
         }
 
         // Filename
@@ -540,6 +549,7 @@ void JobDetailPanel::renderSubmissionMode()
     }
 
     // ── Submit / Cancel ───────────────────────────────────────
+    PushOutlineButtonStyle();
     if (m_asyncSubmitting)
     {
         ImGui::TextDisabled("Submitting...");
@@ -554,6 +564,7 @@ void JobDetailPanel::renderSubmissionMode()
         m_mode = DetailMode::Empty;
         m_app->selectJob("");
     }
+    PopOutlineButtonStyle();
 }
 
 void JobDetailPanel::doSubmit()
@@ -744,6 +755,7 @@ void JobDetailPanel::renderDetailMode()
     ImGui::Separator();
 
     // Control buttons (state-dependent)
+    PushOutlineButtonStyle();
     if (job.current_state == "active")
     {
         if (ImGui::Button("Pause"))
@@ -789,6 +801,7 @@ void JobDetailPanel::renderDetailMode()
         if (ImGui::Button("Open Output"))
             openFolderInExplorer(std::filesystem::path(job.manifest.output_dir.value()));
     }
+    PopOutlineButtonStyle();
 
     // Confirmation popups
     if (m_pendingCancel)
@@ -800,6 +813,7 @@ void JobDetailPanel::renderDetailMode()
     {
         ImGui::Text("Cancel job '%s'? Active renders will be aborted.", m_detailJobId.c_str());
         ImGui::Spacing();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Yes, Cancel"))
         {
             m_app->cancelJob(m_detailJobId);
@@ -808,6 +822,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::SameLine();
         if (ImGui::Button("No"))
             ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
         ImGui::EndPopup();
     }
 
@@ -821,6 +836,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::Text("Create a new job from this manifest?");
         ImGui::Text("The original job will be preserved.");
         ImGui::Spacing();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Resubmit"))
         {
             m_app->resubmitJob(m_detailJobId);
@@ -829,6 +845,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
             ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
         ImGui::EndPopup();
     }
 
@@ -842,6 +859,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::Text("Re-render %d failed chunks?", job.failed_chunks);
         ImGui::Text("Completed frames will be preserved.");
         ImGui::Spacing();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Retry Failed"))
         {
             m_app->retryFailedChunks(m_detailJobId);
@@ -850,6 +868,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
             ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
         ImGui::EndPopup();
     }
 
@@ -862,6 +881,7 @@ void JobDetailPanel::renderDetailMode()
     {
         ImGui::Text("Delete job '%s'? This cannot be undone.", m_detailJobId.c_str());
         ImGui::Spacing();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Yes, Delete"))
         {
             m_app->deleteJob(m_detailJobId);
@@ -873,6 +893,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::SameLine();
         if (ImGui::Button("No"))
             ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
         ImGui::EndPopup();
     }
 }

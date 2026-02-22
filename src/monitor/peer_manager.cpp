@@ -98,7 +98,9 @@ void PeerManager::setPeerNodeState(const std::string& nodeId, const std::string&
 void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::string& ip,
                                        uint16_t port, const std::string& nodeState,
                                        const std::string& renderState, const std::string& jobId,
-                                       const std::string& chunk, int priority)
+                                       const std::string& chunk, int priority,
+                                       const std::string& agentHealth,
+                                       const std::string& alertReason)
 {
     auto now = nowMs();
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -116,6 +118,8 @@ void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::stri
         info.active_job = jobId;
         info.active_chunk = chunk;
         info.priority = priority;
+        info.agent_health = agentHealth;
+        info.alert_reason = alertReason;
         info.is_alive = true;
         info.failed_polls = 0;
         info.last_seen_ms = 0;
@@ -134,6 +138,8 @@ void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::stri
         it->second.active_job = jobId;
         it->second.active_chunk = chunk;
         it->second.priority = priority;
+        it->second.agent_health = agentHealth;
+        it->second.alert_reason = alertReason;
         it->second.is_alive = true;
         it->second.failed_polls = 0;
         it->second.has_udp_contact = true;
@@ -375,6 +381,14 @@ void PeerManager::pollPeers()
                 updated.last_seen_ms = nowMs();
                 updated.has_udp_contact = it->second.has_udp_contact;
                 updated.last_udp_contact_ms = it->second.last_udp_contact_ms;
+
+                // Preserve UDP-sourced health if HTTP response has default "ok"
+                // (UDP updates more frequently than HTTP)
+                if (updated.agent_health == "ok" && it->second.has_udp_contact)
+                {
+                    updated.agent_health = it->second.agent_health;
+                    updated.alert_reason = it->second.alert_reason;
+                }
 
                 it->second = updated;
             }

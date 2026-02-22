@@ -19,6 +19,8 @@
 
 namespace MR {
 
+enum class AgentHealth { Ok, Reconnecting, NeedsAttention };
+
 /// Manages the agent process lifecycle and IPC communication.
 class AgentSupervisor
 {
@@ -47,6 +49,11 @@ public:
     uint32_t agentPid() const { return m_agentPid; }
     const std::string& agentState() const { return m_agentState; }
 
+    // Health tracking for crash recovery
+    AgentHealth agentHealthEnum() const { return m_agentHealth.load(); }
+    std::string agentHealth() const;
+    void resetHealth();
+
 private:
     void ipcThreadFunc();
     bool sendJson(const std::string& json);
@@ -71,6 +78,11 @@ private:
     static constexpr int PING_INTERVAL_SECONDS = 30;
 
     std::function<void(const std::string&, const nlohmann::json&)> m_messageHandler;
+
+    // Crash recovery
+    std::atomic<AgentHealth> m_agentHealth{AgentHealth::Ok};
+    std::atomic<int> m_respawnAttempts{0};
+    static constexpr int MAX_RESPAWN_ATTEMPTS = 3;
 };
 
 } // namespace MR

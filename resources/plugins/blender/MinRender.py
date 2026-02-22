@@ -1,16 +1,16 @@
-# MidRender.py — Farm submitter addon for Blender
+# MinRender.py — Farm submitter addon for Blender
 # Install via: Edit > Preferences > Add-ons > Install from Disk
 #
-# Submits render jobs to MidRender farm via the local submissions dropbox.
-# The running MidRender Monitor picks up submissions and routes them to the leader.
+# Submits render jobs to MinRender farm via the local submissions dropbox.
+# The running MinRender Monitor picks up submissions and routes them to the leader.
 
 bl_info = {
-    "name": "MidRender",
-    "author": "MidRender",
+    "name": "MinRender",
+    "author": "MinRender",
     "version": (0, 2, 8),
     "blender": (4, 0, 0),
-    "location": "Render Properties > MidRender",
-    "description": "Submit render jobs to MidRender farm",
+    "location": "Render Properties > MinRender",
+    "description": "Submit render jobs to MinRender farm",
     "category": "Render",
 }
 
@@ -29,12 +29,12 @@ from bpy.types import Panel, Operator, PropertyGroup
 def get_config_dir():
     sys = platform.system()
     if sys == "Windows":
-        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "MidRender")
+        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "MinRender")
     elif sys == "Darwin":
-        return os.path.expanduser("~/Library/Application Support/MidRender")
+        return os.path.expanduser("~/Library/Application Support/MinRender")
     else:
         xdg = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
-        return os.path.join(xdg, "MidRender")
+        return os.path.join(xdg, "MinRender")
 
 
 def get_submissions_dir():
@@ -59,7 +59,7 @@ def get_farm_path():
     config = read_config()
     if not config or not config.get("sync_root"):
         return None
-    farm = os.path.join(config["sync_root"], "MidRender-v2")
+    farm = os.path.join(config["sync_root"], "MinRender-v2")
     if os.path.isdir(farm):
         return farm
     return None
@@ -85,7 +85,7 @@ def _on_override_output(self, context):
         self.output_path = scene.render.filepath
 
 
-class MidRenderSettings(PropertyGroup):
+class MinRenderSettings(PropertyGroup):
     chunk_size: IntProperty(
         name="Chunk Size",
         description="Number of frames per render chunk",
@@ -139,14 +139,14 @@ class MidRenderSettings(PropertyGroup):
 
 # -- Sync Operator -------------------------------------------------------------
 
-class MIDRENDER_OT_sync_from_scene(Operator):
-    bl_idname = "midrender.sync_from_scene"
+class MINRENDER_OT_sync_from_scene(Operator):
+    bl_idname = "minrender.sync_from_scene"
     bl_label = "Sync from Scene"
     bl_description = "Populate override fields from current scene settings"
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        settings = context.scene.midrender
+        settings = context.scene.minrender
         scene = context.scene
         settings.frame_start = scene.frame_start
         settings.frame_end = scene.frame_end
@@ -162,26 +162,26 @@ _SUBMIT_COOLDOWN_SECS = 2.0
 
 # -- Submit Operator -----------------------------------------------------------
 
-class MIDRENDER_OT_submit(Operator):
-    bl_idname = "midrender.submit"
-    bl_label = "Submit to MidRender"
-    bl_description = "Submit render job(s) to MidRender farm"
+class MINRENDER_OT_submit(Operator):
+    bl_idname = "minrender.submit"
+    bl_label = "Submit to MinRender"
+    bl_description = "Submit render job(s) to MinRender farm"
 
     def execute(self, context):
         global _submit_cooldown_until
         if time.time() < _submit_cooldown_until:
             self.report({'WARNING'}, "Already submitted -- please wait a few seconds.")
             return {'CANCELLED'}
-        settings = context.scene.midrender
+        settings = context.scene.minrender
 
         # Validate farm connection
         farm = get_farm_path()
         if not farm:
             config = read_config()
             if not config:
-                self.report({'ERROR'}, "MidRender config not found. Is the monitor installed?")
+                self.report({'ERROR'}, "MinRender config not found. Is the monitor installed?")
             elif not config.get("sync_root"):
-                self.report({'ERROR'}, "Sync root not set. Configure it in MidRender Monitor.")
+                self.report({'ERROR'}, "Sync root not set. Configure it in MinRender Monitor.")
             else:
                 self.report({'ERROR'}, "Farm not initialized.")
             return {'CANCELLED'}
@@ -275,9 +275,9 @@ class MIDRENDER_OT_submit(Operator):
 
 # -- Panel ---------------------------------------------------------------------
 
-class MIDRENDER_PT_main(Panel):
-    bl_label = "MidRender"
-    bl_idname = "MIDRENDER_PT_main"
+class MINRENDER_PT_main(Panel):
+    bl_label = "MinRender"
+    bl_idname = "MINRENDER_PT_main"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "render"
@@ -285,7 +285,7 @@ class MIDRENDER_PT_main(Panel):
 
     def draw(self, context):
         layout = self.layout
-        settings = context.scene.midrender
+        settings = context.scene.minrender
         scene = context.scene
 
         # Check farm connection
@@ -294,9 +294,9 @@ class MIDRENDER_PT_main(Panel):
             layout.label(text="Farm not connected", icon='ERROR')
             config = read_config()
             if not config:
-                layout.label(text="MidRender config not found.")
+                layout.label(text="MinRender config not found.")
             elif not config.get("sync_root"):
-                layout.label(text="Set sync root in MidRender Monitor.")
+                layout.label(text="Set sync root in MinRender Monitor.")
             else:
                 layout.label(text="Farm folder not found.")
             return
@@ -356,29 +356,29 @@ class MIDRENDER_PT_main(Panel):
         in_cooldown = time.time() < _submit_cooldown_until
         row.enabled = bool(bpy.data.filepath) and not in_cooldown
         if in_cooldown:
-            row.operator("midrender.submit", text="Submitted!", icon='CHECKMARK')
+            row.operator("minrender.submit", text="Submitted!", icon='CHECKMARK')
         else:
-            row.operator("midrender.submit", text="Submit to Farm", icon='RENDER_ANIMATION')
+            row.operator("minrender.submit", text="Submit to Farm", icon='RENDER_ANIMATION')
 
 
 # -- Registration --------------------------------------------------------------
 
 classes = (
-    MidRenderSettings,
-    MIDRENDER_OT_sync_from_scene,
-    MIDRENDER_OT_submit,
-    MIDRENDER_PT_main,
+    MinRenderSettings,
+    MINRENDER_OT_sync_from_scene,
+    MINRENDER_OT_submit,
+    MINRENDER_PT_main,
 )
 
 
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.midrender = bpy.props.PointerProperty(type=MidRenderSettings)
+    bpy.types.Scene.minrender = bpy.props.PointerProperty(type=MinRenderSettings)
 
 
 def unregister():
-    del bpy.types.Scene.midrender
+    del bpy.types.Scene.minrender
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 

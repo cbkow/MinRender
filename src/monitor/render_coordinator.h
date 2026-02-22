@@ -107,6 +107,12 @@ private:
     AgentSupervisor* m_supervisor = nullptr;
     bool m_stopped = false;
     bool m_stagingEnabled = false;
+
+    // Re-queue backoff tracking (agent disconnect while dispatch queued)
+    bool m_requeueActive = false;
+    std::chrono::steady_clock::time_point m_requeueStartTime;
+    std::chrono::steady_clock::time_point m_lastRequeueAttempt;
+    std::chrono::steady_clock::time_point m_lastRequeueLog;
 };
 
 } // namespace MR

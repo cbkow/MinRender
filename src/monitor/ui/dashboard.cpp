@@ -1,4 +1,6 @@
 #include "monitor/ui/dashboard.h"
+#include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "monitor/monitor_app.h"
 #include "core/platform.h"
 #include "core/config.h"
@@ -48,7 +50,7 @@ void Dashboard::render()
     renderMenuBar();
 
     // Dockspace
-    ImGuiID dockspaceId = ImGui::GetID("MidRenderDockspace");
+    ImGuiID dockspaceId = ImGui::GetID("MinRenderDockspace");
     ImGuiDockNodeFlags dockFlags =
         ImGuiDockNodeFlags_NoTabBar |
         ImGuiDockNodeFlags_NoUndocking |
@@ -94,6 +96,7 @@ void Dashboard::render()
                      m_app->renderCoordinator().currentJobId().c_str());
         ImGui::Spacing();
 
+        PushOutlineButtonStyle();
         if (ImGui::Button("Kill && Exit"))
         {
             m_app->beginForceExit();
@@ -105,6 +108,7 @@ void Dashboard::render()
             m_app->cancelExit();
             ImGui::CloseCurrentPopup();
         }
+        PopOutlineButtonStyle();
 
         ImGui::EndPopup();
     }
@@ -144,9 +148,9 @@ void Dashboard::renderMenuBar()
         if (ImGui::BeginMenu("Help"))
         {
             if (ImGui::MenuItem("Guide"))
-                openUrl("https://github.com/cbkow/mid-render");
+                openUrl("https://github.com/cbkow/MinRender");
             if (ImGui::MenuItem("Check for Updates"))
-                openUrl("https://github.com/cbkow/mid-render/releases");
+                openUrl("https://github.com/cbkow/MinRender/releases");
             ImGui::Separator();
             ImGui::TextDisabled("v%s", APP_VERSION);
             ImGui::EndMenu();
@@ -157,7 +161,7 @@ void Dashboard::renderMenuBar()
 
 void Dashboard::buildDefaultLayout()
 {
-    ImGuiID dockspaceId = ImGui::GetID("MidRenderDockspace");
+    ImGuiID dockspaceId = ImGui::GetID("MinRenderDockspace");
 
     ImGui::DockBuilderRemoveNode(dockspaceId);
     ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);

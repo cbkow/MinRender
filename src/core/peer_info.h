@@ -56,6 +56,10 @@ struct PeerInfo
     int priority = 100;
     std::vector<std::string> tags;
 
+    // Agent health
+    std::string agent_health = "ok";    // ok | reconnecting | needs_attention
+    std::string alert_reason;
+
     // Network
     std::string endpoint;   // "ip:port"
 
@@ -89,6 +93,8 @@ inline void to_json(nlohmann::json& j, const PeerInfo& p)
         {"priority",     p.priority},
         {"tags",         p.tags},
         {"endpoint",     p.endpoint},
+        {"agent_health", p.agent_health},
+        {"alert_reason", p.alert_reason},
     };
 }
 
@@ -107,7 +113,9 @@ inline void from_json(const nlohmann::json& j, PeerInfo& p)
     if (j.contains("active_chunk")) j.at("active_chunk").get_to(p.active_chunk);
     if (j.contains("priority"))     j.at("priority").get_to(p.priority);
     if (j.contains("tags"))         j.at("tags").get_to(p.tags);
-    if (j.contains("endpoint"))     j.at("endpoint").get_to(p.endpoint);
+    if (j.contains("endpoint"))      j.at("endpoint").get_to(p.endpoint);
+    if (j.contains("agent_health"))  j.at("agent_health").get_to(p.agent_health);
+    if (j.contains("alert_reason"))  j.at("alert_reason").get_to(p.alert_reason);
 }
 
 } // namespace MR

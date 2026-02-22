@@ -39,6 +39,16 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
     // If no active render and dispatch queue has items and agent is connected
     if (!m_activeRender.has_value())
     {
+        // When in re-queue state, only attempt to dequeue every ~2 seconds
+        if (m_requeueActive)
+        {
+            auto now = std::chrono::steady_clock::now();
+            auto sinceLast = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - m_lastRequeueAttempt).count();
+            if (sinceLast < 2000)
+                return;
+        }
+
         PendingDispatch pending;
         bool hasPending = false;
         {
@@ -64,11 +74,51 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
         {
             if (!supervisor.isAgentConnected())
             {
-                MonitorLog::instance().warn("render", "Agent not connected, re-queuing dispatch");
+                auto now = std::chrono::steady_clock::now();
+
+                // Initialize re-queue tracking on first occurrence
+                if (!m_requeueActive)
+                {
+                    m_requeueActive = true;
+                    m_requeueStartTime = now;
+                    m_lastRequeueAttempt = now;
+                    m_lastRequeueLog = now;
+                }
+
+                auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - m_requeueStartTime).count();
+
+                // After 30 seconds without agent, fail the chunk
+                if (elapsedSec >= 30)
+                {
+                    MonitorLog::instance().error("render",
+                        "Agent not connected for 30s — failing chunk " +
+                        pending.chunk.rangeStr() + " for job " + pending.manifest.job_id);
+                    m_requeueActive = false;
+                    if (m_completionFn)
+                        m_completionFn(pending.manifest.job_id, pending.chunk, "failed");
+                    return;
+                }
+
+                // Throttle log to every ~5 seconds
+                auto logElapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - m_lastRequeueLog).count();
+                if (logElapsed >= 5)
+                {
+                    MonitorLog::instance().warn("render",
+                        "Agent not connected, re-queuing dispatch (elapsed " +
+                        std::to_string(elapsedSec) + "s, timeout at 30s)");
+                    m_lastRequeueLog = now;
+                }
+
+                m_lastRequeueAttempt = now;
                 std::lock_guard<std::mutex> lock(m_queueMutex);
                 m_dispatchQueue.push(std::move(pending));
                 return;
             }
+
+            // Agent connected — reset re-queue tracking
+            m_requeueActive = false;
 
             // Set up ActiveRender
             ActiveRender ar;

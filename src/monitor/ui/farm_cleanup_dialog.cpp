@@ -1,4 +1,6 @@
 #include "monitor/ui/farm_cleanup_dialog.h"
+#include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "monitor/monitor_app.h"
 #include "monitor/database_manager.h"
 #include "monitor/peer_manager.h"
@@ -255,11 +257,13 @@ void FarmCleanupDialog::renderSection(const char* header, const char* actionLabe
 
     // Action button
     ImGui::BeginDisabled(selectedCount == 0);
+    PushOutlineButtonStyle();
     std::string btnLabel = std::string(actionLabel) + " (" + std::to_string(selectedCount) + ")##" + header;
     if (ImGui::Button(btnLabel.c_str()))
     {
         // Caller handles the action
     }
+    PopOutlineButtonStyle();
     ImGui::EndDisabled();
 
     ImGui::Unindent(8.0f);
@@ -406,12 +410,17 @@ void FarmCleanupDialog::render()
     }
     ImGui::PopStyleColor();
 
+    if (modalCloseButton("CleanupClose"))
+        ImGui::CloseCurrentPopup();
+
     if (!m_app || !m_app->isFarmRunning())
     {
         ImGui::TextDisabled("Farm not connected");
         ImGui::Separator();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Close", ImVec2(120, 0)))
             ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
         ImGui::EndPopup();
         return;
     }
@@ -420,8 +429,10 @@ void FarmCleanupDialog::render()
     ImGui::BeginChild("CleanupContent", ImVec2(0, -buttonRowHeight), ImGuiChildFlags_None);
 
     // Scan button
+    PushOutlineButtonStyle();
     if (ImGui::Button("Scan"))
         scanItems();
+    PopOutlineButtonStyle();
     ImGui::SameLine();
     if (m_hasScanned)
         ImGui::Text("Found: %d finished, %d archived, %d orphaned, %d stale peers, %d staging",
@@ -440,8 +451,13 @@ void FarmCleanupDialog::render()
 
             // Section 1: Finished Jobs (archivable)
             {
+                PushOutlineHeaderStyle();
                 if (!ImGui::CollapsingHeader("Finished Jobs (Archivable)", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    PopOutlineHeaderStyle();
                     goto section2;
+                }
+                PopOutlineHeaderStyle();
 
                 ImGui::Indent(8.0f);
                 if (!isLeader)
@@ -479,9 +495,11 @@ void FarmCleanupDialog::render()
                     int cnt = 0;
                     for (const auto& it : m_finishedJobs) if (it.selected) cnt++;
                     ImGui::BeginDisabled(cnt == 0);
+                    PushOutlineButtonStyle();
                     std::string btn = "Archive Selected (" + std::to_string(cnt) + ")##fin";
                     if (ImGui::Button(btn.c_str()))
                         archiveSelected();
+                    PopOutlineButtonStyle();
                     ImGui::EndDisabled();
                 }
                 ImGui::Unindent(8.0f);
@@ -490,8 +508,13 @@ void FarmCleanupDialog::render()
 section2:
             // Section 2: Archived Jobs (permanently deletable)
             {
+                PushOutlineHeaderStyle();
                 if (!ImGui::CollapsingHeader("Archived Jobs (Deletable)", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    PopOutlineHeaderStyle();
                     goto section3;
+                }
+                PopOutlineHeaderStyle();
 
                 ImGui::Indent(8.0f);
                 if (!isLeader)
@@ -527,9 +550,11 @@ section2:
                     int cnt = 0;
                     for (const auto& it : m_archivedJobs) if (it.selected) cnt++;
                     ImGui::BeginDisabled(cnt == 0);
+                    PushOutlineButtonStyle();
                     std::string btn = "Delete Selected (" + std::to_string(cnt) + ")##arch";
                     if (ImGui::Button(btn.c_str()))
                         deleteArchivedSelected();
+                    PopOutlineButtonStyle();
                     ImGui::EndDisabled();
                 }
                 ImGui::Unindent(8.0f);
@@ -538,8 +563,13 @@ section2:
 section3:
             // Section 3: Orphaned Directories
             {
+                PushOutlineHeaderStyle();
                 if (!ImGui::CollapsingHeader("Orphaned Directories", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    PopOutlineHeaderStyle();
                     goto section4;
+                }
+                PopOutlineHeaderStyle();
 
                 ImGui::Indent(8.0f);
                 if (m_orphanedDirs.empty())
@@ -571,9 +601,11 @@ section3:
                     int cnt = 0;
                     for (const auto& it : m_orphanedDirs) if (it.selected) cnt++;
                     ImGui::BeginDisabled(cnt == 0);
+                    PushOutlineButtonStyle();
                     std::string btn = "Delete Selected (" + std::to_string(cnt) + ")##orph";
                     if (ImGui::Button(btn.c_str()))
                         deleteOrphansSelected();
+                    PopOutlineButtonStyle();
                     ImGui::EndDisabled();
                 }
                 ImGui::Unindent(8.0f);
@@ -582,8 +614,13 @@ section3:
 section4:
             // Section 4: Stale Peers
             {
+                PushOutlineHeaderStyle();
                 if (!ImGui::CollapsingHeader("Stale Peers", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    PopOutlineHeaderStyle();
                     goto section5;
+                }
+                PopOutlineHeaderStyle();
 
                 ImGui::Indent(8.0f);
                 if (m_stalePeers.empty())
@@ -615,9 +652,11 @@ section4:
                     int cnt = 0;
                     for (const auto& it : m_stalePeers) if (it.selected) cnt++;
                     ImGui::BeginDisabled(cnt == 0);
+                    PushOutlineButtonStyle();
                     std::string btn = "Remove Selected (" + std::to_string(cnt) + ")##peers";
                     if (ImGui::Button(btn.c_str()))
                         removePeersSelected();
+                    PopOutlineButtonStyle();
                     ImGui::EndDisabled();
                 }
                 ImGui::Unindent(8.0f);
@@ -626,8 +665,13 @@ section4:
 section5:
             // Section 5: Stale Staging Directories
             {
+                PushOutlineHeaderStyle();
                 if (!ImGui::CollapsingHeader("Stale Staging Directories", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    PopOutlineHeaderStyle();
                     goto section6;
+                }
+                PopOutlineHeaderStyle();
 
                 ImGui::Indent(8.0f);
                 if (m_staleStagingDirs.empty())
@@ -661,9 +705,11 @@ section5:
                     int cnt = 0;
                     for (const auto& it : m_staleStagingDirs) if (it.selected) cnt++;
                     ImGui::BeginDisabled(cnt == 0);
+                    PushOutlineButtonStyle();
                     std::string btn = "Delete Selected (" + std::to_string(cnt) + ")##stg_s";
                     if (ImGui::Button(btn.c_str()))
                         deleteStaleStagingSelected();
+                    PopOutlineButtonStyle();
                     ImGui::EndDisabled();
                 }
                 ImGui::Unindent(8.0f);
@@ -672,8 +718,13 @@ section5:
 section6:
             // Section 6: Failed Staging Copies
             {
+                PushOutlineHeaderStyle();
                 if (!ImGui::CollapsingHeader("Failed Staging Copies", ImGuiTreeNodeFlags_DefaultOpen))
+                {
+                    PopOutlineHeaderStyle();
                     goto sectionEnd;
+                }
+                PopOutlineHeaderStyle();
 
                 ImGui::Indent(8.0f);
                 if (m_failedStagingCopies.empty())
@@ -708,9 +759,11 @@ section6:
                     int cnt = 0;
                     for (const auto& it : m_failedStagingCopies) if (it.selected) cnt++;
                     ImGui::BeginDisabled(cnt == 0);
+                    PushOutlineButtonStyle();
                     std::string btn = "Delete Selected (" + std::to_string(cnt) + ")##stg_f";
                     if (ImGui::Button(btn.c_str()))
                         deleteFailedStagingSelected();
+                    PopOutlineButtonStyle();
                     ImGui::EndDisabled();
                 }
                 ImGui::Unindent(8.0f);
@@ -723,8 +776,10 @@ sectionEnd: ;
 
     // --- Close button at bottom ---
     ImGui::Separator();
+    PushOutlineButtonStyle();
     if (ImGui::Button("Close", ImVec2(120, 0)))
         ImGui::CloseCurrentPopup();
+    PopOutlineButtonStyle();
 
     ImGui::EndPopup();
 }

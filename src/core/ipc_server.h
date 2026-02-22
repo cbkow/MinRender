@@ -25,7 +25,7 @@ public:
     IpcServer& operator=(const IpcServer&) = delete;
 
     /// Create the named pipe for the given node ID.
-    /// Pipe name: \\.\pipe\MidRenderAgent_{nodeId}
+    /// Pipe name: \\.\pipe\MinRenderAgent_{nodeId}
     bool create(const std::string& nodeId);
 
     /// Wait for a client to connect. Blocks until connection or stop is signaled.

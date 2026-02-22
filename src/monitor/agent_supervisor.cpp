@@ -226,6 +226,8 @@ void AgentSupervisor::ipcThreadFunc()
             }
 
             MonitorLog::instance().info("agent", "Agent connected via IPC");
+            m_respawnAttempts.store(0);
+            m_agentHealth.store(AgentHealth::Ok);
 
             while (m_running && m_ipc.isConnected())
             {
@@ -258,6 +260,49 @@ void AgentSupervisor::ipcThreadFunc()
                 }
             }
 #endif
+
+            // Auto-respawn agent after crash
+            if (m_running)
+            {
+                int attempts = m_respawnAttempts.load();
+                if (attempts < MAX_RESPAWN_ATTEMPTS)
+                {
+                    m_agentHealth.store(AgentHealth::Reconnecting);
+                    int backoffSec = 2 << attempts; // 2s, 4s, 8s
+                    MonitorLog::instance().info("agent",
+                        "Auto-respawning agent (attempt " + std::to_string(attempts + 1) +
+                        "/" + std::to_string(MAX_RESPAWN_ATTEMPTS) +
+                        ", backoff " + std::to_string(backoffSec) + "s)");
+
+                    // Sleep with backoff, checking for stop
+                    for (int i = 0; i < backoffSec * 10 && m_running; ++i)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                    if (!m_running) break;
+
+                    if (spawnAgent())
+                    {
+                        m_respawnAttempts.fetch_add(1);
+                        continue; // back to acceptConnection()
+                    }
+                    else
+                    {
+                        m_respawnAttempts.store(MAX_RESPAWN_ATTEMPTS);
+                        m_agentHealth.store(AgentHealth::NeedsAttention);
+                        MonitorLog::instance().error("agent",
+                            "Agent respawn failed — needs manual intervention");
+                    }
+                }
+                else
+                {
+                    m_agentHealth.store(AgentHealth::NeedsAttention);
+                    MonitorLog::instance().error("agent",
+                        "Agent respawn limit reached — needs manual restart");
+                    // Avoid busy-loop: sleep 10s before re-entering accept loop
+                    for (int i = 0; i < 100 && m_running; ++i)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+            }
         }
         catch (const std::exception& e)
         {
@@ -340,6 +385,22 @@ bool AgentSupervisor::isAgentRunning() const
 #else
     return false;
 #endif
+}
+
+std::string AgentSupervisor::agentHealth() const
+{
+    switch (m_agentHealth.load())
+    {
+        case AgentHealth::Reconnecting:    return "reconnecting";
+        case AgentHealth::NeedsAttention:  return "needs_attention";
+        default:                           return "ok";
+    }
+}
+
+void AgentSupervisor::resetHealth()
+{
+    m_respawnAttempts.store(0);
+    m_agentHealth.store(AgentHealth::Ok);
 }
 
 } // namespace MR

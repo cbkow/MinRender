@@ -1,13 +1,13 @@
-// MidRender.jsx — Farm submitter for After Effects
+// MinRender.jsx — Farm submitter for After Effects
 // Install to: ScriptUI Panels folder for dockable panel, or run via File > Scripts
 //
-// Reads queued render queue items and submits each as a MidRender job
-// via the local submissions dropbox. The running MidRender Monitor picks
+// Reads queued render queue items and submits each as a MinRender job
+// via the local submissions dropbox. The running MinRender Monitor picks
 // up submissions and routes them to the leader.
 
 (function (thisObj) {
 
-    var SCRIPT_NAME = "MidRender";
+    var SCRIPT_NAME = "MinRender";
 
     // -- Shared state ---------------------------------------------------------
 
@@ -94,9 +94,9 @@
     function getSubmissionsDir() {
         var subDir;
         if ($.os.indexOf("Windows") !== -1) {
-            subDir = Folder.userData.parent.fsName + "\\Local\\MidRender\\submissions";
+            subDir = Folder.userData.parent.fsName + "\\Local\\MinRender\\submissions";
         } else {
-            subDir = Folder.userData.fsName + "/MidRender/submissions";
+            subDir = Folder.userData.fsName + "/MinRender/submissions";
         }
         var folder = new Folder(subDir);
         if (!folder.exists) folder.create();
@@ -113,18 +113,18 @@
             itemsGroup.remove(itemsGroup.children[0]);
         }
 
-        // -- Find MidRender config --------------------------------------------
+        // -- Find MinRender config --------------------------------------------
 
         var configPath;
         if ($.os.indexOf("Windows") !== -1) {
-            configPath = Folder.userData.parent.fsName + "\\Local\\MidRender\\config.json";
+            configPath = Folder.userData.parent.fsName + "\\Local\\MinRender\\config.json";
         } else {
-            configPath = Folder.userData.fsName + "/MidRender/config.json";
+            configPath = Folder.userData.fsName + "/MinRender/config.json";
         }
 
         var configText = readTextFile(configPath);
         if (!configText) {
-            setStatus("Config not found. Is MidRender installed?");
+            setStatus("Config not found. Is MinRender installed?");
             submitBtn.enabled = false;
             refreshLayout();
             return;
@@ -142,14 +142,14 @@
 
         var syncRoot = config.sync_root;
         if (!syncRoot) {
-            setStatus("Sync root not configured in MidRender.");
+            setStatus("Sync root not configured in MinRender.");
             submitBtn.enabled = false;
             refreshLayout();
             return;
         }
 
         // Check farm exists (for template scanning validation)
-        var farmDir = new Folder(syncRoot + "/MidRender-v2");
+        var farmDir = new Folder(syncRoot + "/MinRender-v2");
         if (!farmDir.exists) {
             setStatus("Farm not initialized.");
             submitBtn.enabled = false;

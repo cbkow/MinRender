@@ -5,7 +5,7 @@
 
 namespace MR {
 
-// Returns platform app data directory: %LOCALAPPDATA%\MidRender\ on Windows
+// Returns platform app data directory: %LOCALAPPDATA%\MinRender\ on Windows
 std::filesystem::path getAppDataDir();
 
 // Creates directory tree if it doesn't exist. Returns true on success.

@@ -28,12 +28,12 @@ bool SystemTray::init()
     WNDCLASSW wc = {};
     wc.lpfnWndProc = wndProc;
     wc.hInstance = GetModuleHandleW(nullptr);
-    wc.lpszClassName = L"MidRenderTray";
+    wc.lpszClassName = L"MinRenderTray";
     RegisterClassW(&wc);
 
     // Create message-only window
     m_hwnd = CreateWindowExW(
-        0, L"MidRenderTray", L"MidRender Tray",
+        0, L"MinRenderTray", L"MinRender Tray",
         0, 0, 0, 0, 0,
         HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr), nullptr);
 
@@ -52,7 +52,7 @@ bool SystemTray::init()
     m_nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
     m_nid.uCallbackMessage = WM_TRAYICON;
     m_nid.hIcon = m_icons[static_cast<int>(TrayIconState::Gray)];
-    wcscpy_s(m_nid.szTip, L"MidRender");
+    wcscpy_s(m_nid.szTip, L"MinRender");
 
     Shell_NotifyIconW(NIM_ADD, &m_nid);
 
@@ -74,7 +74,7 @@ void SystemTray::shutdown()
         m_hwnd = nullptr;
     }
 
-    UnregisterClassW(L"MidRenderTray", GetModuleHandleW(nullptr));
+    UnregisterClassW(L"MinRenderTray", GetModuleHandleW(nullptr));
     m_initialized = false;
 }
 
@@ -188,7 +188,7 @@ void SystemTray::showContextMenu()
     HMENU menu = CreatePopupMenu();
 
     // Title (disabled)
-    AppendMenuW(menu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"MidRender");
+    AppendMenuW(menu, MF_STRING | MF_DISABLED | MF_GRAYED, 0, L"MinRender");
 
     // Status line (disabled)
     wchar_t statusWide[128] = {};

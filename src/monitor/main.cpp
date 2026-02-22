@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
     }
 
     // --- Single Instance Check ---
-    MR::SingleInstance singleInstance("MidRenderMonitor");
+    MR::SingleInstance singleInstance("MinRenderMonitor");
     if (!singleInstance.isFirst())
     {
         singleInstance.signalExisting();
@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
     if (startMinimized)
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
-    std::string windowTitle = std::string("MidRender Monitor v") + APP_VERSION;
+    std::string windowTitle = std::string("MinRender Monitor v") + APP_VERSION;
     GLFWwindow* window = glfwCreateWindow(1280, 720, windowTitle.c_str(), nullptr, nullptr);
     if (!window)
     {

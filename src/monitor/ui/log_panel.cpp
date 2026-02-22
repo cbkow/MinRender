@@ -1,5 +1,6 @@
 #include "monitor/ui/log_panel.h"
 #include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "monitor/monitor_app.h"
 #include "core/monitor_log.h"
 
@@ -22,9 +23,9 @@ void LogPanel::render()
 
     if (ImGui::Begin("Log", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
-        panelHeader("Log", visible);
+        panelHeader("Log", Icons::Log, visible);
 
-        // Dual-mode dropdown
+        // Mode dropdown
         {
             std::string selectedJobId = m_app ? m_app->selectedJobId() : "";
 
@@ -32,6 +33,9 @@ void LogPanel::render()
             std::string comboLabel;
             if (m_mode == Mode::MonitorLog)
                 comboLabel = "Monitor Log";
+            else if (m_mode == Mode::RemoteNodeLog)
+                comboLabel = "Remote: " + (m_selectedRemoteHostname.empty()
+                    ? m_selectedRemoteNodeId : m_selectedRemoteHostname);
             else if (!selectedJobId.empty())
                 comboLabel = "Task Output: " + selectedJobId;
             else
@@ -50,6 +54,30 @@ void LogPanel::render()
                 if (ImGui::Selectable(taskLabel.c_str(), m_mode == Mode::TaskOutput))
                     m_mode = Mode::TaskOutput;
 
+                // Remote Node Logs — list alive peers
+                if (m_app && m_app->isFarmRunning())
+                {
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Remote Node Logs");
+
+                    auto peers = m_app->peerManager().getPeerSnapshot();
+                    for (const auto& peer : peers)
+                    {
+                        if (!peer.is_alive) continue;
+                        std::string label = peer.hostname.empty() ? peer.node_id : peer.hostname;
+                        bool isSelected = (m_mode == Mode::RemoteNodeLog &&
+                                          m_selectedRemoteNodeId == peer.node_id);
+                        if (ImGui::Selectable(("  " + label).c_str(), isSelected))
+                        {
+                            m_mode = Mode::RemoteNodeLog;
+                            m_selectedRemoteNodeId = peer.node_id;
+                            m_selectedRemoteHostname = peer.hostname;
+                            m_remoteLogCache.clear();
+                            m_lastRemoteLogRefresh = {};
+                        }
+                    }
+                }
+
                 ImGui::EndCombo();
             }
         }
@@ -60,8 +88,9 @@ void LogPanel::render()
 
         switch (m_mode)
         {
-            case Mode::MonitorLog: renderMonitorLog(); break;
-            case Mode::TaskOutput: renderTaskOutput(); break;
+            case Mode::MonitorLog:    renderMonitorLog(); break;
+            case Mode::TaskOutput:    renderTaskOutput(); break;
+            case Mode::RemoteNodeLog: renderRemoteNodeLog(); break;
         }
     }
     ImGui::End();
@@ -246,6 +275,62 @@ void LogPanel::scanTaskOutput()
         // Blank separator
         m_taskOutputLines.push_back({"", false});
     }
+}
+
+void LogPanel::renderRemoteNodeLog()
+{
+    if (!m_app || m_selectedRemoteNodeId.empty())
+    {
+        ImGui::TextDisabled("No remote node selected");
+        return;
+    }
+
+    if (!m_app->isFarmRunning())
+    {
+        ImGui::TextDisabled("Farm not running");
+        return;
+    }
+
+    // Refresh every 3 seconds
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - m_lastRemoteLogRefresh).count();
+    if (m_remoteLogCache.empty() || elapsed >= 3000)
+    {
+        m_remoteLogCache = MonitorLog::readNodeLog(
+            m_app->farmPath(), m_selectedRemoteNodeId, 500);
+        m_lastRemoteLogRefresh = now;
+    }
+
+    if (m_remoteLogCache.empty())
+    {
+        ImGui::TextDisabled("No log data available for this node");
+        return;
+    }
+
+    ImGui::BeginChild("RemoteLogScroll", ImVec2(0, 0), ImGuiChildFlags_None);
+
+    if (Fonts::mono)
+        ImGui::PushFont(Fonts::mono);
+
+    for (const auto& line : m_remoteLogCache)
+    {
+        ImVec4 col(0.7f, 0.7f, 0.7f, 1.0f);
+        if (line.find("[WARN]") != std::string::npos)
+            col = ImVec4(1.0f, 0.85f, 0.0f, 1.0f);
+        else if (line.find("[ERROR]") != std::string::npos)
+            col = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+
+        ImGui::TextColored(col, "%s", line.c_str());
+    }
+
+    if (Fonts::mono)
+        ImGui::PopFont();
+
+    if (m_autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f)
+        ImGui::SetScrollHereY(1.0f);
+
+    ImGui::EndChild();
 }
 
 } // namespace MR

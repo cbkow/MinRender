@@ -22,7 +22,7 @@ IpcServer::~IpcServer()
 
 bool IpcServer::create(const std::string& nodeId)
 {
-    std::wstring pipeName = L"\\\\.\\pipe\\MidRenderAgent_";
+    std::wstring pipeName = L"\\\\.\\pipe\\MinRenderAgent_";
     for (char c : nodeId) pipeName += static_cast<wchar_t>(c);
 
     m_pipe = CreateNamedPipeW(

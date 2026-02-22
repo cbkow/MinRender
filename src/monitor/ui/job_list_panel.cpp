@@ -1,5 +1,6 @@
 #include "monitor/ui/job_list_panel.h"
 #include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "monitor/monitor_app.h"
 
 #include <imgui.h>
@@ -40,7 +41,7 @@ void JobListPanel::render()
 
     if (ImGui::Begin("Job List", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
-        panelHeader("Jobs", visible);
+        panelHeader("Jobs", Icons::Jobs, visible);
 
         if (!m_app || !m_app->isFarmRunning())
         {
@@ -52,6 +53,7 @@ void JobListPanel::render()
         const auto& jobs = m_app->cachedJobs();
 
         // New Job button
+        PushOutlineButtonStyle();
         if (ImGui::Button("New Job"))
             m_app->requestSubmissionMode();
 
@@ -100,6 +102,7 @@ void JobListPanel::render()
             if (ImGui::Button("Cancel All"))
                 m_pendingCancelAll = true;
         }
+        PopOutlineButtonStyle();
 
         ImGui::SameLine();
         ImGui::TextDisabled("(%d jobs)", (int)jobs.size());
@@ -262,6 +265,7 @@ void JobListPanel::render()
                          cancellableCount, cancellableCount == 1 ? "" : "s");
 
             ImGui::Spacing();
+            PushOutlineButtonStyle();
             if (ImGui::Button("Cancel Jobs"))
             {
                 for (const auto& id : m_selectedJobIds)
@@ -281,6 +285,7 @@ void JobListPanel::render()
             ImGui::SameLine();
             if (ImGui::Button("Back"))
                 ImGui::CloseCurrentPopup();
+            PopOutlineButtonStyle();
 
             ImGui::EndPopup();
         }
@@ -312,8 +317,10 @@ void JobListPanel::render()
             }
             ImGui::PopStyleColor(2);
             ImGui::SameLine();
+            PushOutlineButtonStyle();
             if (ImGui::Button("Back"))
                 ImGui::CloseCurrentPopup();
+            PopOutlineButtonStyle();
 
             ImGui::EndPopup();
         }
@@ -351,6 +358,7 @@ void JobListPanel::render()
                     bulkSkipped, bulkSkipped == 1 ? "" : "s");
 
             ImGui::Spacing();
+            PushOutlineButtonStyle();
             if (ImGui::Button("Delete"))
             {
                 std::vector<std::string> toRemove;
@@ -374,6 +382,7 @@ void JobListPanel::render()
             ImGui::SameLine();
             if (ImGui::Button("Cancel"))
                 ImGui::CloseCurrentPopup();
+            PopOutlineButtonStyle();
 
             ImGui::EndPopup();
         }

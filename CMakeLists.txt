@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MidRender VERSION 0.2.8 LANGUAGES C CXX)
+project(MinRender VERSION 0.2.9 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,8 +92,8 @@ target_include_directories(imgui PUBLIC
 )
 target_link_libraries(imgui PUBLIC glfw glad)
 
-# --- MidRender Monitor ---
-add_executable(midrender
+# --- MinRender Monitor ---
+add_executable(minrender
     src/core/platform.cpp
     src/core/node_identity.cpp
     src/core/ipc_server.cpp
@@ -121,19 +121,19 @@ add_executable(midrender
     src/monitor/ui/log_panel.cpp
     src/monitor/ui/farm_cleanup_dialog.cpp
     src/monitor/ui/style.cpp
-    resources/midrender.rc
+    resources/minrender.rc
 )
 
-target_include_directories(midrender PRIVATE
+target_include_directories(minrender PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_definitions(midrender PRIVATE
+target_compile_definitions(minrender PRIVATE
     APP_VERSION="${PROJECT_VERSION}"
     CPPHTTPLIB_THREAD_POOL_COUNT=4
 )
 
-target_link_libraries(midrender PRIVATE
+target_link_libraries(minrender PRIVATE
     imgui
     glad
     nlohmann_json::nlohmann_json
@@ -151,17 +151,17 @@ target_link_libraries(midrender PRIVATE
 )
 
 # Copy resources/ next to the executable at build time
-add_custom_command(TARGET midrender POST_BUILD
+add_custom_command(TARGET minrender POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-        "$<TARGET_FILE_DIR:midrender>/resources"
+        "$<TARGET_FILE_DIR:minrender>/resources"
     COMMENT "Copying resources to build output"
 )
 
 # MSVC-specific settings
 if(MSVC)
-    target_compile_options(midrender PRIVATE /W4)
+    target_compile_options(minrender PRIVATE /W4)
     # Windows subsystem (no console window)
-    set_target_properties(midrender PROPERTIES WIN32_EXECUTABLE TRUE)
-    set_target_properties(midrender PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
+    set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(minrender PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif()

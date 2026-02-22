@@ -33,7 +33,7 @@ bool SingleInstance::isFirst() const
 void SingleInstance::signalExisting()
 {
     // Find the tray's message-only HWND and post a custom message
-    HWND hwnd = FindWindowExW(HWND_MESSAGE, nullptr, L"MidRenderTray", nullptr);
+    HWND hwnd = FindWindowExW(HWND_MESSAGE, nullptr, L"MinRenderTray", nullptr);
     if (hwnd)
     {
         // WM_APP + 2 = "show window" signal

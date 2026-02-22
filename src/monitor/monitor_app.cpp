@@ -196,7 +196,7 @@ bool MonitorApp::startFarm()
         return true;
 
     m_farmPath = std::filesystem::path(m_config.sync_root) /
-        ("MidRender-v" + std::to_string(PROTOCOL_VERSION));
+        ("MinRender-v" + std::to_string(PROTOCOL_VERSION));
     m_farmError.clear();
 
     // Check if sync root exists
@@ -336,7 +336,7 @@ void MonitorApp::onBecomeLeader()
 
     // DB restore/open on background thread to avoid blocking UI
     auto snapshotPath = m_farmPath / "state" / "snapshot.db";
-    auto localDbPath = m_appDataDir / "midrender.db";
+    auto localDbPath = m_appDataDir / "minrender.db";
 
     m_leaderThread = std::thread([this, snapshotPath, localDbPath]()
     {
@@ -892,7 +892,7 @@ TrayIconState MonitorApp::trayState() const
 
 std::string MonitorApp::trayTooltip() const
 {
-    std::string tip = "MidRender";
+    std::string tip = "MinRender";
     if (m_renderCoordinator.isRendering())
         tip += " - Rendering " + m_renderCoordinator.currentJobId();
     else if (m_nodeState == NodeState::Stopped)
@@ -984,6 +984,15 @@ PeerInfo MonitorApp::buildLocalPeerInfo() const
         info.render_state = "idle";
     }
 
+    // Agent health
+    info.agent_health = m_agentSupervisor.agentHealth();
+    if (m_agentSupervisor.agentHealthEnum() != AgentHealth::Ok)
+    {
+        info.alert_reason = "Agent " + m_agentSupervisor.agentHealth();
+        if (!m_agentSupervisor.isAgentConnected())
+            info.alert_reason += " (disconnected)";
+    }
+
     // Endpoint
     std::string localIp = m_config.ip_override.empty()
         ? getLocalIpAddress()
@@ -1014,8 +1023,10 @@ void MonitorApp::handleUdpMessages()
             std::string job = msg.value("job", "");
             std::string chunk = msg.value("chunk", "");
             int pri = msg.value("pri", 100);
+            std::string ah = msg.value("ah", "ok");
+            std::string ar = msg.value("ar", "");
 
-            m_peerManager.processUdpHeartbeat(nodeId, ip, port, st, rs, job, chunk, pri);
+            m_peerManager.processUdpHeartbeat(nodeId, ip, port, st, rs, job, chunk, pri, ah, ar);
         }
         else if (type == "bye")
         {
@@ -1041,12 +1052,21 @@ void MonitorApp::sendUdpHeartbeat()
         {"st", (m_nodeState == NodeState::Active) ? "active" : "stopped"},
         {"rs", m_renderCoordinator.isRendering() ? "rendering" : "idle"},
         {"pri", m_config.priority},
+        {"ah", m_agentSupervisor.agentHealth()},
     };
 
     if (m_renderCoordinator.isRendering())
     {
         hb["job"] = m_renderCoordinator.currentJobId();
         hb["chunk"] = m_renderCoordinator.currentChunkLabel();
+    }
+
+    if (m_agentSupervisor.agentHealthEnum() != AgentHealth::Ok)
+    {
+        std::string reason = "Agent " + m_agentSupervisor.agentHealth();
+        if (!m_agentSupervisor.isAgentConnected())
+            reason += " (disconnected)";
+        hb["ar"] = reason;
     }
 
     m_udpNotify.send(hb);

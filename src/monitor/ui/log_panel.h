@@ -25,18 +25,25 @@ private:
     void renderMonitorLog();
     void renderTaskOutput();
     void scanTaskOutput();
+    void renderRemoteNodeLog();
 
     MonitorApp* m_app = nullptr;
     bool m_autoScroll = true;
 
     // Mode
-    enum class Mode { MonitorLog, TaskOutput };
+    enum class Mode { MonitorLog, TaskOutput, RemoteNodeLog };
     Mode m_mode = Mode::MonitorLog;
 
     // Task output cache
     std::string m_taskOutputJobId;
     std::vector<TaskOutputLine> m_taskOutputLines;
     std::chrono::steady_clock::time_point m_lastTaskOutputScan;
+
+    // Remote node log cache
+    std::string m_selectedRemoteNodeId;
+    std::string m_selectedRemoteHostname;
+    std::vector<std::string> m_remoteLogCache;
+    std::chrono::steady_clock::time_point m_lastRemoteLogRefresh;
 };
 
 } // namespace MR

@@ -1,5 +1,6 @@
 #include "monitor/ui/node_panel.h"
 #include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "monitor/monitor_app.h"
 #include "monitor/dispatch_manager.h"
 #include "core/net_utils.h"
@@ -27,7 +28,7 @@ void NodePanel::render()
 
     if (ImGui::Begin("Node Overview", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
-        panelHeader("Nodes", visible);
+        panelHeader("Nodes", Icons::Computer, visible);
         if (!m_app || !m_app->isFarmRunning())
         {
             ImGui::TextDisabled("Farm not connected.");
@@ -44,8 +45,12 @@ void NodePanel::render()
         {
             // --- Local node ---
             const auto& id = m_app->identity();
-            ImGui::TextUnformatted("This Node");
-            ImGui::SameLine();
+            PushOutlineHeaderStyle();
+            bool thisNodeOpen = CollapsingHeaderWithIcon("      This Node", Fonts::icons, Icons::Computer, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen);
+            PopOutlineHeaderStyle();
+
+            if (thisNodeOpen)
+            {
             if (m_app->isLeader())
                 drawStatusBadge("Leader", ImVec4(1.0f, 0.84f, 0.0f, 1.0f));
 
@@ -65,6 +70,21 @@ void NodePanel::render()
                 drawStatusBadge("Stopped", ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
             }
 
+            // Local agent health badge
+            {
+                auto health = m_app->agentSupervisor().agentHealthEnum();
+                if (health == AgentHealth::Reconnecting)
+                {
+                    ImGui::SameLine();
+                    drawStatusBadge("Reconnecting", ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+                }
+                else if (health == AgentHealth::NeedsAttention)
+                {
+                    ImGui::SameLine();
+                    drawStatusBadge("Agent Down", ImVec4(1.0f, 0.4f, 0.2f, 1.0f));
+                }
+            }
+
             if (m_app->renderCoordinator().isRendering())
             {
                 ImGui::SameLine();
@@ -82,6 +102,7 @@ void NodePanel::render()
 
             // Node control
             ImGui::Spacing();
+            PushOutlineButtonStyle();
             if (m_app->nodeState() == NodeState::Active)
             {
                 if (ImGui::Button("Stop Node"))
@@ -92,16 +113,22 @@ void NodePanel::render()
                 if (ImGui::Button("Start Node"))
                     m_app->setNodeState(NodeState::Active);
             }
+            PopOutlineButtonStyle();
+
+            } // end This Node
 
             // --- Peers ---
-            ImGui::Separator();
-            ImGui::Spacing();
-            ImGui::TextUnformatted("Peers");
-            ImGui::Spacing();
+            PushOutlineHeaderStyle();
+            bool peersOpen = CollapsingHeaderWithIcon("      Peers", Fonts::icons, Icons::Computer, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen);
+            PopOutlineHeaderStyle();
 
             auto peers = m_app->peerManager().getPeerSnapshot();
 
-            if (peers.empty())
+            if (!peersOpen)
+            {
+                // skip peer rendering
+            }
+            else if (peers.empty())
             {
                 ImGui::TextDisabled("No peers discovered.");
             }
@@ -129,6 +156,25 @@ void NodePanel::render()
                 {
                     ImGui::PushID(peer.node_id.c_str());
 
+                    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                    ImVec2 group_start = ImGui::GetCursorScreenPos();
+                    ImGui::BeginGroup();
+
+                    ImGui::Dummy(ImVec2(0, 2.0f));  // top padding
+
+                    // UDP connectivity icon
+                    ImGui::Indent(8.0f);  // horizontal padding
+                    if (Fonts::icons)
+                    {
+                        ImGui::PushFont(Fonts::icons);
+                        if (peer.has_udp_contact)
+                            ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "%s", Icons::Wifi);
+                        else
+                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.5f), "%s", Icons::WifiOff);
+                        ImGui::PopFont();
+                        ImGui::SameLine();
+                    }
+
                     // Status badge
                     if (!peer.is_alive)
                     {
@@ -152,6 +198,12 @@ void NodePanel::render()
                         ImGui::TextUnformatted(peer.hostname.c_str());
                     else
                         ImGui::TextUnformatted(peer.node_id.c_str());
+                    if (ImGui::IsItemHovered())
+                    {
+                        ImGui::BeginTooltip();
+                        ImGui::Text("Node ID: %s", peer.node_id.c_str());
+                        ImGui::EndTooltip();
+                    }
 
                     // Leader badge
                     if (peer.is_leader)
@@ -185,6 +237,30 @@ void NodePanel::render()
                                     ImGui::EndTooltip();
                                 }
                             }
+                        }
+                    }
+
+                    // Agent health badges
+                    if (peer.is_alive && peer.agent_health == "reconnecting")
+                    {
+                        ImGui::SameLine();
+                        drawStatusBadge("Reconnecting", ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+                        if (ImGui::IsItemHovered() && !peer.alert_reason.empty())
+                        {
+                            ImGui::BeginTooltip();
+                            ImGui::TextUnformatted(peer.alert_reason.c_str());
+                            ImGui::EndTooltip();
+                        }
+                    }
+                    else if (peer.is_alive && peer.agent_health == "needs_attention")
+                    {
+                        ImGui::SameLine();
+                        drawStatusBadge("Agent Down", ImVec4(1.0f, 0.4f, 0.2f, 1.0f));
+                        if (ImGui::IsItemHovered() && !peer.alert_reason.empty())
+                        {
+                            ImGui::BeginTooltip();
+                            ImGui::TextUnformatted(peer.alert_reason.c_str());
+                            ImGui::EndTooltip();
                         }
                     }
 
@@ -223,6 +299,7 @@ void NodePanel::render()
                     if (peer.is_alive)
                     {
                         ImGui::Indent(16.0f);
+                        PushOutlineButtonStyle();
                         if (peer.node_state != "stopped")
                         {
                             if (ImGui::SmallButton("Stop"))
@@ -256,6 +333,21 @@ void NodePanel::render()
                             }
                         }
 
+                        // Restart Agent button
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Restart Agent"))
+                        {
+                            std::string ep = peer.endpoint;
+                            std::thread([ep]() {
+                                auto [host, port] = parseEndpoint(ep);
+                                if (host.empty()) return;
+                                httplib::Client cli(host, port);
+                                cli.set_connection_timeout(2);
+                                cli.set_read_timeout(5);
+                                cli.Post("/api/agent/restart");
+                            }).detach();
+                        }
+
                         // Unsuspend button (only leader can unsuspend)
                         if (m_app->isLeader() &&
                             m_app->dispatchManager().failureTracker().isSuspended(peer.node_id))
@@ -265,7 +357,32 @@ void NodePanel::render()
                                 m_app->unsuspendNode(peer.node_id);
                         }
 
+                        PopOutlineButtonStyle();
                         ImGui::Unindent(16.0f);
+                    }
+
+                    ImGui::Dummy(ImVec2(0, 6.0f));  // bottom padding inside shape
+                    ImGui::Unindent(8.0f);  // match horizontal padding
+                    ImGui::EndGroup();
+
+                    ImVec2 group_end = ImGui::GetItemRectMax();
+                    float right_ext = 8.0f;
+                    draw_list->AddRect(
+                        group_start,
+                        ImVec2(group_start.x + (group_end.x - group_start.x) + right_ext,
+                               group_end.y),
+                        IM_COL32(255, 255, 255, 15),  // subtle white border
+                        1.0f, 0, 1.0f);
+
+                    // Dead peers get a dark wash overlay
+                    if (!peer.is_alive)
+                    {
+                        draw_list->AddRectFilled(
+                            group_start,
+                            ImVec2(group_start.x + (group_end.x - group_start.x) + right_ext,
+                                   group_end.y),
+                            IM_COL32(30, 30, 30, 180),
+                            1.0f);
                     }
 
                     ImGui::Spacing();

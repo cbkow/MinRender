@@ -6,6 +6,8 @@
 #include "monitor/database_manager.h"
 
 #include <nlohmann/json.hpp>
+#include <thread>
+#include <chrono>
 
 namespace MR {
 
@@ -83,6 +85,53 @@ void HttpServer::setupRoutes()
         m_app->setNodeState(NodeState::Active);
         MonitorLog::instance().info("farm", "Remotely started by peer");
         res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
+    // --- Remote agent control (every node) ---
+
+    // POST /api/agent/restart -- remotely restart agent on this node
+    m_server.Post("/api/agent/restart", [this](const httplib::Request&, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+        MonitorLog::instance().info("agent", "Remote agent restart requested");
+        m_app->agentSupervisor().shutdownAgent();
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (m_app->agentSupervisor().spawnAgent())
+        {
+            m_app->agentSupervisor().resetHealth();
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        else
+        {
+            res.status = 500;
+            res.set_content(R"({"error":"agent_spawn_failed"})", "application/json");
+        }
+    });
+
+    // POST /api/agent/stop -- remotely stop agent on this node
+    m_server.Post("/api/agent/stop", [this](const httplib::Request&, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+        m_app->agentSupervisor().shutdownAgent();
+        MonitorLog::instance().info("agent", "Remotely stopped agent");
+        res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
+    // POST /api/agent/start -- remotely start agent on this node
+    m_server.Post("/api/agent/start", [this](const httplib::Request&, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+        if (m_app->agentSupervisor().spawnAgent())
+        {
+            m_app->agentSupervisor().resetHealth();
+            MonitorLog::instance().info("agent", "Remotely started agent");
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        else
+        {
+            res.status = 500;
+            res.set_content(R"({"error":"agent_spawn_failed"})", "application/json");
+        }
     });
 
     // --- Worker endpoint (every node) ---

@@ -17,7 +17,7 @@ std::filesystem::path getAppDataDir()
     wchar_t* appData = nullptr;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &appData)))
     {
-        std::filesystem::path dir = std::filesystem::path(appData) / L"MidRender";
+        std::filesystem::path dir = std::filesystem::path(appData) / L"MinRender";
         CoTaskMemFree(appData);
         ensureDir(dir);
         return dir;
@@ -25,7 +25,7 @@ std::filesystem::path getAppDataDir()
     CoTaskMemFree(appData);
 #endif
     // Fallback
-    auto dir = std::filesystem::current_path() / "MidRender_data";
+    auto dir = std::filesystem::current_path() / "MinRender_data";
     ensureDir(dir);
     return dir;
 }

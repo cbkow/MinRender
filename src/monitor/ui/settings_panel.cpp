@@ -1,6 +1,7 @@
 #include "monitor/ui/settings_panel.h"
 #include "monitor/monitor_app.h"
 #include "monitor/ui/style.h"
+#include "monitor/ui/ui_macros.h"
 #include "core/config.h"
 #include "core/platform.h"
 
@@ -91,6 +92,7 @@ void SettingsPanel::drawFontSizeSection()
     ImGui::Text("Presets:");
     ImGui::SameLine();
 
+    PushOutlineButtonStyle();
     if (ImGui::Button("Small"))
         m_fontScale = FONT_SCALE_SMALL;
     ImGui::SameLine();
@@ -102,6 +104,7 @@ void SettingsPanel::drawFontSizeSection()
     ImGui::SameLine();
     if (ImGui::Button("X-Large"))
         m_fontScale = FONT_SCALE_XLARGE;
+    PopOutlineButtonStyle();
 
     ImGui::Spacing();
 
@@ -172,6 +175,13 @@ void SettingsPanel::render()
     }
     ImGui::PopStyleColor();
 
+    if (modalCloseButton("SettingsClose"))
+    {
+        loadFromConfig();
+        m_needsReload = true;
+        ImGui::CloseCurrentPopup();
+    }
+
     if (m_needsReload)
     {
         loadFromConfig();
@@ -182,7 +192,8 @@ void SettingsPanel::render()
     ImGui::BeginChild("SettingsContent", ImVec2(0, -buttonRowHeight), ImGuiChildFlags_None);
 
     // --- Node Info ---
-    if (ImGui::CollapsingHeader("Node Info", ImGuiTreeNodeFlags_DefaultOpen))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Node Info", Fonts::icons, Icons::Info, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
     {
         const auto& id = m_app->identity();
         ImGui::Text("Node ID:  %s", id.nodeId().c_str());
@@ -192,9 +203,11 @@ void SettingsPanel::render()
         ImGui::Text("GPU:      %s", id.systemInfo().gpuName.c_str());
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Appearance ---
-    if (ImGui::CollapsingHeader("Appearance", ImGuiTreeNodeFlags_DefaultOpen))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Appearance", Fonts::icons, Icons::Style, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
     {
         drawFontSizeSection();
         ImGui::Spacing();
@@ -203,14 +216,17 @@ void SettingsPanel::render()
         drawFontPreview();
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Sync Root ---
-    if (ImGui::CollapsingHeader("Sync Root", ImGuiTreeNodeFlags_DefaultOpen))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Sync Root", Fonts::icons, Icons::Folder, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
     {
         float browseWidth = ImGui::CalcTextSize("Browse...").x + ImGui::GetStyle().FramePadding.x * 2;
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - browseWidth - ImGui::GetStyle().ItemSpacing.x);
         ImGui::InputText("##syncroot", m_syncRootBuf, sizeof(m_syncRootBuf));
         ImGui::SameLine();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Browse..."))
         {
             nfdchar_t* outPath = nullptr;
@@ -222,6 +238,7 @@ void SettingsPanel::render()
                 NFD_FreePath(outPath);
             }
         }
+        PopOutlineButtonStyle();
 
         if (m_syncRootBuf[0] != '\0')
         {
@@ -232,9 +249,11 @@ void SettingsPanel::render()
         }
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Network ---
-    if (ImGui::CollapsingHeader("Network", ImGuiTreeNodeFlags_DefaultOpen))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Network", Fonts::icons, Icons::Network, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::SetNextItemWidth(120);
         ImGui::InputInt("HTTP Port", &m_httpPort, 0);
@@ -263,9 +282,11 @@ void SettingsPanel::render()
 
 #ifdef _WIN32
         ImGui::Spacing();
+        PushOutlineButtonStyle();
         if (ImGui::Button("Add Firewall Rule"))
-            addFirewallRule("MidRender", static_cast<uint16_t>(m_httpPort),
+            addFirewallRule("MinRender", static_cast<uint16_t>(m_httpPort),
                             m_udpEnabled ? static_cast<uint16_t>(m_udpPort) : uint16_t(0));
+        PopOutlineButtonStyle();
         ImGui::SameLine();
         if (m_udpEnabled)
             ImGui::TextDisabled("Allows TCP %d + UDP %d through Windows Firewall.", m_httpPort, m_udpPort);
@@ -274,25 +295,31 @@ void SettingsPanel::render()
 #endif
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Rendering ---
-    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Rendering", Fonts::icons, Icons::Render, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::Checkbox("Local Staging Area", &m_stagingEnabled);
         ImGui::TextDisabled("Render to a local temp folder, then copy to the network output path.");
         ImGui::TextDisabled("Prevents file corruption from cloud sync (Synology Drive, Dropbox, etc.).");
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Tags ---
-    if (ImGui::CollapsingHeader("Node Tags"))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Node Tags", Fonts::icons, Icons::Tags, getAccentColor()))
     {
         ImGui::InputText("Tags (comma-separated)", m_tagsBuf, sizeof(m_tagsBuf));
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Agent ---
-    if (ImGui::CollapsingHeader("Agent", ImGuiTreeNodeFlags_DefaultOpen))
+    PushOutlineHeaderStyle();
+    if (CollapsingHeaderWithIcon("      Agent", Fonts::icons, Icons::Agent, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
     {
         auto& supervisor = m_app->agentSupervisor();
         bool connected = supervisor.isAgentConnected();
@@ -318,6 +345,7 @@ void SettingsPanel::render()
 
         ImGui::Spacing();
 
+        PushOutlineButtonStyle();
         if (!running)
         {
             if (ImGui::Button("Start Agent"))
@@ -334,11 +362,13 @@ void SettingsPanel::render()
                 supervisor.spawnAgent();
             }
         }
+        PopOutlineButtonStyle();
 
         ImGui::Spacing();
         ImGui::Checkbox("Auto-start agent", &m_autoStartAgent);
         ImGui::Separator();
     }
+    PopOutlineHeaderStyle();
 
     // --- Notifications ---
     ImGui::Checkbox("Show notifications", &m_showNotifications);
@@ -347,6 +377,7 @@ void SettingsPanel::render()
 
     // --- Save / Cancel ---
     ImGui::Separator();
+    PushOutlineButtonStyle();
     if (ImGui::Button("Save", ImVec2(120, 0)))
     {
         std::string oldSyncRoot = m_savedSyncRoot;
@@ -385,6 +416,7 @@ void SettingsPanel::render()
         m_needsReload = true;
         ImGui::CloseCurrentPopup();
     }
+    PopOutlineButtonStyle();
 
     ImGui::EndPopup();
 }
