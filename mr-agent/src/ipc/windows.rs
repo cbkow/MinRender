@@ -19,7 +19,7 @@ impl WindowsPipeClient {
     /// Connect to the monitor's named pipe for the given node_id.
     /// Retries up to 3 times with 3-second intervals.
     pub fn connect(node_id: &str) -> io::Result<Self> {
-        let pipe_name = format!(r"\\.\pipe\MidRenderAgent_{}", node_id);
+        let pipe_name = format!(r"\\.\pipe\MinRenderAgent_{}", node_id);
         let pipe_name_h = HSTRING::from(&pipe_name);
 
         let max_attempts = 3;

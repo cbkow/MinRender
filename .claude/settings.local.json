@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(cmd.exe:*)",
-      "Bash(export PATH=\"$PATH:$USERPROFILE/.cargo/bin\" && cd /c/Users/chris/Documents/GitHub/MinRender/mr-agent && cargo build --release 2>&1)"
+      "Bash(export PATH=\"$PATH:$USERPROFILE/.cargo/bin\" && cd /c/Users/chris/Documents/GitHub/MinRender/mr-agent && cargo build --release 2>&1)",
+      "Bash(cargo build:*)",
+      "Bash(cmake:*)"
     ]
   }
 }

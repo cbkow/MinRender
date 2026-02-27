@@ -40,7 +40,7 @@ fn ensure_single_instance(node_id: &str) -> MutexGuard {
     use windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
     use windows::Win32::System::Threading::CreateMutexW;
 
-    let mutex_name: Vec<u16> = format!("MidRenderAgent_{}\0", node_id)
+    let mutex_name: Vec<u16> = format!("MinRenderAgent_{}\0", node_id)
         .encode_utf16()
         .collect();
 
