@@ -796,6 +796,23 @@ void MonitorApp::retryFailedChunks(const std::string& jobId)
     }
 }
 
+void MonitorApp::reassignChunk(int64_t chunkId, const std::string& targetNodeId)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        m_databaseManager.reassignChunk(chunkId, targetNodeId);
+        MonitorLog::instance().info("job", "Reassigned chunk " + std::to_string(chunkId) +
+            (targetNodeId.empty() ? " to pending" : " to " + targetNodeId));
+    }
+    else
+    {
+        nlohmann::json body = {{"chunk_id", chunkId}};
+        if (!targetNodeId.empty())
+            body["target_node"] = targetNodeId;
+        postToLeaderAsync("/api/chunks/reassign", body.dump());
+    }
+}
+
 std::string MonitorApp::resubmitJob(const std::string& jobId)
 {
     if (isLeader() && m_databaseManager.isOpen())

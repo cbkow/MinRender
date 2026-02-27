@@ -749,6 +749,9 @@ void JobDetailPanel::renderDetailMode()
             ImGui::Separator();
             ImGui::Text("Frames:");
             renderFrameGrid(m_detailChunks, job.manifest.frame_start, job.manifest.frame_end);
+
+            ImGui::Separator();
+            renderChunkTable();
         }
     }
 
@@ -1012,6 +1015,115 @@ void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fS
 
     int totalRows = (totalFrames + cols - 1) / cols;
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + totalRows * (cellSize + gap) + 4.0f));
+}
+
+void JobDetailPanel::renderChunkTable()
+{
+    if (m_detailChunks.empty()) return;
+
+    ImGui::Text("Chunks:");
+
+    if (ImGui::BeginTable("##ChunkTable", 5,
+        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
+        ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 10)))
+    {
+        ImGui::TableSetupColumn("Chunk", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Node", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Retries", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+        ImGui::TableSetupColumn("Failed On", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+
+        for (const auto& c : m_detailChunks)
+        {
+            ImGui::TableNextRow();
+
+            // Chunk (frame range)
+            ImGui::TableNextColumn();
+            char rangeLabel[64];
+            if (c.frame_start == c.frame_end)
+                snprintf(rangeLabel, sizeof(rangeLabel), "%d", c.frame_start);
+            else
+                snprintf(rangeLabel, sizeof(rangeLabel), "%d-%d", c.frame_start, c.frame_end);
+
+            // Make the row selectable for right-click
+            ImGui::PushID(static_cast<int>(c.id));
+            bool rowSelected = false;
+            ImGui::Selectable(rangeLabel, &rowSelected,
+                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
+
+            // Right-click context menu (only for non-completed chunks)
+            if (c.state != "completed" && ImGui::BeginPopupContextItem("##ChunkCtx"))
+            {
+                m_contextChunkId = c.id;
+                m_contextChunkJobId = c.job_id;
+
+                if (ImGui::MenuItem("Reset to Pending"))
+                {
+                    m_app->reassignChunk(m_contextChunkId, "");
+                }
+
+                // List alive peer nodes
+                auto peers = m_app->peerManager().getPeerSnapshot();
+                if (!peers.empty())
+                {
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Reassign to:");
+                    for (const auto& p : peers)
+                    {
+                        if (p.node_state != "active") continue;
+
+                        std::string label = p.hostname.empty() ? p.node_id : p.hostname;
+                        if (p.node_id == c.assigned_to)
+                            label += " (current)";
+
+                        if (ImGui::MenuItem(label.c_str()))
+                        {
+                            m_app->reassignChunk(m_contextChunkId, p.node_id);
+                        }
+                    }
+                }
+
+                ImGui::EndPopup();
+            }
+            ImGui::PopID();
+
+            // State
+            ImGui::TableNextColumn();
+            if (c.state == "assigned")
+                ImGui::TextColored(ImVec4(0.3f, 0.6f, 0.9f, 1.0f), "%s", c.state.c_str());
+            else if (c.state == "completed")
+                ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.3f, 1.0f), "%s", c.state.c_str());
+            else if (c.state == "failed")
+                ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "%s", c.state.c_str());
+            else
+                ImGui::Text("%s", c.state.c_str());
+
+            // Node
+            ImGui::TableNextColumn();
+            ImGui::Text("%s", c.assigned_to.c_str());
+
+            // Retries
+            ImGui::TableNextColumn();
+            if (c.retry_count > 0)
+                ImGui::Text("%d", c.retry_count);
+
+            // Failed On
+            ImGui::TableNextColumn();
+            if (!c.failed_on.empty())
+            {
+                std::string nodes;
+                for (const auto& n : c.failed_on)
+                {
+                    if (!nodes.empty()) nodes += ", ";
+                    nodes += n;
+                }
+                ImGui::TextWrapped("%s", nodes.c_str());
+            }
+        }
+
+        ImGui::EndTable();
+    }
 }
 
 } // namespace MR

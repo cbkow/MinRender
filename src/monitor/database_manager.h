@@ -79,6 +79,7 @@ public:
     bool isJobComplete(const std::string& jobId);
     bool resetAllChunks(const std::string& jobId);
     bool retryFailedChunks(const std::string& jobId);
+    bool reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
 
     // Per-frame completion tracking
     bool addCompletedFrames(const std::string& jobId, int frame);

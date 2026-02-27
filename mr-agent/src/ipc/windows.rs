@@ -94,10 +94,20 @@ impl WindowsPipeClient {
 
 impl Read for WindowsPipeClient {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
         let mut bytes_read = 0u32;
         unsafe {
             ReadFile(self.handle, Some(buf), Some(&mut bytes_read), None)
                 .map_err(|e| io::Error::new(io::ErrorKind::BrokenPipe, e.to_string()))?;
+        }
+        // 0 bytes from a non-empty read means pipe is closed
+        if bytes_read == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "pipe closed (0-byte read)",
+            ));
         }
         Ok(bytes_read as usize)
     }

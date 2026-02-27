@@ -88,6 +88,18 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(
                     now - m_requeueStartTime).count();
 
+                // If agent needs manual attention, fail immediately
+                if (supervisor.agentHealthEnum() == AgentHealth::NeedsAttention)
+                {
+                    MonitorLog::instance().error("render",
+                        "Agent needs attention — fast-failing chunk " +
+                        pending.chunk.rangeStr() + " for job " + pending.manifest.job_id);
+                    m_requeueActive = false;
+                    if (m_completionFn)
+                        m_completionFn(pending.manifest.job_id, pending.chunk, "failed");
+                    return;
+                }
+
                 // After 30 seconds without agent, fail the chunk
                 if (elapsedSec >= 30)
                 {

@@ -69,6 +69,7 @@ public:
     void deleteJob(const std::string& jobId);
     void archiveJob(const std::string& jobId);
     void retryFailedChunks(const std::string& jobId);
+    void reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
     std::string resubmitJob(const std::string& jobId);
     void unsuspendNode(const std::string& nodeId);
 

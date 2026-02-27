@@ -161,6 +161,14 @@ void HttpServer::setupRoutes()
             return;
         }
 
+        // If agent is not healthy, reject
+        if (m_app->agentSupervisor().agentHealthEnum() != AgentHealth::Ok)
+        {
+            res.status = 409;
+            res.set_content(R"({"error":"agent_unhealthy"})", "application/json");
+            return;
+        }
+
         try
         {
             auto body = nlohmann::json::parse(req.body);
@@ -302,6 +310,28 @@ void HttpServer::setupRoutes()
         }
         nlohmann::json body = {{"status", "ok"}, {"job_id", newId}};
         res.set_content(body.dump(), "application/json");
+    });
+
+    // POST /api/chunks/reassign -- reassign a chunk to pending or to a specific node
+    m_server.Post("/api/chunks/reassign", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            int64_t chunkId = body.at("chunk_id").get<int64_t>();
+            std::string targetNode = body.value("target_node", "");
+
+            m_app->reassignChunk(chunkId, targetNode);
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
     });
 
     // POST /api/nodes/:id/unsuspend -- clear failure tracking for a node

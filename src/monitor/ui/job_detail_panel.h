@@ -26,6 +26,7 @@ private:
     void renderSubmissionMode();
     void renderDetailMode();
     void renderFrameGrid(const std::vector<ChunkRow>& chunks, int fStart, int fEnd);
+    void renderChunkTable();
     void onTemplateSelected(int idx);
     void doSubmit();
     void resolveOutputPatterns();
@@ -65,6 +66,10 @@ private:
     std::string m_detailChunksJobId;
     std::string m_detailChunksLastState;  // detect state transitions for final refresh
     std::chrono::steady_clock::time_point m_lastChunkRefresh;
+
+    // Chunk table context menu state
+    int64_t m_contextChunkId = 0;
+    std::string m_contextChunkJobId;
 
     // Async submission state (worker → leader)
     bool m_asyncSubmitting = false;

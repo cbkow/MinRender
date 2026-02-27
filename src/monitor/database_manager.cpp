@@ -617,6 +617,40 @@ bool DatabaseManager::retryFailedChunks(const std::string& jobId)
     }
 }
 
+bool DatabaseManager::reassignChunk(int64_t chunkId, const std::string& targetNodeId)
+{
+    try
+    {
+        if (targetNodeId.empty())
+        {
+            // Reset to pending — clear assignment
+            SQLite::Statement q(*m_db,
+                "UPDATE chunks SET state = 'pending', assigned_to = NULL, assigned_at_ms = NULL "
+                "WHERE id = ? AND state IN ('assigned', 'failed')");
+            q.bind(1, chunkId);
+            return q.exec() > 0;
+        }
+        else
+        {
+            // Assign to a specific node
+            auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            SQLite::Statement q(*m_db,
+                "UPDATE chunks SET state = 'assigned', assigned_to = ?, assigned_at_ms = ? "
+                "WHERE id = ? AND state IN ('assigned', 'failed')");
+            q.bind(1, targetNodeId);
+            q.bind(2, nowMs);
+            q.bind(3, chunkId);
+            return q.exec() > 0;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("reassignChunk failed: ") + e.what());
+        return false;
+    }
+}
+
 // --- Per-frame completion tracking ---
 
 bool DatabaseManager::addCompletedFrames(const std::string& jobId, int frame)

@@ -15,7 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "mr-agent", about = "MidRender headless render agent", version)]
+#[command(name = "mr-agent", about = "MinRender headless render agent", version)]
 struct Args {
     /// Node ID to connect to (must match the monitor's node ID)
     #[arg(long)]
@@ -65,11 +65,106 @@ fn ensure_single_instance(_node_id: &str) -> MutexGuard {
     MutexGuard
 }
 
+/// Resolve the log file path: %LOCALAPPDATA%/MinRender/mr-agent.log (Windows)
+/// or ~/.local/share/MinRender/mr-agent.log (other).
+fn log_file_path() -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            let dir = std::path::PathBuf::from(local).join("MinRender");
+            let _ = std::fs::create_dir_all(&dir);
+            return Some(dir.join("mr-agent.log"));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let dir = std::path::PathBuf::from(home)
+                .join(".local/share/MinRender");
+            let _ = std::fs::create_dir_all(&dir);
+            return Some(dir.join("mr-agent.log"));
+        }
+    }
+    None
+}
+
+/// Initialize logging: write to both stderr and a log file.
+fn init_logging() {
+    use simplelog::*;
+
+    let level = LevelFilter::Info;
+    let config = ConfigBuilder::new()
+        .set_time_format_rfc3339()
+        .build();
+
+    let mut loggers: Vec<Box<dyn SharedLogger>> = vec![
+        TermLogger::new(level, config.clone(), TerminalMode::Stderr, ColorChoice::Auto),
+    ];
+
+    if let Some(path) = log_file_path() {
+        // Truncate if log is > 2 MB to avoid unbounded growth
+        if let Ok(meta) = std::fs::metadata(&path) {
+            if meta.len() > 2 * 1024 * 1024 {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            Ok(file) => {
+                loggers.push(WriteLogger::new(level, config.clone(), file));
+                eprintln!("[mr-agent] Logging to {}", path.display());
+            }
+            Err(e) => {
+                eprintln!("[mr-agent] Warning: could not open log file {}: {}", path.display(), e);
+            }
+        }
+    }
+
+    CombinedLogger::init(loggers).unwrap_or_else(|e| {
+        eprintln!("[mr-agent] Failed to init logger: {}", e);
+    });
+}
+
+/// Install a panic hook that logs the panic info to our log file before aborting.
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic payload".to_string()
+        };
+        log::error!("PANIC at {}: {}", location, payload);
+
+        // Also write directly to the log file in case the logger is broken
+        if let Some(path) = log_file_path() {
+            let msg = format!(
+                "[PANIC] {} at {}\n",
+                payload, location
+            );
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    f.write_all(msg.as_bytes())
+                });
+        }
+
+        default_hook(info);
+    }));
+}
+
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    init_logging();
+    install_panic_hook();
 
     let args = Args::parse();
-    log::info!("mr-agent starting for node_id={}", args.node_id);
+    log::info!("mr-agent v{} starting for node_id={}", env!("CARGO_PKG_VERSION"), args.node_id);
 
     // Single instance check — prevent duplicate agents for the same node
     let _mutex_guard = ensure_single_instance(&args.node_id);
@@ -214,43 +309,54 @@ fn main() {
             }
 
             // 2. Check IPC messages (non-blocking via peek)
-            let has_data = pipe.peek_available().unwrap_or(0) > 0;
-            if has_data {
-                match ipc::read_message(&mut pipe) {
-                    Ok(payload) => {
-                        if let Ok(msg) = serde_json::from_slice::<MonitorToAgent>(&payload) {
-                            match msg {
-                                MonitorToAgent::Ping => {
-                                    let _ = send_message(&mut pipe, &AgentToMonitor::Pong);
-                                }
-                                MonitorToAgent::Shutdown => {
-                                    log::info!("Received shutdown during render, aborting");
-                                    if let Some(ref exec) = active_render {
-                                        exec.abort();
+            match pipe.peek_available() {
+                Ok(available) if available > 0 => {
+                    match ipc::read_message(&mut pipe) {
+                        Ok(payload) => {
+                            if let Ok(msg) = serde_json::from_slice::<MonitorToAgent>(&payload) {
+                                match msg {
+                                    MonitorToAgent::Ping => {
+                                        let _ = send_message(&mut pipe, &AgentToMonitor::Pong);
                                     }
-                                    // Wait briefly for worker to finish
-                                    thread::sleep(Duration::from_millis(500));
-                                    break;
-                                }
-                                MonitorToAgent::Abort(abort) => {
-                                    log::info!("Received abort: {}", abort.reason);
-                                    if let Some(ref exec) = active_render {
-                                        exec.abort();
+                                    MonitorToAgent::Shutdown => {
+                                        log::info!("Received shutdown during render, aborting");
+                                        if let Some(ref exec) = active_render {
+                                            exec.abort();
+                                        }
+                                        // Wait briefly for worker to finish
+                                        thread::sleep(Duration::from_millis(500));
+                                        break;
                                     }
-                                }
-                                MonitorToAgent::Task(_) => {
-                                    log::warn!("Received task while already rendering, ignoring");
+                                    MonitorToAgent::Abort(abort) => {
+                                        log::info!("Received abort: {}", abort.reason);
+                                        if let Some(ref exec) = active_render {
+                                            exec.abort();
+                                        }
+                                    }
+                                    MonitorToAgent::Task(_) => {
+                                        log::warn!("Received task while already rendering, ignoring");
+                                    }
                                 }
                             }
                         }
-                    }
-                    Err(e) => {
-                        log::error!("Pipe read error during render: {}", e);
-                        if let Some(ref exec) = active_render {
-                            exec.abort();
+                        Err(e) => {
+                            log::error!("Pipe read error during render: {}", e);
+                            if let Some(ref exec) = active_render {
+                                exec.abort();
+                            }
+                            break;
                         }
-                        break;
                     }
+                }
+                Ok(_) => {
+                    // No data available, continue polling
+                }
+                Err(e) => {
+                    log::error!("Pipe peek error (monitor disconnected?): {}", e);
+                    if let Some(ref exec) = active_render {
+                        exec.abort();
+                    }
+                    break;
                 }
             }
 
@@ -293,6 +399,11 @@ fn main() {
                         task.frame_end,
                         task.command.executable,
                     );
+                    // Capture task info before move for error reporting
+                    let job_id = task.job_id.clone();
+                    let frame_start = task.frame_start;
+                    let frame_end = task.frame_end;
+
                     match RenderExecutor::start(task) {
                         Ok(executor) => {
                             let _ = send_message(
@@ -306,9 +417,16 @@ fn main() {
                         }
                         Err(e) => {
                             log::error!("Failed to start render: {}", e);
-                            // Send failed message — use the info from the task
-                            // We can't access task here since it was moved, but the error
-                            // message will be logged. The monitor will detect no ack.
+                            let _ = send_message(
+                                &mut pipe,
+                                &AgentToMonitor::Failed(FailedMessage {
+                                    job_id,
+                                    frame_start,
+                                    frame_end,
+                                    exit_code: -1,
+                                    error: format!("Failed to start render: {}", e),
+                                }),
+                            );
                         }
                     }
                 }

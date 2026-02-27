@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/job_types.h"
+#include "core/peer_info.h"
 #include "monitor/node_failure_tracker.h"
 
 #include <string>
@@ -9,6 +10,7 @@
 #include <mutex>
 #include <chrono>
 #include <cstdint>
+#include <unordered_map>
 
 namespace MR {
 
@@ -75,6 +77,7 @@ private:
     void checkJobCompletions();
     void assignWork();
     void doSnapshot();
+    void tryRemoteAgentRestart(const PeerInfo& peer);
 
     MonitorApp* m_app = nullptr;
     DatabaseManager* m_db = nullptr;
@@ -91,8 +94,11 @@ private:
 
     NodeFailureTracker m_failureTracker;
 
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_lastAgentRestartAttempt;
+
     static constexpr int DISPATCH_INTERVAL_MS = 2000;
     static constexpr int SNAPSHOT_INTERVAL_MS = 30000;
+    static constexpr int AGENT_RESTART_COOLDOWN_MS = 60000;
 };
 
 } // namespace MR

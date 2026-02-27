@@ -218,9 +218,21 @@ void DispatchManager::detectDeadWorkers()
     auto peers = m_app->peerManager().getPeerSnapshot();
     for (const auto& p : peers)
     {
-        if (!p.is_alive && !p.is_local)
+        if (p.is_local)
+            continue;
+
+        // Existing: fully dead node
+        if (!p.is_alive)
         {
             m_db->reassignDeadWorkerChunks(p.node_id);
+            continue;
+        }
+
+        // New: alive but agent needs manual restart — reclaim chunks
+        if (p.agent_health == "needs_attention")
+        {
+            m_db->reassignDeadWorkerChunks(p.node_id);
+            tryRemoteAgentRestart(p);
         }
     }
 }
@@ -259,6 +271,10 @@ void DispatchManager::assignWork()
 
         // Skip suspended nodes (machine-level failure tracking)
         if (m_failureTracker.isSuspended(peer.node_id))
+            continue;
+
+        // Skip nodes with unhealthy agents
+        if (peer.agent_health != "ok")
             continue;
 
         // Find next pending chunk this peer is eligible for (respects tags + blacklist)
@@ -413,6 +429,45 @@ std::string DispatchManager::resubmitJob(const std::string& sourceJobId)
             std::string("resubmitJob failed: ") + e.what());
         return {};
     }
+}
+
+void DispatchManager::tryRemoteAgentRestart(const PeerInfo& peer)
+{
+    auto now = std::chrono::steady_clock::now();
+    auto it = m_lastAgentRestartAttempt.find(peer.node_id);
+    if (it != m_lastAgentRestartAttempt.end())
+    {
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - it->second).count();
+        if (elapsedMs < AGENT_RESTART_COOLDOWN_MS)
+            return;
+    }
+    m_lastAgentRestartAttempt[peer.node_id] = now;
+
+    auto [host, port] = parseEndpoint(peer.endpoint);
+    if (host.empty())
+        return;
+
+    MonitorLog::instance().info("dispatch",
+        "Attempting remote agent restart on " + peer.node_id);
+
+    std::thread([host, port, nodeId = peer.node_id]()
+    {
+        try
+        {
+            httplib::Client cli(host, port);
+            cli.set_connection_timeout(2);
+            cli.set_read_timeout(5);
+            auto res = cli.Post("/api/agent/restart", "", "application/json");
+            if (res && res->status == 200)
+                MonitorLog::instance().info("dispatch",
+                    "Remote agent restart succeeded on " + nodeId);
+            else
+                MonitorLog::instance().warn("dispatch",
+                    "Remote agent restart failed on " + nodeId);
+        }
+        catch (...) {}
+    }).detach();
 }
 
 void DispatchManager::doSnapshot()
