@@ -38,6 +38,9 @@ bool MonitorApp::init()
     // Initialize agent supervisor
     m_agentSupervisor.start(m_identity.nodeId());
 
+    // Detect RNDR binary
+    m_rndrSupervisor.detectBinary();
+
     // Set up agent message handler
     m_agentSupervisor.setMessageHandler([this](const std::string& type, const nlohmann::json& msg)
     {
@@ -115,6 +118,9 @@ void MonitorApp::update()
 
     // Note: completion/frame reports are flushed by the background HTTP worker thread.
 
+    // RNDR dual mode
+    m_rndrSupervisor.update(m_renderCoordinator.isRendering(), m_config.rndr_dual_mode);
+
     // Update render state on PeerManager
     if (m_renderCoordinator.isRendering())
     {
@@ -149,6 +155,7 @@ void MonitorApp::shutdown()
 
     m_renderCoordinator.abortCurrentRender("shutdown");
     m_agentSupervisor.stop();
+    m_rndrSupervisor.shutdown();
 
     saveConfig();
 }

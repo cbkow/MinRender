@@ -48,6 +48,7 @@ namespace Icons {
     inline const char* Computer = reinterpret_cast<const char*>(u8"\uF346"); // computer
     inline const char* Wifi     = reinterpret_cast<const char*>(u8"\uF52A"); // wifi
     inline const char* WifiOff  = reinterpret_cast<const char*>(u8"\uF74B"); // wifi_off
+    inline const char* Dual     = reinterpret_cast<const char*>(u8"\uE9E4"); // swap_horiz
 }
 
 } // namespace MR

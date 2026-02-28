@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MinRender VERSION 0.3.2 LANGUAGES C CXX)
+project(MinRender VERSION 0.3.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -107,6 +107,7 @@ add_executable(minrender
     src/monitor/main.cpp
     src/monitor/monitor_app.cpp
     src/monitor/agent_supervisor.cpp
+    src/monitor/rndr_supervisor.cpp
     src/monitor/template_manager.cpp
     src/monitor/render_coordinator.cpp
     src/monitor/database_manager.cpp

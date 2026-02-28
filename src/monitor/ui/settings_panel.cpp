@@ -1,5 +1,6 @@
 #include "monitor/ui/settings_panel.h"
 #include "monitor/monitor_app.h"
+#include "monitor/rndr_supervisor.h"
 #include "monitor/ui/style.h"
 #include "monitor/ui/ui_macros.h"
 #include "core/config.h"
@@ -50,6 +51,7 @@ void SettingsPanel::loadFromConfig()
     m_udpPort = static_cast<int>(cfg.udp_port);
     m_showNotifications = cfg.show_notifications;
     m_stagingEnabled = cfg.staging_enabled;
+    m_rndrDualMode = cfg.rndr_dual_mode;
     m_fontScale = cfg.font_scale;
     m_savedSyncRoot = cfg.sync_root;
 }
@@ -79,6 +81,7 @@ void SettingsPanel::applyToConfig()
     cfg.udp_port = static_cast<uint16_t>(m_udpPort);
     cfg.show_notifications = m_showNotifications;
     cfg.staging_enabled = m_stagingEnabled;
+    cfg.rndr_dual_mode = m_rndrDualMode;
     cfg.font_scale = m_fontScale;
 
     ImGui::GetIO().FontGlobalScale = m_fontScale;
@@ -307,6 +310,42 @@ void SettingsPanel::render()
         ImGui::Separator();
     }
     PopOutlineHeaderStyle();
+
+    // --- RNDR Dual Mode ---
+    if (m_app->rndrSupervisor().isBinaryAvailable())
+    {
+        PushOutlineHeaderStyle();
+        if (CollapsingHeaderWithIcon("      RNDR Dual Mode", Fonts::icons, Icons::Dual, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Checkbox("Enable RNDR Dual Mode", &m_rndrDualMode);
+            ImGui::TextDisabled("Run RNDR client during idle time. Automatically paused when rendering.");
+
+            ImGui::Spacing();
+            auto& rndr = m_app->rndrSupervisor();
+            std::string status = rndr.statusText();
+
+            ImVec4 statusColor;
+            switch (rndr.state())
+            {
+            case RndrState::Running:
+                statusColor = ImVec4(0.3f, 0.9f, 0.3f, 1.0f);
+                break;
+            case RndrState::Cooldown:
+                statusColor = ImVec4(0.9f, 0.9f, 0.3f, 1.0f);
+                break;
+            case RndrState::RenderActive:
+                statusColor = ImVec4(0.9f, 0.6f, 0.3f, 1.0f);
+                break;
+            default:
+                statusColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+                break;
+            }
+
+            ImGui::TextColored(statusColor, "%s", status.c_str());
+            ImGui::Separator();
+        }
+        PopOutlineHeaderStyle();
+    }
 
     // --- Tags ---
     PushOutlineHeaderStyle();

@@ -26,6 +26,7 @@ private:
     int  m_udpPort = 4243;
     bool m_showNotifications = true;
     bool m_stagingEnabled = false;
+    bool m_rndrDualMode = false;
     float m_fontScale = 1.0f;
 
     std::string m_savedSyncRoot;

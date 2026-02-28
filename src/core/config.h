@@ -38,6 +38,9 @@ struct Config
     // Rendering
     bool staging_enabled = false;
 
+    // RNDR dual mode
+    bool rndr_dual_mode = false;
+
     // Persisted node state
     bool node_stopped = false;
 };
@@ -57,6 +60,7 @@ inline void to_json(nlohmann::json& j, const Config& c)
         {"show_notifications", c.show_notifications},
         {"font_scale", c.font_scale},
         {"staging_enabled", c.staging_enabled},
+        {"rndr_dual_mode", c.rndr_dual_mode},
         {"node_stopped", c.node_stopped},
     };
 }
@@ -74,6 +78,7 @@ inline void from_json(const nlohmann::json& j, Config& c)
     if (j.contains("show_notifications")) j.at("show_notifications").get_to(c.show_notifications);
     if (j.contains("font_scale"))         j.at("font_scale").get_to(c.font_scale);
     if (j.contains("staging_enabled"))    j.at("staging_enabled").get_to(c.staging_enabled);
+    if (j.contains("rndr_dual_mode"))    j.at("rndr_dual_mode").get_to(c.rndr_dual_mode);
     if (j.contains("node_stopped"))       j.at("node_stopped").get_to(c.node_stopped);
 }
 
@@ -81,7 +86,7 @@ inline void from_json(const nlohmann::json& j, Config& c)
 constexpr uint32_t PROTOCOL_VERSION = 2;
 
 #ifndef APP_VERSION
-#define APP_VERSION "0.3.2"
+#define APP_VERSION "0.3.3"
 #endif
 
 } // namespace MR
