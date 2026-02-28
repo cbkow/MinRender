@@ -35,3 +35,6 @@ _deps/
 
 # Rust
 mr-agent/target/
+
+# Internal planning notes
+notes/
