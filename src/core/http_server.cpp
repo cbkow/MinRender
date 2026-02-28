@@ -87,6 +87,20 @@ void HttpServer::setupRoutes()
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
+    // POST /api/node/restart -- remotely restart the entire monitor app via sidecar
+    m_server.Post("/api/node/restart", [this](const httplib::Request&, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+        MonitorLog::instance().info("farm", "Remote app restart requested");
+        if (m_app->launchRestartSidecar())
+            res.set_content(R"({"status":"ok"})", "application/json");
+        else
+        {
+            res.status = 500;
+            res.set_content(R"({"error":"restart_failed"})", "application/json");
+        }
+    });
+
     // --- Remote agent control (every node) ---
 
     // POST /api/agent/restart -- remotely restart agent on this node
@@ -310,6 +324,35 @@ void HttpServer::setupRoutes()
         }
         nlohmann::json body = {{"status", "ok"}, {"job_id", newId}};
         res.set_content(body.dump(), "application/json");
+    });
+
+    // POST /api/jobs/:id/resubmit-chunk -- create new job from existing manifest with frame range override
+    m_server.Post(R"(/api/jobs/([^/]+)/resubmit-chunk)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+        std::string jobId = req.matches[1];
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            int frameStart = body.at("frame_start").get<int>();
+            int frameEnd = body.at("frame_end").get<int>();
+            int chunkSize = body.at("chunk_size").get<int>();
+            auto newId = m_app->resubmitChunkAsJob(jobId, frameStart, frameEnd, chunkSize);
+            if (newId.empty())
+            {
+                res.status = 404;
+                res.set_content(R"({"error":"resubmit_chunk_failed"})", "application/json");
+                return;
+            }
+            nlohmann::json resp = {{"status", "ok"}, {"job_id", newId}};
+            res.set_content(resp.dump(), "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json resp = {{"error", e.what()}};
+            res.set_content(resp.dump(), "application/json");
+        }
     });
 
     // POST /api/chunks/reassign -- reassign a chunk to pending or to a specific node

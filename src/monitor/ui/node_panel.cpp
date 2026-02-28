@@ -9,6 +9,7 @@
 #include <httplib.h>
 #include <algorithm>
 #include <thread>
+#include <fstream>
 
 namespace MR {
 
@@ -348,6 +349,21 @@ void NodePanel::render()
                             }).detach();
                         }
 
+                        // Restart App button
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Restart App"))
+                        {
+                            std::string ep = peer.endpoint;
+                            std::thread([ep]() {
+                                auto [host, port] = parseEndpoint(ep);
+                                if (host.empty()) return;
+                                httplib::Client cli(host, port);
+                                cli.set_connection_timeout(2);
+                                cli.set_read_timeout(10);
+                                cli.Post("/api/node/restart");
+                            }).detach();
+                        }
+
                         // Unsuspend button (only leader can unsuspend)
                         if (m_app->isLeader() &&
                             m_app->dispatchManager().failureTracker().isSuspended(peer.node_id))
@@ -359,6 +375,32 @@ void NodePanel::render()
 
                         PopOutlineButtonStyle();
                         ImGui::Unindent(16.0f);
+                    }
+
+                    // Filesystem restart button for dead peers
+                    if (!peer.is_alive)
+                    {
+                        auto nodeDir = m_app->farmPath() / "nodes" / peer.node_id;
+                        std::error_code ec;
+                        if (std::filesystem::is_directory(nodeDir, ec))
+                        {
+                            ImGui::Indent(16.0f);
+                            PushOutlineButtonStyle();
+                            if (ImGui::SmallButton("Restart (FS)"))
+                            {
+                                auto signalPath = nodeDir / "restart";
+                                std::ofstream ofs(signalPath);
+                                // empty file — presence is the signal
+                            }
+                            if (ImGui::IsItemHovered())
+                            {
+                                ImGui::BeginTooltip();
+                                ImGui::TextUnformatted("Write restart signal to shared filesystem (node must still be running)");
+                                ImGui::EndTooltip();
+                            }
+                            PopOutlineButtonStyle();
+                            ImGui::Unindent(16.0f);
+                        }
                     }
 
                     ImGui::Dummy(ImVec2(0, 6.0f));  // bottom padding inside shape

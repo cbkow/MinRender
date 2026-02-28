@@ -48,6 +48,22 @@ static std::string formatTimestampFull(int64_t ms)
     return buf;
 }
 
+static std::string formatDuration(int64_t ms)
+{
+    int64_t totalSec = ms / 1000;
+    int64_t h = totalSec / 3600;
+    int64_t m = (totalSec % 3600) / 60;
+    int64_t s = totalSec % 60;
+    char buf[64];
+    if (h > 0)
+        snprintf(buf, sizeof(buf), "%lldh %lldm %llds", (long long)h, (long long)m, (long long)s);
+    else if (m > 0)
+        snprintf(buf, sizeof(buf), "%lldm %llds", (long long)m, (long long)s);
+    else
+        snprintf(buf, sizeof(buf), "%llds", (long long)s);
+    return buf;
+}
+
 void JobDetailPanel::render()
 {
     if (!visible) return;
@@ -73,6 +89,7 @@ void JobDetailPanel::render()
             m_detailJobId = m_app->selectedJobId();
             m_hasDetailCache = false;
             m_detailChunksJobId.clear();
+            m_selectedChunkIdx = -1;
         }
     }
     else if (m_app && m_app->selectedJobId().empty() && m_mode == DetailMode::Detail)
@@ -684,40 +701,7 @@ void JobDetailPanel::renderDetailMode()
 
     const auto& job = *jobPtr;
 
-    // Header: job_id + state badge
-    ImGui::PushStyleColor(ImGuiCol_Text, stateColor(job.current_state));
-    ImGui::Text("[%s]", job.current_state.c_str());
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-    if (Fonts::bold) ImGui::PushFont(Fonts::bold);
-    ImGui::Text("%s", job.manifest.job_id.c_str());
-    if (Fonts::bold) ImGui::PopFont();
-
-    // Info line
-    ImGui::Text("Template: %s  |  Priority: %d  |  By: %s",
-        job.manifest.template_id.c_str(),
-        job.current_priority,
-        job.manifest.submitted_by.c_str());
-    ImGui::Text("Submitted: %s  |  Frames: %d-%d (chunk %d)",
-        formatTimestampFull(job.manifest.submitted_at_ms).c_str(),
-        job.manifest.frame_start, job.manifest.frame_end, job.manifest.chunk_size);
-
-    ImGui::Separator();
-
-    // Progress bar
-    if (job.total_chunks > 0)
-    {
-        float fraction = static_cast<float>(job.completed_chunks) / static_cast<float>(job.total_chunks);
-        char overlay[128];
-        snprintf(overlay, sizeof(overlay), "%d/%d completed, %d rendering, %d failed",
-            job.completed_chunks, job.total_chunks, job.rendering_chunks, job.failed_chunks);
-
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
-        ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay);
-        ImGui::PopStyleColor();
-    }
-
-    // Frame grid (leader or worker — uses MonitorApp::getChunksForJob dual-path)
+    // Refresh chunk data early so duration counter can access it
     if (m_app->isFarmRunning())
     {
         bool needsRefresh = (m_detailChunksJobId != m_detailJobId);
@@ -743,21 +727,79 @@ void JobDetailPanel::renderDetailMode()
             m_detailChunksLastState = job.current_state;
             m_lastChunkRefresh = std::chrono::steady_clock::now();
         }
+    }
 
-        if (!m_detailChunks.empty())
+    // Clamp selection if chunks changed
+    if (m_selectedChunkIdx >= (int)m_detailChunks.size())
+        m_selectedChunkIdx = -1;
+
+    // ── Sticky toolbar (above scroll) ──────────────────────────
+
+    // Header: job_id + state badge
+    ImGui::PushStyleColor(ImGuiCol_Text, stateColor(job.current_state));
+    ImGui::Text("[%s]", job.current_state.c_str());
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    if (Fonts::bold) ImGui::PushFont(Fonts::bold);
+    ImGui::Text("%s", job.manifest.job_id.c_str());
+    if (Fonts::bold) ImGui::PopFont();
+
+    // Info lines
+    ImGui::Text("Template: %s  |  Priority: %d  |  By: %s",
+        job.manifest.template_id.c_str(),
+        job.current_priority,
+        job.manifest.submitted_by.c_str());
+    ImGui::Text("Submitted: %s  |  Frames: %d-%d (chunk %d)",
+        formatTimestampFull(job.manifest.submitted_at_ms).c_str(),
+        job.manifest.frame_start, job.manifest.frame_end, job.manifest.chunk_size);
+
+    // Duration counter
+    {
+        int64_t firstAssigned = 0;
+        int64_t lastCompleted = 0;
+        for (const auto& c : m_detailChunks)
         {
-            ImGui::Separator();
-            ImGui::Text("Frames:");
-            renderFrameGrid(m_detailChunks, job.manifest.frame_start, job.manifest.frame_end);
+            if (c.assigned_at_ms > 0)
+            {
+                if (firstAssigned == 0 || c.assigned_at_ms < firstAssigned)
+                    firstAssigned = c.assigned_at_ms;
+            }
+            if (c.completed_at_ms > 0)
+            {
+                if (c.completed_at_ms > lastCompleted)
+                    lastCompleted = c.completed_at_ms;
+            }
+        }
 
-            ImGui::Separator();
-            renderChunkTable();
+        if (firstAssigned > 0)
+        {
+            bool isTerminal = (job.current_state == "completed"
+                || job.current_state == "cancelled"
+                || job.current_state == "failed");
+
+            int64_t endMs;
+            if (isTerminal && lastCompleted > 0)
+                endMs = lastCompleted;
+            else
+            {
+                auto now = std::chrono::system_clock::now();
+                endMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()).count();
+            }
+
+            int64_t durationMs = endMs - firstAssigned;
+            if (durationMs < 0) durationMs = 0;
+
+            if (isTerminal)
+                ImGui::Text("Rendered in: %s", formatDuration(durationMs).c_str());
+            else
+                ImGui::Text("Rendering: %s", formatDuration(durationMs).c_str());
         }
     }
 
     ImGui::Separator();
 
-    // Control buttons (state-dependent)
+    // Control buttons toolbar (state-dependent)
     PushOutlineButtonStyle();
     if (job.current_state == "active")
     {
@@ -806,7 +848,38 @@ void JobDetailPanel::renderDetailMode()
     }
     PopOutlineButtonStyle();
 
-    // Confirmation popups
+    ImGui::Separator();
+
+    // ── Scrollable content ─────────────────────────────────────
+    ImGui::BeginChild("##DetailScroll", ImVec2(0, 0));
+
+    // Progress bar
+    if (job.total_chunks > 0)
+    {
+        float fraction = static_cast<float>(job.completed_chunks) / static_cast<float>(job.total_chunks);
+        char overlay[128];
+        snprintf(overlay, sizeof(overlay), "%d/%d completed, %d rendering, %d failed",
+            job.completed_chunks, job.total_chunks, job.rendering_chunks, job.failed_chunks);
+
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+        ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), overlay);
+        ImGui::PopStyleColor();
+    }
+
+    // Frame grid + chunk table
+    if (!m_detailChunks.empty())
+    {
+        ImGui::Separator();
+        ImGui::Text("Frames:");
+        renderFrameGrid(m_detailChunks, job.manifest.frame_start, job.manifest.frame_end);
+
+        ImGui::Separator();
+        renderChunkTable();
+    }
+
+    ImGui::EndChild();
+
+    // Confirmation popups (modals render as overlays at parent level)
     if (m_pendingCancel)
     {
         ImGui::OpenPopup("Confirm Cancel");
@@ -899,6 +972,46 @@ void JobDetailPanel::renderDetailMode()
         PopOutlineButtonStyle();
         ImGui::EndPopup();
     }
+
+    if (m_pendingChunkSubmit)
+    {
+        ImGui::OpenPopup("Submit Chunk as Job");
+        m_pendingChunkSubmit = false;
+    }
+    if (ImGui::BeginPopupModal("Submit Chunk as Job", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        ImGui::Text("Submit frames %d-%d as a new job from '%s'.",
+            m_chunkSubmitFrameStart, m_chunkSubmitFrameEnd, m_detailJobId.c_str());
+        ImGui::Spacing();
+
+        ImGui::Text("Frame Range:");
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::InputInt("##ChunkSubStart", &m_chunkSubmitFrameStart, 0);
+        ImGui::SameLine();
+        ImGui::TextDisabled("-");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::InputInt("##ChunkSubEnd", &m_chunkSubmitFrameEnd, 0);
+
+        ImGui::Text("Chunk Size:");
+        ImGui::SetNextItemWidth(80.0f);
+        ImGui::InputInt("##ChunkSubSize", &m_chunkSubmitChunkSize, 0);
+        if (m_chunkSubmitChunkSize < 1) m_chunkSubmitChunkSize = 1;
+
+        ImGui::Spacing();
+        PushOutlineButtonStyle();
+        if (ImGui::Button("Submit"))
+        {
+            m_app->resubmitChunkAsJob(m_detailJobId,
+                m_chunkSubmitFrameStart, m_chunkSubmitFrameEnd, m_chunkSubmitChunkSize);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
+        ImGui::EndPopup();
+    }
 }
 
 void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fStart, int fEnd)
@@ -955,7 +1068,15 @@ void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fS
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     ImVec2 origin = ImGui::GetCursorScreenPos();
 
-    // Pass 1: colored rectangles
+    // Determine selected chunk frame range for gold border
+    int selFrameStart = -1, selFrameEnd = -1;
+    if (m_selectedChunkIdx >= 0 && m_selectedChunkIdx < (int)chunks.size())
+    {
+        selFrameStart = chunks[m_selectedChunkIdx].frame_start;
+        selFrameEnd = chunks[m_selectedChunkIdx].frame_end;
+    }
+
+    // Pass 1: colored rectangles + selection border
     for (int i = 0; i < totalFrames; ++i)
     {
         int col = i % cols;
@@ -972,6 +1093,16 @@ void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fS
         else                        color = IM_COL32(64, 64, 64, 255);
 
         drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + cellSize, y + cellSize), color, 2.0f);
+
+        // Gold border for frames in selected chunk
+        int frameNum = fStart + i;
+        if (frameNum >= selFrameStart && frameNum <= selFrameEnd)
+        {
+            drawList->AddRect(
+                ImVec2(x - 1.0f, y - 1.0f),
+                ImVec2(x + cellSize + 1.0f, y + cellSize + 1.0f),
+                IM_COL32(255, 200, 50, 255), 2.0f, 0, 2.0f);
+        }
     }
 
     // Pass 2: hover tooltips via InvisibleButton
@@ -1034,8 +1165,9 @@ void JobDetailPanel::renderChunkTable()
         ImGui::TableSetupColumn("Failed On", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
 
-        for (const auto& c : m_detailChunks)
+        for (int ci = 0; ci < (int)m_detailChunks.size(); ++ci)
         {
+            const auto& c = m_detailChunks[ci];
             ImGui::TableNextRow();
 
             // Chunk (frame range)
@@ -1046,42 +1178,59 @@ void JobDetailPanel::renderChunkTable()
             else
                 snprintf(rangeLabel, sizeof(rangeLabel), "%d-%d", c.frame_start, c.frame_end);
 
-            // Make the row selectable for right-click
+            // Make the row selectable for left-click selection + right-click context
             ImGui::PushID(static_cast<int>(c.id));
-            bool rowSelected = false;
-            ImGui::Selectable(rangeLabel, &rowSelected,
-                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap);
+            bool isSelected = (m_selectedChunkIdx == ci);
+            if (ImGui::Selectable(rangeLabel, isSelected,
+                ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
+            {
+                m_selectedChunkIdx = isSelected ? -1 : ci;
+            }
 
-            // Right-click context menu (only for non-completed chunks)
-            if (c.state != "completed" && ImGui::BeginPopupContextItem("##ChunkCtx"))
+            // Right-click context menu
+            if (ImGui::BeginPopupContextItem("##ChunkCtx"))
             {
                 m_contextChunkId = c.id;
                 m_contextChunkJobId = c.job_id;
 
-                if (ImGui::MenuItem("Reset to Pending"))
+                // Reset/reassign only for non-completed chunks
+                if (c.state != "completed")
                 {
-                    m_app->reassignChunk(m_contextChunkId, "");
-                }
-
-                // List alive peer nodes
-                auto peers = m_app->peerManager().getPeerSnapshot();
-                if (!peers.empty())
-                {
-                    ImGui::Separator();
-                    ImGui::TextDisabled("Reassign to:");
-                    for (const auto& p : peers)
+                    if (ImGui::MenuItem("Reset to Pending"))
                     {
-                        if (p.node_state != "active") continue;
+                        m_app->reassignChunk(m_contextChunkId, "");
+                    }
 
-                        std::string label = p.hostname.empty() ? p.node_id : p.hostname;
-                        if (p.node_id == c.assigned_to)
-                            label += " (current)";
-
-                        if (ImGui::MenuItem(label.c_str()))
+                    // List alive peer nodes
+                    auto peers = m_app->peerManager().getPeerSnapshot();
+                    if (!peers.empty())
+                    {
+                        ImGui::Separator();
+                        ImGui::TextDisabled("Reassign to:");
+                        for (const auto& p : peers)
                         {
-                            m_app->reassignChunk(m_contextChunkId, p.node_id);
+                            if (p.node_state != "active") continue;
+
+                            std::string label = p.hostname.empty() ? p.node_id : p.hostname;
+                            if (p.node_id == c.assigned_to)
+                                label += " (current)";
+
+                            if (ImGui::MenuItem(label.c_str()))
+                            {
+                                m_app->reassignChunk(m_contextChunkId, p.node_id);
+                            }
                         }
                     }
+
+                    ImGui::Separator();
+                }
+
+                if (ImGui::MenuItem("Submit as New Job"))
+                {
+                    m_pendingChunkSubmit = true;
+                    m_chunkSubmitFrameStart = c.frame_start;
+                    m_chunkSubmitFrameEnd = c.frame_end;
+                    m_chunkSubmitChunkSize = m_cachedDetail.manifest.chunk_size;
                 }
 
                 ImGui::EndPopup();

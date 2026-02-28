@@ -39,6 +39,9 @@ public:
     // Optimistic update: set a remote peer's node_state locally (instant UI feedback)
     void setPeerNodeState(const std::string& nodeId, const std::string& state);
 
+    // Filesystem restart signal (checked from background thread, consumed from main thread)
+    bool consumeRestartSignal();
+
     // UDP multicast fast path (called from main thread via MonitorApp)
     void processUdpHeartbeat(const std::string& nodeId, const std::string& ip,
                              uint16_t port, const std::string& nodeState,
@@ -66,6 +69,9 @@ private:
     // Recompute leader from alive peers + self
     void recomputeLeader();
 
+    // Check for {farmPath}/nodes/{nodeId}/restart signal file
+    void checkRestartSignal();
+
     std::filesystem::path m_farmPath;
     std::string m_nodeId;
     std::string m_localEndpoint;
@@ -86,6 +92,7 @@ private:
 
     std::thread m_thread;
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_restartSignaled{false};
 };
 
 } // namespace MR

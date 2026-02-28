@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <filesystem>
 #include <thread>
 #include <unordered_map>
 
@@ -100,6 +101,16 @@ std::string DispatchManager::submitJob(const JobManifest& manifest, int priority
 
     if (!m_db->insertJob(row))
         return {};
+
+    // Create output directory once (leader-only, at submission time)
+    if (manifest.output_dir.has_value() && !manifest.output_dir.value().empty())
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(manifest.output_dir.value(), ec);
+        if (ec)
+            MonitorLog::instance().warn("dispatch",
+                "Failed to create output dir for job " + manifest.job_id + ": " + ec.message());
+    }
 
     // Compute and insert chunks
     auto chunks = computeChunks(manifest.frame_start, manifest.frame_end, manifest.chunk_size);
@@ -427,6 +438,65 @@ std::string DispatchManager::resubmitJob(const std::string& sourceJobId)
     {
         MonitorLog::instance().error("dispatch",
             std::string("resubmitJob failed: ") + e.what());
+        return {};
+    }
+}
+
+std::string DispatchManager::resubmitJobWithOverrides(const std::string& sourceJobId,
+                                                      int frameStart, int frameEnd, int chunkSize)
+{
+    if (!m_db || !m_db->isOpen())
+        return {};
+
+    auto jobOpt = m_db->getJob(sourceJobId);
+    if (!jobOpt.has_value())
+        return {};
+
+    try
+    {
+        auto manifest = nlohmann::json::parse(jobOpt->manifest_json).get<JobManifest>();
+
+        // Override frame range and chunk size
+        manifest.frame_start = frameStart;
+        manifest.frame_end = frameEnd;
+        manifest.chunk_size = chunkSize;
+
+        // Generate new job_id: append "-v2", "-v3", etc.
+        std::string baseSlug = manifest.job_id;
+        auto vpos = baseSlug.rfind("-v");
+        if (vpos != std::string::npos)
+        {
+            bool allDigits = true;
+            for (size_t i = vpos + 2; i < baseSlug.size(); ++i)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(baseSlug[i])))
+                {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits && vpos + 2 < baseSlug.size())
+                baseSlug = baseSlug.substr(0, vpos);
+        }
+
+        std::string newJobId;
+        for (int suffix = 2; suffix < 1000; ++suffix)
+        {
+            newJobId = baseSlug + "-v" + std::to_string(suffix);
+            if (!m_db->getJob(newJobId).has_value())
+                break;
+        }
+
+        manifest.job_id = newJobId;
+        manifest.submitted_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        return submitJob(manifest, jobOpt->priority);
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("dispatch",
+            std::string("resubmitJobWithOverrides failed: ") + e.what());
         return {};
     }
 }

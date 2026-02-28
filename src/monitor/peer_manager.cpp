@@ -173,6 +173,7 @@ void PeerManager::threadFunc()
     while (m_running.load())
     {
         writeEndpoint();
+        checkRestartSignal();
         discoverPeers();
         pollPeers();
         recomputeLeader();
@@ -500,6 +501,40 @@ void PeerManager::recomputeLeader()
     // Update leader flags on peers
     for (auto& [id, info] : m_peers)
         info.is_leader = (id == newLeader);
+}
+
+void PeerManager::checkRestartSignal()
+{
+    auto signalPath = m_farmPath / "nodes" / m_nodeId / "restart";
+    std::error_code ec;
+    if (!std::filesystem::exists(signalPath, ec))
+        return;
+
+    // Ignore stale signal files (older than 60 seconds)
+    auto ftime = std::filesystem::last_write_time(signalPath, ec);
+    if (!ec)
+    {
+        auto age = std::filesystem::file_time_type::clock::now() - ftime;
+        auto ageSec = std::chrono::duration_cast<std::chrono::seconds>(age).count();
+        if (ageSec > 60)
+        {
+            // Stale — delete and ignore
+            std::filesystem::remove(signalPath, ec);
+            MonitorLog::instance().info("peer", "Removed stale restart signal (" +
+                std::to_string(ageSec) + "s old)");
+            return;
+        }
+    }
+
+    // Valid signal — consume it
+    std::filesystem::remove(signalPath, ec);
+    m_restartSignaled.store(true);
+    MonitorLog::instance().info("peer", "Restart signal file detected and consumed");
+}
+
+bool PeerManager::consumeRestartSignal()
+{
+    return m_restartSignaled.exchange(false);
 }
 
 } // namespace MR

@@ -60,6 +60,7 @@ private:
     std::mutex m_writeMutex;
 
     bool readExact(void* buf, DWORD count, int timeoutMs);
+    bool writeAll(const void* data, DWORD count);
 #endif
 };
 

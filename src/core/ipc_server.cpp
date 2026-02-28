@@ -122,9 +122,8 @@ bool IpcServer::send(const std::string& json)
 
     // Write 4-byte little-endian length prefix
     uint32_t len = static_cast<uint32_t>(json.size());
-    DWORD bytesWritten = 0;
 
-    if (!WriteFile(m_pipe, &len, sizeof(len), &bytesWritten, nullptr) || bytesWritten != sizeof(len))
+    if (!writeAll(&len, sizeof(len)))
     {
         std::cerr << "[IpcServer] Failed to write length prefix: " << GetLastError() << std::endl;
         m_connected = false;
@@ -132,7 +131,7 @@ bool IpcServer::send(const std::string& json)
     }
 
     // Write payload
-    if (!WriteFile(m_pipe, json.data(), len, &bytesWritten, nullptr) || bytesWritten != len)
+    if (!writeAll(json.data(), len))
     {
         std::cerr << "[IpcServer] Failed to write payload: " << GetLastError() << std::endl;
         m_connected = false;
@@ -140,6 +139,55 @@ bool IpcServer::send(const std::string& json)
     }
 
     return true;
+}
+
+bool IpcServer::writeAll(const void* data, DWORD count)
+{
+    // Must use overlapped I/O — the pipe was created with FILE_FLAG_OVERLAPPED,
+    // so synchronous WriteFile (nullptr OVERLAPPED) is undefined behavior.
+    OVERLAPPED ov{};
+    ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!ov.hEvent) return false;
+
+    DWORD bytesWritten = 0;
+    BOOL result = WriteFile(m_pipe, data, count, &bytesWritten, &ov);
+
+    if (result)
+    {
+        // Completed synchronously
+        CloseHandle(ov.hEvent);
+        return bytesWritten == count;
+    }
+
+    DWORD err = GetLastError();
+    if (err != ERROR_IO_PENDING)
+    {
+        CloseHandle(ov.hEvent);
+        if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA)
+            m_connected = false;
+        return false;
+    }
+
+    // Wait for write to complete (5s timeout — local pipe should be instant)
+    DWORD waitResult = WaitForSingleObject(ov.hEvent, 5000);
+    if (waitResult == WAIT_OBJECT_0)
+    {
+        DWORD transferred = 0;
+        BOOL ok = GetOverlappedResult(m_pipe, &ov, &transferred, FALSE);
+        CloseHandle(ov.hEvent);
+        if (!ok)
+        {
+            DWORD ovErr = GetLastError();
+            if (ovErr == ERROR_BROKEN_PIPE) m_connected = false;
+            return false;
+        }
+        return transferred == count;
+    }
+
+    // Timeout — cancel the pending write
+    CancelIo(m_pipe);
+    CloseHandle(ov.hEvent);
+    return false;
 }
 
 bool IpcServer::readExact(void* buf, DWORD count, int timeoutMs)

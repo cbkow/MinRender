@@ -73,6 +73,7 @@ public:
     void retryFailedChunks(const std::string& jobId);
     void reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
     std::string resubmitJob(const std::string& jobId);
+    std::string resubmitChunkAsJob(const std::string& jobId, int frameStart, int frameEnd, int chunkSize);
     void unsuspendNode(const std::string& nodeId);
 
     // Node state controls
@@ -92,6 +93,9 @@ public:
     TrayIconState trayState() const;
     std::string trayTooltip() const;
     std::string trayStatusText() const;
+
+    // Restart (sidecar batch script that relaunches the app)
+    bool launchRestartSidecar();
 
     // Exit flow
     void requestExit();

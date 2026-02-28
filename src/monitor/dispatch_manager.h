@@ -67,6 +67,10 @@ public:
     // Create a new job from an existing job's manifest (clean slate)
     std::string resubmitJob(const std::string& sourceJobId);
 
+    // Resubmit with overridden frame range and chunk size (for chunk-as-job)
+    std::string resubmitJobWithOverrides(const std::string& sourceJobId,
+                                         int frameStart, int frameEnd, int chunkSize);
+
     // Machine-level failure tracking
     NodeFailureTracker& failureTracker() { return m_failureTracker; }
 

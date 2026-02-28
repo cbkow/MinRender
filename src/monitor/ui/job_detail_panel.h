@@ -30,7 +30,6 @@ private:
     void onTemplateSelected(int idx);
     void doSubmit();
     void resolveOutputPatterns();
-
     MonitorApp* m_app = nullptr;
     DetailMode m_mode = DetailMode::Empty;
 
@@ -67,9 +66,17 @@ private:
     std::string m_detailChunksLastState;  // detect state transitions for final refresh
     std::chrono::steady_clock::time_point m_lastChunkRefresh;
 
+    // Chunk selection (frame grid highlighting)
+    int m_selectedChunkIdx = -1;
+
     // Chunk table context menu state
     int64_t m_contextChunkId = 0;
     std::string m_contextChunkJobId;
+
+    // "Submit Chunk as Job" popup state
+    bool m_pendingChunkSubmit = false;
+    int m_chunkSubmitFrameStart = 0, m_chunkSubmitFrameEnd = 0;
+    int m_chunkSubmitChunkSize = 1;
 
     // Async submission state (worker → leader)
     bool m_asyncSubmitting = false;

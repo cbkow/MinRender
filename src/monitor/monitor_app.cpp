@@ -12,6 +12,10 @@
 #include <chrono>
 #include <unordered_map>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace MR {
 
 bool MonitorApp::init()
@@ -131,6 +135,13 @@ void MonitorApp::update()
     else
     {
         m_peerManager.setRenderState("idle");
+    }
+
+    // Check for filesystem restart signal
+    if (m_peerManager.consumeRestartSignal())
+    {
+        MonitorLog::instance().info("farm", "Restart signal detected via filesystem");
+        launchRestartSidecar();
     }
 
     // Process exit
@@ -839,6 +850,32 @@ std::string MonitorApp::resubmitJob(const std::string& jobId)
     return {};
 }
 
+std::string MonitorApp::resubmitChunkAsJob(const std::string& jobId,
+                                           int frameStart, int frameEnd, int chunkSize)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        auto newId = m_dispatchManager.resubmitJobWithOverrides(jobId, frameStart, frameEnd, chunkSize);
+        if (!newId.empty())
+        {
+            MonitorLog::instance().info("job",
+                "Submitted chunk job: " + newId + " (from " + jobId + ")");
+            selectJob(newId);
+        }
+        return newId;
+    }
+    else
+    {
+        nlohmann::json body = {
+            {"frame_start", frameStart},
+            {"frame_end", frameEnd},
+            {"chunk_size", chunkSize},
+        };
+        postToLeaderAsync("/api/jobs/" + jobId + "/resubmit-chunk", body.dump());
+    }
+    return {};
+}
+
 void MonitorApp::unsuspendNode(const std::string& nodeId)
 {
     if (isLeader())
@@ -957,6 +994,77 @@ void MonitorApp::beginForceExit()
 void MonitorApp::cancelExit()
 {
     m_exitRequested = false;
+}
+
+// --- Restart sidecar ---
+
+bool MonitorApp::launchRestartSidecar()
+{
+#ifdef _WIN32
+    DWORD pid = GetCurrentProcessId();
+
+    wchar_t exePathW[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
+    std::filesystem::path exePath(exePathW);
+
+    auto batPath = m_appDataDir / "restart.bat";
+
+    // Write restart batch script
+    {
+        std::ofstream bat(batPath);
+        if (!bat.good())
+        {
+            MonitorLog::instance().error("farm", "Failed to write restart.bat");
+            return false;
+        }
+        bat << "@echo off\n";
+        bat << "set PID=" << pid << "\n";
+        bat << "set EXE=" << exePath.string() << "\n";
+        bat << "for /L %%i in (1,1,15) do (\n";
+        bat << "    tasklist /FI \"PID eq %PID%\" 2>NUL | find \"%PID%\" >NUL\n";
+        bat << "    if errorlevel 1 goto :launch\n";
+        bat << "    timeout /t 1 /nobreak >NUL\n";
+        bat << ")\n";
+        bat << "taskkill /F /PID %PID% >NUL 2>&1\n";
+        bat << ":launch\n";
+        bat << "timeout /t 2 /nobreak >NUL\n";
+        bat << "start \"\" \"%EXE%\" --minimized\n";
+    }
+
+    // Launch the batch script detached with no window
+    std::wstring cmdLine = L"cmd.exe /c \"" + batPath.wstring() + L"\"";
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+
+    BOOL ok = CreateProcessW(
+        nullptr,
+        cmdLine.data(),
+        nullptr, nullptr, FALSE,
+        CREATE_NO_WINDOW | DETACHED_PROCESS,
+        nullptr, nullptr,
+        &si, &pi);
+
+    if (ok)
+    {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        MonitorLog::instance().info("farm", "Restart sidecar launched (PID " + std::to_string(pid) + ")");
+    }
+    else
+    {
+        MonitorLog::instance().error("farm", "Failed to launch restart sidecar");
+        return false;
+    }
+
+    // Begin shutdown so the sidecar can detect our exit
+    beginForceExit();
+    return true;
+#else
+    MonitorLog::instance().warn("farm", "Restart sidecar not supported on this platform");
+    return false;
+#endif
 }
 
 // --- Job selection ---

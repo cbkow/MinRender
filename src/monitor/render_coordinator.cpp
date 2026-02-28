@@ -384,15 +384,6 @@ void RenderCoordinator::dispatchChunk(AgentSupervisor& supervisor)
         std::chrono::system_clock::now().time_since_epoch()).count();
     ar.stdoutLogName = ar.chunk.rangeStr() + "_" + std::to_string(nowMs) + ".log";
 
-    // Ensure output directory exists before dispatching
-    if (ar.manifest.output_dir.has_value() && !ar.manifest.output_dir.value().empty())
-    {
-        std::error_code ec;
-        std::filesystem::create_directories(ar.manifest.output_dir.value(), ec);
-        if (ec)
-            MonitorLog::instance().warn("render", "Failed to create output dir: " + ar.manifest.output_dir.value() + " (" + ec.message() + ")");
-    }
-
     // Set up local staging directory if enabled
     ar.stagingDir.clear();
     ar.originalOutputDir.clear();
@@ -588,11 +579,11 @@ bool RenderCoordinator::copyStagingFiles(const std::string& stagingDir, const st
     bool allOk = true;
     std::error_code ec;
 
-    // Ensure destination exists
-    fs::create_directories(outputDir, ec);
-    if (ec)
+    // Verify destination exists (leader created it at submission time)
+    if (!fs::exists(outputDir, ec))
     {
-        MonitorLog::instance().error("render", "Failed to create output dir for staging copy: " + outputDir + " (" + ec.message() + ")");
+        MonitorLog::instance().error("render",
+            "Output dir does not exist for staging copy: " + outputDir);
         return false;
     }
 
