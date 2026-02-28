@@ -27,7 +27,7 @@ Built with C++, Rust, and [Dear ImGui](https://github.com/ocornut/imgui).
 Download the latest `.exe` from releases and install on every node.
 
 > [!WARNING]
-> The installer opens HTTP port 8420 and UDP port 4243 in the Windows Firewall. It also installs a shortcut in your startup folder. MinRender, like all render farm coordinators, allows you to launch an executable remotely. This behavior is dangerous if not handled with care in a controlled environment. Be careful, test your flow thoroughly, and don't break anything you can't fix. If this makes you nervous, please don't install this app. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESSED OR IMPLIED.
+> The installer opens HTTP port 8420 and UDP port 4243 in the Windows Firewall. It also installs a shortcut in your startup folder. MinRender, like all render farm coordinators, allows you to launch an executable remotely. This behavior is dangerous if not handled with care in a controlled environment. Be careful, test your flow thoroughly, and practice safe computing. If this makes you nervous, please don't install this app. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESSED OR IMPLIED.
 
 In the settings panel, browse to or paste a shared directory that every node can access. This can be an SMB share on a NAS or a shared folder in a file sync service like LucidLink, Dropbox, Synology Drive, Resilio, Syncthing, or others. This folder holds the node phonebook and all logs (MinRender logs and DCC stdout logs). Press Save.
 
