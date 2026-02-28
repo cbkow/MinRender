@@ -265,7 +265,7 @@ bool RndrSupervisor::launchRndr()
         cmdLine.data(),
         nullptr, nullptr,
         FALSE,
-        CREATE_NO_WINDOW,
+        CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB,
         nullptr, nullptr,
         &si, &pi
     );

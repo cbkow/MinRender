@@ -144,6 +144,18 @@ void MonitorApp::update()
         launchRestartSidecar();
     }
 
+    // Deferred restart — wait for sidecar to start before shutting down
+    if (m_restartPending)
+    {
+        auto restartElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - m_restartLaunchedAt).count();
+        if (restartElapsed >= 3000)
+        {
+            m_restartPending = false;
+            beginForceExit();
+        }
+    }
+
     // Process exit
     if (m_exitRequested && !m_shouldExit)
     {
@@ -851,15 +863,16 @@ std::string MonitorApp::resubmitJob(const std::string& jobId)
 }
 
 std::string MonitorApp::resubmitChunkAsJob(const std::string& jobId,
-                                           int frameStart, int frameEnd, int chunkSize)
+                                            int frameStart, int frameEnd, int chunkSize)
 {
     if (isLeader() && m_databaseManager.isOpen())
     {
-        auto newId = m_dispatchManager.resubmitJobWithOverrides(jobId, frameStart, frameEnd, chunkSize);
+        auto newId = m_dispatchManager.resubmitJob(jobId, frameStart, frameEnd, chunkSize);
         if (!newId.empty())
         {
-            MonitorLog::instance().info("job",
-                "Submitted chunk job: " + newId + " (from " + jobId + ")");
+            MonitorLog::instance().info("job", "Resubmitted chunk as job: "
+                + jobId + " [" + std::to_string(frameStart) + "-"
+                + std::to_string(frameEnd) + "] -> " + newId);
             selectJob(newId);
         }
         return newId;
@@ -871,7 +884,37 @@ std::string MonitorApp::resubmitChunkAsJob(const std::string& jobId,
             {"frame_end", frameEnd},
             {"chunk_size", chunkSize},
         };
-        postToLeaderAsync("/api/jobs/" + jobId + "/resubmit-chunk", body.dump());
+        MonitorLog::instance().info("job", "Sending resubmit-chunk to leader: " + jobId);
+        postToLeaderAsync("/api/jobs/" + jobId + "/resubmit", body.dump(),
+            [jobId](bool success, const std::string& response) {
+                if (success)
+                    MonitorLog::instance().info("job", "Resubmit-chunk succeeded for " + jobId
+                        + ": " + response);
+                else
+                    MonitorLog::instance().warn("job", "Resubmit-chunk failed for " + jobId
+                        + (response.empty() ? "" : ": " + response));
+            });
+    }
+    return {};
+}
+
+std::string MonitorApp::resubmitIncomplete(const std::string& jobId)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        auto newId = m_dispatchManager.resubmitIncomplete(jobId);
+        if (!newId.empty())
+        {
+            MonitorLog::instance().info("job",
+                "Resubmitted incomplete: " + jobId + " -> " + newId);
+            selectJob(newId);
+        }
+        return newId;
+    }
+    else
+    {
+        nlohmann::json body = {{"incomplete_only", true}};
+        postToLeaderAsync("/api/jobs/" + jobId + "/resubmit", body.dump());
     }
     return {};
 }
@@ -1019,12 +1062,16 @@ bool MonitorApp::launchRestartSidecar()
         }
         bat << "@echo off\n";
         bat << "set PID=" << pid << "\n";
-        bat << "set EXE=" << exePath.string() << "\n";
-        bat << "for /L %%i in (1,1,15) do (\n";
-        bat << "    tasklist /FI \"PID eq %PID%\" 2>NUL | find \"%PID%\" >NUL\n";
-        bat << "    if errorlevel 1 goto :launch\n";
-        bat << "    timeout /t 1 /nobreak >NUL\n";
-        bat << ")\n";
+        bat << "set \"EXE=" << exePath.string() << "\"\n";
+        bat << "set TRIES=0\n";
+        bat << ":wait\n";
+        bat << "tasklist /FI \"PID eq %PID%\" 2>NUL | find \"%PID%\" >NUL\n";
+        bat << "if errorlevel 1 goto :launch\n";
+        bat << "set /a TRIES+=1\n";
+        bat << "if %TRIES% GEQ 15 goto :kill\n";
+        bat << "timeout /t 1 /nobreak >NUL\n";
+        bat << "goto :wait\n";
+        bat << ":kill\n";
         bat << "taskkill /F /PID %PID% >NUL 2>&1\n";
         bat << ":launch\n";
         bat << "timeout /t 2 /nobreak >NUL\n";
@@ -1042,7 +1089,7 @@ bool MonitorApp::launchRestartSidecar()
         nullptr,
         cmdLine.data(),
         nullptr, nullptr, FALSE,
-        CREATE_NO_WINDOW | DETACHED_PROCESS,
+        CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP,
         nullptr, nullptr,
         &si, &pi);
 
@@ -1058,8 +1105,9 @@ bool MonitorApp::launchRestartSidecar()
         return false;
     }
 
-    // Begin shutdown so the sidecar can detect our exit
-    beginForceExit();
+    // Defer shutdown so cmd.exe has time to start and read the bat file
+    m_restartPending = true;
+    m_restartLaunchedAt = std::chrono::steady_clock::now();
     return true;
 #else
     MonitorLog::instance().warn("farm", "Restart sidecar not supported on this platform");

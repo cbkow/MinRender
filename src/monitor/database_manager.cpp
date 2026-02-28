@@ -552,21 +552,33 @@ int DatabaseManager::reassignDeadWorkerChunks(const std::string& deadNodeId)
     }
 }
 
-bool DatabaseManager::isJobComplete(const std::string& jobId)
+std::string DatabaseManager::getJobCompletionState(const std::string& jobId)
 {
     try
     {
-        SQLite::Statement q(*m_db,
-            "SELECT COUNT(*) FROM chunks WHERE job_id = ? AND state NOT IN ('completed', 'failed')");
+        SQLite::Statement q(*m_db, R"(
+            SELECT
+              SUM(CASE WHEN state NOT IN ('completed','failed') THEN 1 ELSE 0 END),
+              SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END)
+            FROM chunks WHERE job_id = ?
+        )");
         q.bind(1, jobId);
         if (q.executeStep())
-            return q.getColumn(0).getInt() == 0;
-        return false;
+        {
+            int inProgress = q.getColumn(0).isNull() ? 0 : q.getColumn(0).getInt();
+            int failed = q.getColumn(1).isNull() ? 0 : q.getColumn(1).getInt();
+            if (inProgress > 0)
+                return {};  // still in progress
+            if (failed > 0)
+                return "failed";
+            return "completed";
+        }
+        return {};
     }
     catch (const std::exception& e)
     {
-        MonitorLog::instance().error("db", std::string("isJobComplete failed: ") + e.what());
-        return false;
+        MonitorLog::instance().error("db", std::string("getJobCompletionState failed: ") + e.what());
+        return {};
     }
 }
 
@@ -648,6 +660,40 @@ bool DatabaseManager::reassignChunk(int64_t chunkId, const std::string& targetNo
     {
         MonitorLog::instance().error("db", std::string("reassignChunk failed: ") + e.what());
         return false;
+    }
+}
+
+void DatabaseManager::markChunksCompleted(const std::string& jobId,
+                                           const std::vector<ChunkRange>& ranges)
+{
+    if (ranges.empty()) return;
+
+    try
+    {
+        auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        SQLite::Transaction transaction(*m_db);
+        SQLite::Statement q(*m_db,
+            "UPDATE chunks SET state = 'completed', completed_at_ms = ? "
+            "WHERE job_id = ? AND frame_start = ? AND frame_end = ?");
+
+        for (const auto& r : ranges)
+        {
+            q.bind(1, nowMs);
+            q.bind(2, jobId);
+            q.bind(3, r.frame_start);
+            q.bind(4, r.frame_end);
+            q.exec();
+            q.reset();
+        }
+
+        transaction.commit();
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db",
+            std::string("markChunksCompleted failed: ") + e.what());
     }
 }
 

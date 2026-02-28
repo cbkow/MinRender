@@ -76,10 +76,11 @@ public:
     bool failChunk(const std::string& jobId, int frameStart, int frameEnd,
                    int maxRetries, const std::string& failingNodeId = {});
     int reassignDeadWorkerChunks(const std::string& deadNodeId);
-    bool isJobComplete(const std::string& jobId);
+    std::string getJobCompletionState(const std::string& jobId);
     bool resetAllChunks(const std::string& jobId);
     bool retryFailedChunks(const std::string& jobId);
     bool reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
+    void markChunksCompleted(const std::string& jobId, const std::vector<ChunkRange>& ranges);
 
     // Per-frame completion tracking
     bool addCompletedFrames(const std::string& jobId, int frame);

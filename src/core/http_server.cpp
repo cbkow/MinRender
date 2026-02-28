@@ -311,48 +311,55 @@ void HttpServer::setupRoutes()
     });
 
     // POST /api/jobs/:id/resubmit -- create new job from existing manifest
+    // Optional JSON body with frame_start, frame_end, chunk_size for chunk resubmit
     m_server.Post(R"(/api/jobs/([^/]+)/resubmit)", [this](const httplib::Request& req, httplib::Response& res)
     {
         if (!requireLeader(res)) return;
         std::string jobId = req.matches[1];
-        auto newId = m_app->resubmitJob(jobId);
+
+        std::string newId;
+        if (!req.body.empty())
+        {
+            try
+            {
+                auto body = nlohmann::json::parse(req.body);
+                if (body.value("incomplete_only", false))
+                {
+                    newId = m_app->resubmitIncomplete(jobId);
+                }
+                else if (body.contains("frame_start"))
+                {
+                    int frameStart = body.at("frame_start").get<int>();
+                    int frameEnd = body.at("frame_end").get<int>();
+                    int chunkSize = body.at("chunk_size").get<int>();
+                    newId = m_app->resubmitChunkAsJob(jobId, frameStart, frameEnd, chunkSize);
+                }
+                else
+                {
+                    newId = m_app->resubmitJob(jobId);
+                }
+            }
+            catch (const std::exception& e)
+            {
+                res.status = 400;
+                nlohmann::json err = {{"error", e.what()}};
+                res.set_content(err.dump(), "application/json");
+                return;
+            }
+        }
+        else
+        {
+            newId = m_app->resubmitJob(jobId);
+        }
+
         if (newId.empty())
         {
             res.status = 404;
             res.set_content(R"({"error":"resubmit_failed"})", "application/json");
             return;
         }
-        nlohmann::json body = {{"status", "ok"}, {"job_id", newId}};
-        res.set_content(body.dump(), "application/json");
-    });
-
-    // POST /api/jobs/:id/resubmit-chunk -- create new job from existing manifest with frame range override
-    m_server.Post(R"(/api/jobs/([^/]+)/resubmit-chunk)", [this](const httplib::Request& req, httplib::Response& res)
-    {
-        if (!requireLeader(res)) return;
-        std::string jobId = req.matches[1];
-        try
-        {
-            auto body = nlohmann::json::parse(req.body);
-            int frameStart = body.at("frame_start").get<int>();
-            int frameEnd = body.at("frame_end").get<int>();
-            int chunkSize = body.at("chunk_size").get<int>();
-            auto newId = m_app->resubmitChunkAsJob(jobId, frameStart, frameEnd, chunkSize);
-            if (newId.empty())
-            {
-                res.status = 404;
-                res.set_content(R"({"error":"resubmit_chunk_failed"})", "application/json");
-                return;
-            }
-            nlohmann::json resp = {{"status", "ok"}, {"job_id", newId}};
-            res.set_content(resp.dump(), "application/json");
-        }
-        catch (const std::exception& e)
-        {
-            res.status = 400;
-            nlohmann::json resp = {{"error", e.what()}};
-            res.set_content(resp.dump(), "application/json");
-        }
+        nlohmann::json resp = {{"status", "ok"}, {"job_id", newId}};
+        res.set_content(resp.dump(), "application/json");
     });
 
     // POST /api/chunks/reassign -- reassign a chunk to pending or to a specific node

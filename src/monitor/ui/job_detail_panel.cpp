@@ -15,7 +15,6 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
-#include <fstream>
 
 namespace MR {
 
@@ -29,6 +28,7 @@ static ImVec4 stateColor(const std::string& state)
     if (state == "active")    return ImVec4(0.3f, 0.8f, 0.3f, 1.0f);
     if (state == "paused")    return ImVec4(0.9f, 0.7f, 0.2f, 1.0f);
     if (state == "completed") return ImVec4(0.4f, 0.6f, 1.0f, 1.0f);
+    if (state == "failed")    return ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
     if (state == "cancelled") return ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
     return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
 }
@@ -823,6 +823,15 @@ void JobDetailPanel::renderDetailMode()
         if (ImGui::Button("Resubmit"))
             m_pendingResubmit = true;
         ImGui::SameLine();
+
+        // "Resubmit Incomplete" — only when there are incomplete chunks
+        if (job.total_chunks > 0 && job.completed_chunks < job.total_chunks)
+        {
+            if (ImGui::Button("Resubmit Incomplete"))
+                m_pendingResubmitIncomplete = true;
+            ImGui::SameLine();
+        }
+
         if (ImGui::Button("Archive"))
             m_app->archiveJob(m_detailJobId);
         ImGui::SameLine();
@@ -948,6 +957,31 @@ void JobDetailPanel::renderDetailMode()
         ImGui::EndPopup();
     }
 
+    if (m_pendingResubmitIncomplete)
+    {
+        ImGui::OpenPopup("Confirm Resubmit Incomplete");
+        m_pendingResubmitIncomplete = false;
+    }
+    if (ImGui::BeginPopupModal("Confirm Resubmit Incomplete", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        int incompleteCount = job.total_chunks - job.completed_chunks;
+        ImGui::Text("Create a new job with %d incomplete chunk%s?",
+            incompleteCount, incompleteCount == 1 ? "" : "s");
+        ImGui::Text("Completed frames will be preserved.");
+        ImGui::Spacing();
+        PushOutlineButtonStyle();
+        if (ImGui::Button("Resubmit Incomplete"))
+        {
+            m_app->resubmitIncomplete(m_detailJobId);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel"))
+            ImGui::CloseCurrentPopup();
+        PopOutlineButtonStyle();
+        ImGui::EndPopup();
+    }
+
     if (m_pendingDelete)
     {
         ImGui::OpenPopup("Confirm Delete");
@@ -1002,6 +1036,11 @@ void JobDetailPanel::renderDetailMode()
         PushOutlineButtonStyle();
         if (ImGui::Button("Submit"))
         {
+            MonitorLog::instance().info("job",
+                "Submitting chunk as new job: " + m_detailJobId
+                + " [" + std::to_string(m_chunkSubmitFrameStart)
+                + "-" + std::to_string(m_chunkSubmitFrameEnd)
+                + "] chunk_size=" + std::to_string(m_chunkSubmitChunkSize));
             m_app->resubmitChunkAsJob(m_detailJobId,
                 m_chunkSubmitFrameStart, m_chunkSubmitFrameEnd, m_chunkSubmitChunkSize);
             ImGui::CloseCurrentPopup();

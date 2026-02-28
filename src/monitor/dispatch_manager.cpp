@@ -253,10 +253,15 @@ void DispatchManager::checkJobCompletions()
     auto jobs = m_db->getAllJobs();
     for (const auto& js : jobs)
     {
-        if (js.job.current_state == "active" && m_db->isJobComplete(js.job.job_id))
+        if (js.job.current_state != "active")
+            continue;
+
+        std::string finalState = m_db->getJobCompletionState(js.job.job_id);
+        if (!finalState.empty())
         {
-            m_db->updateJobState(js.job.job_id, "completed");
-            MonitorLog::instance().info("dispatch", "Job completed: " + js.job.job_id);
+            m_db->updateJobState(js.job.job_id, finalState);
+            MonitorLog::instance().info("dispatch",
+                "Job " + finalState + ": " + js.job.job_id);
         }
     }
 }
@@ -442,8 +447,117 @@ std::string DispatchManager::resubmitJob(const std::string& sourceJobId)
     }
 }
 
-std::string DispatchManager::resubmitJobWithOverrides(const std::string& sourceJobId,
-                                                      int frameStart, int frameEnd, int chunkSize)
+std::string DispatchManager::resubmitJob(const std::string& sourceJobId,
+                                          int frameStart, int frameEnd, int chunkSize)
+{
+    if (!m_db || !m_db->isOpen())
+    {
+        MonitorLog::instance().error("dispatch", "resubmitJob (override): DB not open");
+        return {};
+    }
+
+    auto jobOpt = m_db->getJob(sourceJobId);
+    if (!jobOpt.has_value())
+    {
+        MonitorLog::instance().error("dispatch",
+            "resubmitJob (override): source job not found: " + sourceJobId);
+        return {};
+    }
+
+    try
+    {
+        auto manifest = nlohmann::json::parse(jobOpt->manifest_json).get<JobManifest>();
+
+        // Override frame range and chunk size
+        manifest.frame_start = frameStart;
+        manifest.frame_end = frameEnd;
+        manifest.chunk_size = chunkSize;
+
+        // Generate new job_id: append "-v2", "-v3", etc.
+        std::string baseSlug = manifest.job_id;
+        // Strip existing -vN suffix
+        auto vpos = baseSlug.rfind("-v");
+        if (vpos != std::string::npos)
+        {
+            bool allDigits = true;
+            for (size_t i = vpos + 2; i < baseSlug.size(); ++i)
+            {
+                if (!std::isdigit(static_cast<unsigned char>(baseSlug[i])))
+                {
+                    allDigits = false;
+                    break;
+                }
+            }
+            if (allDigits && vpos + 2 < baseSlug.size())
+                baseSlug = baseSlug.substr(0, vpos);
+        }
+
+        // Find next available suffix
+        std::string newJobId;
+        for (int suffix = 2; suffix < 1000; ++suffix)
+        {
+            newJobId = baseSlug + "-v" + std::to_string(suffix);
+            if (!m_db->getJob(newJobId).has_value())
+                break;
+        }
+
+        // Update manifest with new job_id and fresh timestamp
+        manifest.job_id = newJobId;
+        manifest.submitted_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        // Submit as new job (fresh chunks, zero retry counts, empty failed_on)
+        return submitJob(manifest, jobOpt->priority);
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("dispatch",
+            std::string("resubmitJob (override) failed: ") + e.what());
+        return {};
+    }
+}
+
+std::string DispatchManager::submitJobWithChunks(const JobManifest& manifest, int priority,
+                                                  const std::vector<ChunkRange>& chunks)
+{
+    if (!m_db || !m_db->isOpen())
+        return {};
+
+    // Insert job row
+    JobRow row;
+    row.job_id = manifest.job_id;
+    row.manifest_json = nlohmann::json(manifest).dump();
+    row.current_state = "active";
+    row.priority = priority;
+    row.submitted_at_ms = manifest.submitted_at_ms;
+
+    if (!m_db->insertJob(row))
+        return {};
+
+    // Create output directory once (leader-only, at submission time)
+    if (manifest.output_dir.has_value() && !manifest.output_dir.value().empty())
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(manifest.output_dir.value(), ec);
+        if (ec)
+            MonitorLog::instance().warn("dispatch",
+                "Failed to create output dir for job " + manifest.job_id + ": " + ec.message());
+    }
+
+    // Insert caller-provided chunks
+    if (!m_db->insertChunks(manifest.job_id, chunks))
+    {
+        m_db->deleteJob(manifest.job_id);
+        return {};
+    }
+
+    MonitorLog::instance().info("dispatch",
+        "Job submitted: " + manifest.job_id + " (" + std::to_string(chunks.size()) + " chunks)");
+
+    return manifest.job_id;
+}
+
+std::string DispatchManager::resubmitIncomplete(const std::string& sourceJobId)
 {
     if (!m_db || !m_db->isOpen())
         return {};
@@ -456,12 +570,30 @@ std::string DispatchManager::resubmitJobWithOverrides(const std::string& sourceJ
     {
         auto manifest = nlohmann::json::parse(jobOpt->manifest_json).get<JobManifest>();
 
-        // Override frame range and chunk size
-        manifest.frame_start = frameStart;
-        manifest.frame_end = frameEnd;
-        manifest.chunk_size = chunkSize;
+        // Read all chunks from source job
+        auto sourceChunks = m_db->getChunksForJob(sourceJobId);
+        if (sourceChunks.empty())
+            return {};
 
-        // Generate new job_id: append "-v2", "-v3", etc.
+        // Separate into completed and all ranges
+        std::vector<ChunkRange> allRanges;
+        std::vector<ChunkRange> completedRanges;
+        bool hasIncomplete = false;
+
+        for (const auto& c : sourceChunks)
+        {
+            ChunkRange cr{c.frame_start, c.frame_end};
+            allRanges.push_back(cr);
+            if (c.state == "completed")
+                completedRanges.push_back(cr);
+            else
+                hasIncomplete = true;
+        }
+
+        if (!hasIncomplete)
+            return {};  // nothing to resubmit
+
+        // Generate new job_id: append "-v2", "-v3", etc. (same pattern as resubmitJob)
         std::string baseSlug = manifest.job_id;
         auto vpos = baseSlug.rfind("-v");
         if (vpos != std::string::npos)
@@ -487,16 +619,29 @@ std::string DispatchManager::resubmitJobWithOverrides(const std::string& sourceJ
                 break;
         }
 
+        // Update manifest with new job_id and fresh timestamp
         manifest.job_id = newJobId;
         manifest.submitted_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 
-        return submitJob(manifest, jobOpt->priority);
+        // Submit with all chunk ranges (preserves full frame grid)
+        std::string result = submitJobWithChunks(manifest, jobOpt->priority, allRanges);
+        if (result.empty())
+            return {};
+
+        // Mark previously-completed chunks as completed in the new job
+        m_db->markChunksCompleted(newJobId, completedRanges);
+
+        MonitorLog::instance().info("dispatch",
+            "Resubmitted incomplete: " + sourceJobId + " -> " + newJobId +
+            " (" + std::to_string(allRanges.size() - completedRanges.size()) + " incomplete chunks)");
+
+        return newJobId;
     }
     catch (const std::exception& e)
     {
         MonitorLog::instance().error("dispatch",
-            std::string("resubmitJobWithOverrides failed: ") + e.what());
+            std::string("resubmitIncomplete failed: ") + e.what());
         return {};
     }
 }

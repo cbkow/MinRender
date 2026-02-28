@@ -17,7 +17,7 @@ void JobListPanel::init(MonitorApp* app)
 
 static bool isDeletableState(const std::string& state)
 {
-    return state == "completed" || state == "cancelled";
+    return state == "completed" || state == "cancelled" || state == "failed";
 }
 
 static std::string formatTimestamp(int64_t ms)
@@ -200,6 +200,8 @@ void JobListPanel::render()
                         stateColor = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);
                     else if (job.current_state == "completed")
                         stateColor = ImVec4(0.4f, 0.6f, 1.0f, 1.0f);
+                    else if (job.current_state == "failed")
+                        stateColor = ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
                     else if (job.current_state == "cancelled")
                         stateColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
                     ImGui::TextColored(stateColor, "%s", job.current_state.c_str());

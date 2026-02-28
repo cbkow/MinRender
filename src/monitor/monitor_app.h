@@ -73,7 +73,9 @@ public:
     void retryFailedChunks(const std::string& jobId);
     void reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
     std::string resubmitJob(const std::string& jobId);
-    std::string resubmitChunkAsJob(const std::string& jobId, int frameStart, int frameEnd, int chunkSize);
+    std::string resubmitChunkAsJob(const std::string& jobId,
+                                    int frameStart, int frameEnd, int chunkSize);
+    std::string resubmitIncomplete(const std::string& jobId);
     void unsuspendNode(const std::string& nodeId);
 
     // Node state controls
@@ -227,6 +229,10 @@ private:
     // Exit state
     bool m_exitRequested = false;
     bool m_shouldExit = false;
+
+    // Deferred restart — gives sidecar time to start before we exit
+    bool m_restartPending = false;
+    std::chrono::steady_clock::time_point m_restartLaunchedAt;
 };
 
 } // namespace MR

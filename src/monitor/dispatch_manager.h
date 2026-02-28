@@ -67,9 +67,16 @@ public:
     // Create a new job from an existing job's manifest (clean slate)
     std::string resubmitJob(const std::string& sourceJobId);
 
-    // Resubmit with overridden frame range and chunk size (for chunk-as-job)
-    std::string resubmitJobWithOverrides(const std::string& sourceJobId,
-                                         int frameStart, int frameEnd, int chunkSize);
+    // Resubmit with overridden frame range and chunk size
+    std::string resubmitJob(const std::string& sourceJobId,
+                            int frameStart, int frameEnd, int chunkSize);
+
+    // Submit a job with caller-provided chunk ranges (instead of computeChunks)
+    std::string submitJobWithChunks(const JobManifest& manifest, int priority,
+                                    const std::vector<ChunkRange>& chunks);
+
+    // Resubmit only incomplete chunks — completed chunks are pre-filled as green
+    std::string resubmitIncomplete(const std::string& sourceJobId);
 
     // Machine-level failure tracking
     NodeFailureTracker& failureTracker() { return m_failureTracker; }
