@@ -21,7 +21,6 @@ private:
     char m_tagsBuf[256] = {};
     int  m_httpPort = 8420;
     char m_ipOverrideBuf[64] = {};
-    bool m_autoStartAgent = true;
     bool m_udpEnabled = true;
     int  m_udpPort = 4243;
     bool m_showNotifications = true;

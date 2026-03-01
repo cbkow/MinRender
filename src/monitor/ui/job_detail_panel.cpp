@@ -740,11 +740,11 @@ void JobDetailPanel::renderDetailMode()
     if (Fonts::bold) ImGui::PopFont();
 
     // Info lines
-    ImGui::Text("Template: %s  |  Priority: %d  |  By: %s",
+    ImGui::TextDisabled("Template: %s  |  Priority: %d  |  By: %s",
         job.manifest.template_id.c_str(),
         job.current_priority,
         job.manifest.submitted_by.c_str());
-    ImGui::Text("Submitted: %s  |  Frames: %d-%d (chunk %d)",
+    ImGui::TextDisabled("Submitted: %s  |  Frames: %d-%d (chunk %d)",
         formatTimestampFull(job.manifest.submitted_at_ms).c_str(),
         job.manifest.frame_start, job.manifest.frame_end, job.manifest.chunk_size);
 
@@ -786,7 +786,7 @@ void JobDetailPanel::renderDetailMode()
             if (durationMs < 0) durationMs = 0;
 
             if (isTerminal)
-                ImGui::Text("Rendered in: %s", formatDuration(durationMs).c_str());
+                ImGui::TextDisabled("Rendered in: %s", formatDuration(durationMs).c_str());
             else
                 ImGui::Text("Rendering: %s", formatDuration(durationMs).c_str());
         }

@@ -28,6 +28,15 @@ struct MutexGuard {
     _handle: windows::Win32::Foundation::HANDLE,
 }
 
+#[cfg(windows)]
+impl Drop for MutexGuard {
+    fn drop(&mut self) {
+        if !self._handle.is_invalid() {
+            unsafe { let _ = windows::Win32::Foundation::CloseHandle(self._handle); }
+        }
+    }
+}
+
 #[cfg(not(windows))]
 struct MutexGuard;
 
@@ -305,7 +314,7 @@ fn main() {
                         pid: process::id(),
                     }),
                 );
-                continue;
+                break;
             }
 
             // 2. Check IPC messages (non-blocking via peek)

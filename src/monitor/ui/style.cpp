@@ -86,7 +86,7 @@ void setupStyle()
     c[ImGuiCol_WindowBg]              = ImVec4(0.11f, 0.11f, 0.11f, 1.00f);
     c[ImGuiCol_ChildBg]               = ImVec4(0.09f, 0.09f, 0.09f, 1.00f);
     c[ImGuiCol_PopupBg]               = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
-    c[ImGuiCol_Border]                = ImVec4(0.25f, 0.25f, 0.25f, 0.27f);
+    c[ImGuiCol_Border]                = ImVec4(0.25f, 0.25f, 0.25f, 0.50f);
     c[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
     c[ImGuiCol_FrameBg]               = ImVec4(0.07f, 0.07f, 0.07f, 1.00f);
     c[ImGuiCol_FrameBgHovered]        = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);

@@ -74,12 +74,7 @@ void NodePanel::render()
             // Local agent health badge
             {
                 auto health = m_app->agentSupervisor().agentHealthEnum();
-                if (health == AgentHealth::Reconnecting)
-                {
-                    ImGui::SameLine();
-                    drawStatusBadge("Reconnecting", ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
-                }
-                else if (health == AgentHealth::NeedsAttention)
+                if (health == AgentHealth::NeedsAttention)
                 {
                     ImGui::SameLine();
                     drawStatusBadge("Agent Down", ImVec4(1.0f, 0.4f, 0.2f, 1.0f));
@@ -241,19 +236,8 @@ void NodePanel::render()
                         }
                     }
 
-                    // Agent health badges
-                    if (peer.is_alive && peer.agent_health == "reconnecting")
-                    {
-                        ImGui::SameLine();
-                        drawStatusBadge("Reconnecting", ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
-                        if (ImGui::IsItemHovered() && !peer.alert_reason.empty())
-                        {
-                            ImGui::BeginTooltip();
-                            ImGui::TextUnformatted(peer.alert_reason.c_str());
-                            ImGui::EndTooltip();
-                        }
-                    }
-                    else if (peer.is_alive && peer.agent_health == "needs_attention")
+                    // Agent health badge
+                    if (peer.is_alive && peer.agent_health == "needs_attention")
                     {
                         ImGui::SameLine();
                         drawStatusBadge("Agent Down", ImVec4(1.0f, 0.4f, 0.2f, 1.0f));
@@ -332,21 +316,6 @@ void NodePanel::render()
                                     cli.Post("/api/node/start");
                                 }).detach();
                             }
-                        }
-
-                        // Restart Agent button
-                        ImGui::SameLine();
-                        if (ImGui::SmallButton("Restart Agent"))
-                        {
-                            std::string ep = peer.endpoint;
-                            std::thread([ep]() {
-                                auto [host, port] = parseEndpoint(ep);
-                                if (host.empty()) return;
-                                httplib::Client cli(host, port);
-                                cli.set_connection_timeout(2);
-                                cli.set_read_timeout(5);
-                                cli.Post("/api/agent/restart");
-                            }).detach();
                         }
 
                         // Restart App button

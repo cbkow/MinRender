@@ -46,7 +46,6 @@ void SettingsPanel::loadFromConfig()
     std::strncpy(m_ipOverrideBuf, cfg.ip_override.c_str(), sizeof(m_ipOverrideBuf) - 1);
     m_ipOverrideBuf[sizeof(m_ipOverrideBuf) - 1] = '\0';
 
-    m_autoStartAgent = cfg.auto_start_agent;
     m_udpEnabled = cfg.udp_enabled;
     m_udpPort = static_cast<int>(cfg.udp_port);
     m_showNotifications = cfg.show_notifications;
@@ -76,7 +75,6 @@ void SettingsPanel::applyToConfig()
 
     cfg.http_port = static_cast<uint16_t>(m_httpPort);
     cfg.ip_override = m_ipOverrideBuf;
-    cfg.auto_start_agent = m_autoStartAgent;
     cfg.udp_enabled = m_udpEnabled;
     cfg.udp_port = static_cast<uint16_t>(m_udpPort);
     cfg.show_notifications = m_showNotifications;
@@ -362,49 +360,20 @@ void SettingsPanel::render()
     {
         auto& supervisor = m_app->agentSupervisor();
         bool connected = supervisor.isAgentConnected();
-        bool running = supervisor.isAgentRunning();
 
         if (connected)
         {
-            ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Connected");
+            ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Rendering");
             ImGui::SameLine();
             ImGui::TextDisabled("(PID %u, %s)", supervisor.agentPid(),
                 supervisor.agentState().empty() ? "unknown" : supervisor.agentState().c_str());
         }
-        else if (running)
-        {
-            ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.3f, 1.0f), "Starting...");
-            ImGui::SameLine();
-            ImGui::TextDisabled("(PID %u)", supervisor.agentPid());
-        }
         else
         {
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Disconnected");
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Idle");
         }
 
-        ImGui::Spacing();
-
-        PushOutlineButtonStyle();
-        if (!running)
-        {
-            if (ImGui::Button("Start Agent"))
-                supervisor.spawnAgent();
-        }
-        else
-        {
-            if (ImGui::Button("Stop Agent"))
-                supervisor.shutdownAgent();
-            ImGui::SameLine();
-            if (ImGui::Button("Restart Agent"))
-            {
-                supervisor.shutdownAgent();
-                supervisor.spawnAgent();
-            }
-        }
-        PopOutlineButtonStyle();
-
-        ImGui::Spacing();
-        ImGui::Checkbox("Auto-start agent", &m_autoStartAgent);
+        ImGui::TextDisabled("Agent is spawned automatically for each render chunk.");
         ImGui::Separator();
     }
     PopOutlineHeaderStyle();

@@ -19,7 +19,7 @@
 
 namespace MR {
 
-enum class AgentHealth { Ok, Reconnecting, NeedsAttention };
+enum class AgentHealth { Ok, NeedsAttention };
 
 /// Manages the agent process lifecycle and IPC communication.
 class AgentSupervisor
@@ -37,7 +37,6 @@ public:
     bool spawnAgent();
     void shutdownAgent();
     void killAgent();
-    void sendPing();
     bool sendTask(const std::string& taskJson);
     void sendAbort(const std::string& reason);
 
@@ -53,6 +52,7 @@ public:
     AgentHealth agentHealthEnum() const { return m_agentHealth.load(); }
     std::string agentHealth() const;
     void resetHealth();
+    void markNeedsAttention() { m_agentHealth.store(AgentHealth::NeedsAttention); }
 
     // Readiness gating: true when DCC confirmed dead and node is safe for new work
     bool readyForWork() const { return m_readyForWork.load(); }
@@ -78,15 +78,10 @@ private:
     uint32_t m_agentPid = 0;
     std::string m_agentState;
 
-    std::chrono::steady_clock::time_point m_lastPingTime;
-    static constexpr int PING_INTERVAL_SECONDS = 30;
-
     std::function<void(const std::string&, const nlohmann::json&)> m_messageHandler;
 
     // Crash recovery
     std::atomic<AgentHealth> m_agentHealth{AgentHealth::Ok};
-    std::atomic<int> m_respawnAttempts{0};
-    static constexpr int MAX_RESPAWN_ATTEMPTS = 3;
 
     // Readiness gating (true on startup — agent is idle)
     std::atomic<bool> m_readyForWork{true};

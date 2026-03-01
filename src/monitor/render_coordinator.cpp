@@ -76,35 +76,38 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
             {
                 auto now = std::chrono::steady_clock::now();
 
-                // Initialize re-queue tracking on first occurrence
+                // First time: spawn agent on demand
                 if (!m_requeueActive)
                 {
                     m_requeueActive = true;
                     m_requeueStartTime = now;
                     m_lastRequeueAttempt = now;
                     m_lastRequeueLog = now;
+
+                    MonitorLog::instance().info("render", "Spawning agent for chunk " +
+                        pending.chunk.rangeStr() + " job " + pending.manifest.job_id);
+
+                    if (!supervisor.spawnAgent())
+                    {
+                        MonitorLog::instance().error("render",
+                            "Agent spawn failed — failing chunk " +
+                            pending.chunk.rangeStr() + " for job " + pending.manifest.job_id);
+                        m_requeueActive = false;
+                        supervisor.markNeedsAttention();
+                        if (m_completionFn)
+                            m_completionFn(pending.manifest.job_id, pending.chunk, "failed");
+                        return;
+                    }
                 }
 
                 auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(
                     now - m_requeueStartTime).count();
 
-                // If agent needs manual attention, fail immediately
-                if (supervisor.agentHealthEnum() == AgentHealth::NeedsAttention)
+                // After 10 seconds without agent connect, fail the chunk
+                if (elapsedSec >= 10)
                 {
                     MonitorLog::instance().error("render",
-                        "Agent needs attention — fast-failing chunk " +
-                        pending.chunk.rangeStr() + " for job " + pending.manifest.job_id);
-                    m_requeueActive = false;
-                    if (m_completionFn)
-                        m_completionFn(pending.manifest.job_id, pending.chunk, "failed");
-                    return;
-                }
-
-                // After 30 seconds without agent, fail the chunk
-                if (elapsedSec >= 30)
-                {
-                    MonitorLog::instance().error("render",
-                        "Agent not connected for 30s — failing chunk " +
+                        "Agent not connected for 10s after spawn — failing chunk " +
                         pending.chunk.rangeStr() + " for job " + pending.manifest.job_id);
                     m_requeueActive = false;
                     if (m_completionFn)
@@ -118,8 +121,8 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
                 if (logElapsed >= 5)
                 {
                     MonitorLog::instance().warn("render",
-                        "Agent not connected, re-queuing dispatch (elapsed " +
-                        std::to_string(elapsedSec) + "s, timeout at 30s)");
+                        "Waiting for agent to connect (elapsed " +
+                        std::to_string(elapsedSec) + "s, timeout at 10s)");
                     m_lastRequeueLog = now;
                 }
 

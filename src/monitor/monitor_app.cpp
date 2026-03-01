@@ -51,10 +51,6 @@ bool MonitorApp::init()
         m_renderCoordinator.handleAgentMessage(type, msg);
     });
 
-    // Auto-start agent if configured
-    if (m_config.auto_start_agent)
-        m_agentSupervisor.spawnAgent();
-
     // Start background HTTP worker
     startHttpWorker();
 

@@ -9,7 +9,8 @@
       "Bash(popd:*)",
       "Bash(ls:*)",
       "Bash(dir:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(magick:*)"
     ]
   }
 }

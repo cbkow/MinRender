@@ -10,10 +10,7 @@
 
 namespace MR {
 
-AgentSupervisor::AgentSupervisor()
-    : m_lastPingTime(std::chrono::steady_clock::now())
-{
-}
+AgentSupervisor::AgentSupervisor() = default;
 
 AgentSupervisor::~AgentSupervisor()
 {
@@ -186,11 +183,6 @@ void AgentSupervisor::killAgent()
     MonitorLog::instance().info("agent", "Agent killed");
 }
 
-void AgentSupervisor::sendPing()
-{
-    sendJson(R"({"type":"ping"})");
-}
-
 bool AgentSupervisor::sendTask(const std::string& taskJson)
 {
     return sendJson(taskJson);
@@ -226,7 +218,6 @@ void AgentSupervisor::ipcThreadFunc()
             }
 
             MonitorLog::instance().info("agent", "Agent connected via IPC");
-            m_respawnAttempts.store(0);
             m_agentHealth.store(AgentHealth::Ok);
 
             while (m_running && m_ipc.isConnected())
@@ -239,7 +230,7 @@ void AgentSupervisor::ipcThreadFunc()
                 }
             }
 
-            MonitorLog::instance().warn("agent", "Agent disconnected from IPC");
+            MonitorLog::instance().info("agent", "Agent disconnected (render cycle complete)");
             m_ipc.disconnect();
 
 #ifdef _WIN32
@@ -255,54 +246,13 @@ void AgentSupervisor::ipcThreadFunc()
                         CloseHandle(m_threadHandle);
                         m_threadHandle = nullptr;
                     }
-                    m_agentPid = 0;
-                    m_agentState.clear();
+                    // Don't clear m_agentPid / m_agentState here — queued
+                    // messages (Completed, Status) may not have been processed
+                    // yet by the main thread.  Clearing now would race with
+                    // processMessages() and break the readyForWork transition.
                 }
             }
 #endif
-
-            // Auto-respawn agent after crash
-            if (m_running)
-            {
-                int attempts = m_respawnAttempts.load();
-                if (attempts < MAX_RESPAWN_ATTEMPTS)
-                {
-                    m_agentHealth.store(AgentHealth::Reconnecting);
-                    int backoffSec = 2 << attempts; // 2s, 4s, 8s
-                    MonitorLog::instance().info("agent",
-                        "Auto-respawning agent (attempt " + std::to_string(attempts + 1) +
-                        "/" + std::to_string(MAX_RESPAWN_ATTEMPTS) +
-                        ", backoff " + std::to_string(backoffSec) + "s)");
-
-                    // Sleep with backoff, checking for stop
-                    for (int i = 0; i < backoffSec * 10 && m_running; ++i)
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-                    if (!m_running) break;
-
-                    if (spawnAgent())
-                    {
-                        m_respawnAttempts.fetch_add(1);
-                        continue; // back to acceptConnection()
-                    }
-                    else
-                    {
-                        m_respawnAttempts.store(MAX_RESPAWN_ATTEMPTS);
-                        m_agentHealth.store(AgentHealth::NeedsAttention);
-                        MonitorLog::instance().error("agent",
-                            "Agent respawn failed — needs manual intervention");
-                    }
-                }
-                else
-                {
-                    m_agentHealth.store(AgentHealth::NeedsAttention);
-                    MonitorLog::instance().error("agent",
-                        "Agent respawn limit reached — needs manual restart");
-                    // Avoid busy-loop: sleep 10s before re-entering accept loop
-                    for (int i = 0; i < 100 && m_running; ++i)
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-            }
         }
         catch (const std::exception& e)
         {
@@ -369,14 +319,6 @@ void AgentSupervisor::processMessages()
         messages.pop();
     }
 
-    // Periodic ping
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_lastPingTime).count();
-    if (elapsed >= PING_INTERVAL_SECONDS && m_ipc.isConnected())
-    {
-        sendPing();
-        m_lastPingTime = now;
-    }
 }
 
 bool AgentSupervisor::isAgentRunning() const
@@ -396,7 +338,6 @@ std::string AgentSupervisor::agentHealth() const
 {
     switch (m_agentHealth.load())
     {
-        case AgentHealth::Reconnecting:    return "reconnecting";
         case AgentHealth::NeedsAttention:  return "needs_attention";
         default:                           return "ok";
     }
@@ -404,7 +345,6 @@ std::string AgentSupervisor::agentHealth() const
 
 void AgentSupervisor::resetHealth()
 {
-    m_respawnAttempts.store(0);
     m_agentHealth.store(AgentHealth::Ok);
 }
 
