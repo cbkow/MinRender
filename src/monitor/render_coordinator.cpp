@@ -153,13 +153,53 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
         }
     }
 
-    // Agent disconnect detection during active render
-    if (m_activeRender.has_value() && !supervisor.isAgentConnected())
+    // Agent disconnect detection during active render — grace period for reconnection
+    if (m_activeRender.has_value())
     {
-        MonitorLog::instance().error("render", "Agent disconnected during render!");
-        auto& ar = m_activeRender.value();
-        flushStdout();
-        failChunk("Agent disconnected during render");
+        bool connected = supervisor.isAgentConnected();
+        bool processAlive = supervisor.isAgentRunning();
+
+        if (!connected && !m_disconnectGraceActive)
+        {
+            // Pipe just dropped — start grace period
+            m_disconnectGraceActive = true;
+            m_disconnectGraceStart = std::chrono::steady_clock::now();
+            MonitorLog::instance().warn("render",
+                "Agent pipe lost during render — starting " +
+                std::to_string(DISCONNECT_GRACE_SECONDS) + "s grace period");
+        }
+
+        if (m_disconnectGraceActive)
+        {
+            if (connected)
+            {
+                // Agent reconnected — cancel grace, continue render
+                m_disconnectGraceActive = false;
+                MonitorLog::instance().info("render", "Agent reconnected during grace period — continuing render");
+            }
+            else if (!processAlive)
+            {
+                // Process died — no point waiting
+                m_disconnectGraceActive = false;
+                MonitorLog::instance().error("render", "Agent process died during render");
+                flushStdout();
+                failChunk("Agent process died during render");
+            }
+            else
+            {
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - m_disconnectGraceStart).count();
+                if (elapsed >= DISCONNECT_GRACE_SECONDS)
+                {
+                    m_disconnectGraceActive = false;
+                    MonitorLog::instance().error("render",
+                        "Agent did not reconnect within " +
+                        std::to_string(DISCONNECT_GRACE_SECONDS) + "s — failing chunk");
+                    flushStdout();
+                    failChunk("Agent disconnected during render (grace expired)");
+                }
+            }
+        }
     }
 }
 
@@ -377,6 +417,8 @@ void RenderCoordinator::dispatchChunk(AgentSupervisor& supervisor)
     if (!m_activeRender.has_value())
         return;
 
+    m_disconnectGraceActive = false;
+
     auto& ar = m_activeRender.value();
     ar.ackReceived = false;
     ar.progressPct = 0.0f;
@@ -567,6 +609,8 @@ void RenderCoordinator::failChunk(const std::string& error)
 {
     if (!m_activeRender.has_value())
         return;
+
+    m_disconnectGraceActive = false;
 
     std::string jobId = m_activeRender->manifest.job_id;
     ChunkRange chunk = m_activeRender->chunk;

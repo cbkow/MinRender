@@ -721,7 +721,9 @@ void JobDetailPanel::renderDetailMode()
         }
         if (needsRefresh)
         {
-            m_detailChunks = m_app->getChunksForJob(m_detailJobId);
+            auto newChunks = m_app->getChunksForJob(m_detailJobId);
+            if (!newChunks.empty() || m_detailChunksJobId != m_detailJobId)
+                m_detailChunks = std::move(newChunks);
             m_detailChunksJobId = m_detailJobId;
             m_detailChunksLastState = job.current_state;
             m_lastChunkRefresh = std::chrono::steady_clock::now();

@@ -8,6 +8,7 @@
 #include <vector>
 #include <queue>
 #include <mutex>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <unordered_map>
@@ -39,6 +40,13 @@ struct FrameReport
     int frame = 0;
 };
 
+struct RevertRequest
+{
+    std::string job_id;
+    int frame_start = 0;
+    int frame_end = 0;
+};
+
 struct SubmitRequest
 {
     JobManifest manifest;
@@ -58,6 +66,7 @@ public:
     void queueFailure(FailureReport report);
     void queueSubmission(SubmitRequest request);
     void queueFrameCompletion(FrameReport report);
+    void queueRevert(RevertRequest request);
 
     // Direct submission (main thread, for local leader submit)
     std::string submitJob(const JobManifest& manifest, int priority);
@@ -103,8 +112,11 @@ private:
     std::queue<FailureReport> m_failureQueue;
     std::queue<SubmitRequest> m_submitQueue;
     std::queue<FrameReport> m_frameQueue;
+    std::queue<RevertRequest> m_revertQueue;
 
     NodeFailureTracker m_failureTracker;
+
+    std::atomic<bool> m_snapshotInProgress{false};
 
     // Nodes we've dispatched to that haven't yet shown up as "rendering" in a peer snapshot.
     // Prevents re-assigning work before the UDP heartbeat propagates the busy state.

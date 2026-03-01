@@ -84,6 +84,12 @@ void DispatchManager::queueFrameCompletion(FrameReport report)
     m_frameQueue.push(std::move(report));
 }
 
+void DispatchManager::queueRevert(RevertRequest request)
+{
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    m_revertQueue.push(std::move(request));
+}
+
 // --- Direct submission ---
 
 std::string DispatchManager::submitJob(const JobManifest& manifest, int priority)
@@ -150,11 +156,13 @@ void DispatchManager::processReports()
     std::queue<CompletionReport> completions;
     std::queue<FailureReport> failures;
     std::queue<FrameReport> frameReports;
+    std::queue<RevertRequest> reverts;
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
         std::swap(completions, m_completionQueue);
         std::swap(failures, m_failureQueue);
         std::swap(frameReports, m_frameQueue);
+        std::swap(reverts, m_revertQueue);
     }
 
     while (!completions.empty())
@@ -205,6 +213,17 @@ void DispatchManager::processReports()
             "Chunk failed: " + r.job_id + " f" + std::to_string(r.frame_start) +
             "-" + std::to_string(r.frame_end) + " by " + r.node_id + ": " + r.error);
         failures.pop();
+    }
+
+    // Drain reverts — no failure tracking, just put chunks back to pending
+    while (!reverts.empty())
+    {
+        auto& r = reverts.front();
+        m_db->revertChunkToPending(r.job_id, r.frame_start, r.frame_end);
+        MonitorLog::instance().warn("dispatch",
+            "Async dispatch failed, reverted: " + r.job_id + " f" +
+            std::to_string(r.frame_start) + "-" + std::to_string(r.frame_end));
+        reverts.pop();
     }
 
     // Drain frame completions — batch by job_id for efficiency
@@ -368,7 +387,7 @@ void DispatchManager::assignWork()
         }
         else
         {
-            // HTTP POST to worker
+            // HTTP POST to worker (async — off the main thread)
             auto [host, port] = parseEndpoint(peer.endpoint);
             if (host.empty())
             {
@@ -379,44 +398,60 @@ void DispatchManager::assignWork()
                 continue;
             }
 
-            try
-            {
-                httplib::Client cli(host, port);
-                cli.set_connection_timeout(0, 500000); // 500ms — LAN should respond instantly
-                cli.set_read_timeout(1);
+            // Mark dispatched optimistically — chunk is already assigned in DB.
+            // If the POST fails, the chunk reverts to pending and this entry clears
+            // on the next cycle when the node doesn't show as "rendering".
+            m_dispatchedNodes.insert(peer.node_id);
 
-                nlohmann::json body = {
-                    {"manifest", nlohmann::json::parse(manifestJson)},
-                    {"frame_start", chunk.frame_start},
-                    {"frame_end", chunk.frame_end},
-                };
+            nlohmann::json body = {
+                {"manifest", nlohmann::json::parse(manifestJson)},
+                {"frame_start", chunk.frame_start},
+                {"frame_end", chunk.frame_end},
+            };
+            std::string bodyStr = body.dump();
+            std::string jobId = chunk.job_id;
+            int fs = chunk.frame_start;
+            int fe = chunk.frame_end;
+            std::string nodeId = peer.node_id;
 
-                auto res = cli.Post("/api/dispatch/assign", body.dump(), "application/json");
-                if (!res || res->status != 200)
-                {
-                    int status = res ? res->status : 0;
-                    MonitorLog::instance().warn("dispatch",
-                        "Assignment POST failed to " + peer.node_id +
-                        " (status=" + std::to_string(status) + "), reverting to pending");
-                    // Revert: set chunk back to pending immediately
-                    m_db->revertChunkToPending(chunk.job_id, chunk.frame_start, chunk.frame_end);
-                }
-                else
-                {
-                    m_dispatchedNodes.insert(peer.node_id);
-                    MonitorLog::instance().info("dispatch",
-                        "Assigned to " + peer.node_id + ": " + chunk.job_id +
-                        " f" + std::to_string(chunk.frame_start) +
-                        "-" + std::to_string(chunk.frame_end));
-                }
-            }
-            catch (const std::exception& e)
+            MonitorLog::instance().info("dispatch",
+                "Assigned to " + peer.node_id + ": " + chunk.job_id +
+                " f" + std::to_string(chunk.frame_start) +
+                "-" + std::to_string(chunk.frame_end));
+
+            std::thread([this, host, port, bodyStr, jobId, fs, fe, nodeId]()
             {
-                MonitorLog::instance().error("dispatch",
-                    std::string("HTTP POST error to ") + peer.node_id + ": " + e.what());
-                // Revert
-                m_db->revertChunkToPending(chunk.job_id, chunk.frame_start, chunk.frame_end);
-            }
+                try
+                {
+                    httplib::Client cli(host, port);
+                    cli.set_connection_timeout(0, 500000); // 500ms
+                    cli.set_read_timeout(2);
+
+                    auto res = cli.Post("/api/dispatch/assign", bodyStr, "application/json");
+                    if (!res || res->status != 200)
+                    {
+                        int status = res ? res->status : 0;
+                        MonitorLog::instance().warn("dispatch",
+                            "Assignment POST failed to " + nodeId +
+                            " (status=" + std::to_string(status) + "), queuing revert");
+                        RevertRequest rr;
+                        rr.job_id = jobId;
+                        rr.frame_start = fs;
+                        rr.frame_end = fe;
+                        queueRevert(std::move(rr));
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    MonitorLog::instance().error("dispatch",
+                        std::string("HTTP POST error to ") + nodeId + ": " + e.what());
+                    RevertRequest rr;
+                    rr.job_id = jobId;
+                    rr.frame_start = fs;
+                    rr.frame_end = fe;
+                    queueRevert(std::move(rr));
+                }
+            }).detach();
         }
     }
 }
@@ -729,23 +764,30 @@ void DispatchManager::doSnapshot()
     if (!m_app || !m_db || !m_db->isOpen())
         return;
 
-    // Snapshot to a local temp file first (fast), then move to network FS on
-    // a background thread so we never block the main thread on network I/O.
-    auto localTmp = m_app->farmPath().parent_path() / "snapshot_tmp.db";
-    if (!m_db->snapshotTo(localTmp))
+    // Skip if previous snapshot is still running
+    if (m_snapshotInProgress.exchange(true))
         return;
 
+    // Move the entire snapshot (SQLite backup + file copy) off the main thread.
+    auto localTmp = m_app->farmPath().parent_path() / "snapshot_tmp.db";
     auto snapshotPath = m_app->farmPath() / "state" / "snapshot.db";
-    std::thread([localTmp, snapshotPath]()
+    auto* db = m_db;
+    auto* flag = &m_snapshotInProgress;
+
+    std::thread([db, localTmp, snapshotPath, flag]()
     {
-        std::error_code ec;
-        std::filesystem::copy_file(localTmp, snapshotPath,
-            std::filesystem::copy_options::overwrite_existing, ec);
-        std::filesystem::remove(localTmp, ec);
-        if (!ec)
-            MonitorLog::instance().info("dispatch", "DB snapshot written");
-        else
-            MonitorLog::instance().warn("dispatch", "Snapshot copy failed: " + ec.message());
+        if (db->snapshotTo(localTmp))
+        {
+            std::error_code ec;
+            std::filesystem::copy_file(localTmp, snapshotPath,
+                std::filesystem::copy_options::overwrite_existing, ec);
+            std::filesystem::remove(localTmp, ec);
+            if (!ec)
+                MonitorLog::instance().info("dispatch", "DB snapshot written");
+            else
+                MonitorLog::instance().warn("dispatch", "Snapshot copy failed: " + ec.message());
+        }
+        flag->store(false);
     }).detach();
 }
 

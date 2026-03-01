@@ -14,6 +14,7 @@ RndrSupervisor::RndrSupervisor()
     , m_cooldownStart()
     , m_hangDetectedTime()
     , m_launchTime()
+    , m_constructedTime(std::chrono::steady_clock::now())
 {
 }
 
@@ -74,6 +75,12 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
     case RndrState::Inactive:
         if (!isRendering)
         {
+            // Don't launch RNDR during startup delay — let dispatch claim GPU first
+            auto startupElapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                now - m_constructedTime).count();
+            if (startupElapsed < STARTUP_DELAY_SECONDS)
+                break;
+
             // Check if TCPSVCS is already running (user or previous session)
             if (isTcpsvcsRunning())
             {
@@ -165,7 +172,7 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
             // Render finished — start cooldown
             m_cooldownStart = now;
             m_state = RndrState::Cooldown;
-            MonitorLog::instance().info("rndr", "Render finished, starting 30s cooldown");
+            MonitorLog::instance().info("rndr", "Render finished, starting 120s cooldown");
         }
         break;
 

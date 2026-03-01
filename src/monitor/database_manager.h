@@ -7,6 +7,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -95,6 +96,8 @@ public:
 private:
     void createSchema();
     std::unique_ptr<SQLite::Database> m_db;
+    std::filesystem::path m_dbPath;
+    mutable std::recursive_mutex m_mutex;
 };
 
 } // namespace MR

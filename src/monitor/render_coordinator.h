@@ -108,6 +108,11 @@ private:
     bool m_stopped = false;
     bool m_stagingEnabled = false;
 
+    // Disconnect grace period (wait for agent reconnection before failing chunk)
+    bool m_disconnectGraceActive = false;
+    std::chrono::steady_clock::time_point m_disconnectGraceStart;
+    static constexpr int DISCONNECT_GRACE_SECONDS = 30;
+
     // Re-queue backoff tracking (agent disconnect while dispatch queued)
     bool m_requeueActive = false;
     std::chrono::steady_clock::time_point m_requeueStartTime;

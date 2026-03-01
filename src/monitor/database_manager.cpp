@@ -9,6 +9,7 @@ namespace MR {
 
 bool DatabaseManager::open(const std::filesystem::path& dbPath)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         std::error_code ec;
@@ -20,6 +21,9 @@ bool DatabaseManager::open(const std::filesystem::path& dbPath)
 
         m_db->exec("PRAGMA journal_mode=WAL");
         m_db->exec("PRAGMA foreign_keys=ON");
+        m_db->setBusyTimeout(5000);
+
+        m_dbPath = dbPath;
 
         createSchema();
 
@@ -36,6 +40,7 @@ bool DatabaseManager::open(const std::filesystem::path& dbPath)
 
 void DatabaseManager::close()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_db.reset();
 }
 
@@ -89,6 +94,7 @@ void DatabaseManager::createSchema()
 
 bool DatabaseManager::insertJob(const JobRow& job)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -111,6 +117,7 @@ bool DatabaseManager::insertJob(const JobRow& job)
 
 std::optional<JobRow> DatabaseManager::getJob(const std::string& jobId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -139,6 +146,7 @@ std::optional<JobRow> DatabaseManager::getJob(const std::string& jobId)
 
 std::vector<JobSummary> DatabaseManager::getAllJobs()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     std::vector<JobSummary> result;
     try
     {
@@ -183,6 +191,7 @@ std::vector<JobSummary> DatabaseManager::getAllJobs()
 
 bool DatabaseManager::updateJobState(const std::string& jobId, const std::string& newState)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db, "UPDATE jobs SET current_state = ? WHERE job_id = ?");
@@ -199,6 +208,7 @@ bool DatabaseManager::updateJobState(const std::string& jobId, const std::string
 
 bool DatabaseManager::updateJobPriority(const std::string& jobId, int priority)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db, "UPDATE jobs SET priority = ? WHERE job_id = ?");
@@ -215,6 +225,7 @@ bool DatabaseManager::updateJobPriority(const std::string& jobId, int priority)
 
 bool DatabaseManager::deleteJob(const std::string& jobId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db, "DELETE FROM jobs WHERE job_id = ?");
@@ -232,6 +243,7 @@ bool DatabaseManager::deleteJob(const std::string& jobId)
 
 bool DatabaseManager::insertChunks(const std::string& jobId, const std::vector<ChunkRange>& chunks)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Transaction transaction(*m_db);
@@ -259,6 +271,7 @@ bool DatabaseManager::insertChunks(const std::string& jobId, const std::vector<C
 
 std::vector<ChunkRow> DatabaseManager::getChunksForJob(const std::string& jobId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     std::vector<ChunkRow> result;
     try
     {
@@ -316,6 +329,7 @@ std::vector<ChunkRow> DatabaseManager::getChunksForJob(const std::string& jobId)
 std::optional<std::pair<ChunkRow, std::string>>
 DatabaseManager::findNextPendingChunk()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db, R"(
@@ -352,6 +366,7 @@ std::optional<std::pair<ChunkRow, std::string>>
 DatabaseManager::findNextPendingChunkForNode(const std::vector<std::string>& nodeTags,
                                               const std::string& nodeId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         // First: find active jobs with pending work, ordered by priority
@@ -435,6 +450,7 @@ DatabaseManager::findNextPendingChunkForNode(const std::vector<std::string>& nod
 
 bool DatabaseManager::assignChunk(int64_t chunkId, const std::string& nodeId, int64_t nowMs)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -454,6 +470,7 @@ bool DatabaseManager::assignChunk(int64_t chunkId, const std::string& nodeId, in
 
 bool DatabaseManager::completeChunk(const std::string& jobId, int frameStart, int frameEnd, int64_t nowMs)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -475,6 +492,7 @@ bool DatabaseManager::completeChunk(const std::string& jobId, int frameStart, in
 bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int frameEnd,
                                 int maxRetries, const std::string& failingNodeId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         // First, append failingNodeId to failed_on if provided and not already present
@@ -533,6 +551,7 @@ bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int fr
 
 bool DatabaseManager::revertChunkToPending(const std::string& jobId, int frameStart, int frameEnd)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -552,6 +571,7 @@ bool DatabaseManager::revertChunkToPending(const std::string& jobId, int frameSt
 
 int DatabaseManager::reassignDeadWorkerChunks(const std::string& deadNodeId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -573,6 +593,7 @@ int DatabaseManager::reassignDeadWorkerChunks(const std::string& deadNodeId)
 
 std::string DatabaseManager::getJobCompletionState(const std::string& jobId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db, R"(
@@ -603,6 +624,7 @@ std::string DatabaseManager::getJobCompletionState(const std::string& jobId)
 
 bool DatabaseManager::resetAllChunks(const std::string& jobId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
@@ -622,6 +644,7 @@ bool DatabaseManager::resetAllChunks(const std::string& jobId)
 
 bool DatabaseManager::retryFailedChunks(const std::string& jobId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         // Reset only failed chunks to pending. Keep failed_on (blacklist persists).
@@ -650,6 +673,7 @@ bool DatabaseManager::retryFailedChunks(const std::string& jobId)
 
 bool DatabaseManager::reassignChunk(int64_t chunkId, const std::string& targetNodeId)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         if (targetNodeId.empty())
@@ -687,6 +711,7 @@ void DatabaseManager::markChunksCompleted(const std::string& jobId,
 {
     if (ranges.empty()) return;
 
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -720,6 +745,7 @@ void DatabaseManager::markChunksCompleted(const std::string& jobId,
 
 bool DatabaseManager::addCompletedFrames(const std::string& jobId, int frame)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         // Find the chunk that contains this frame
@@ -765,6 +791,7 @@ bool DatabaseManager::addCompletedFramesBatch(const std::string& jobId, const st
 {
     if (frames.empty()) return true;
 
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Transaction transaction(*m_db);
@@ -832,18 +859,25 @@ bool DatabaseManager::addCompletedFramesBatch(const std::string& jobId, const st
 
 bool DatabaseManager::snapshotTo(const std::filesystem::path& destPath)
 {
-    if (!m_db) return false;
+    // Read m_dbPath under lock, then release — the backup runs independently
+    std::filesystem::path srcPath;
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_mutex);
+        if (!m_db) return false;
+        srcPath = m_dbPath;
+    }
 
     try
     {
         std::error_code ec;
         std::filesystem::create_directories(destPath.parent_path(), ec);
 
-        // Use SQLite backup API
+        // Open a separate read-only connection — WAL mode allows concurrent reads
+        SQLite::Database srcDb(srcPath.string(), SQLite::OPEN_READONLY);
         SQLite::Database destDb(destPath.string(),
             SQLite::OPEN_READWRITE | SQLite::OPEN_CREATE);
-        SQLite::Backup backup(destDb, *m_db);
-        backup.executeStep(-1);  // copy entire DB in one step
+        SQLite::Backup backup(destDb, srcDb);
+        backup.executeStep(-1);
         return true;
     }
     catch (const std::exception& e)
@@ -856,6 +890,7 @@ bool DatabaseManager::snapshotTo(const std::filesystem::path& destPath)
 bool DatabaseManager::restoreFrom(const std::filesystem::path& snapshotPath,
                                    const std::filesystem::path& localPath)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     std::error_code ec;
     if (!std::filesystem::exists(snapshotPath, ec))
         return false;

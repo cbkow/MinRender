@@ -168,6 +168,20 @@ fn install_panic_hook() {
     }));
 }
 
+/// Attempt to reconnect to the monitor pipe after a transient disconnect.
+/// Tries 6 times with 5-second intervals (~30 seconds total, matching monitor grace period).
+fn attempt_reconnect(node_id: &str) -> Option<ipc::PipeClient> {
+    for attempt in 1..=6 {
+        log::info!("Reconnect attempt {}/6...", attempt);
+        thread::sleep(Duration::from_secs(5));
+        match ipc::PipeClient::connect(node_id) {
+            Ok(p) => return Some(p),
+            Err(e) => log::warn!("Reconnect attempt {} failed: {}", attempt, e),
+        }
+    }
+    None
+}
+
 fn main() {
     init_logging();
     install_panic_hook();
@@ -203,6 +217,7 @@ fn main() {
         if let Some(ref executor) = active_render {
             // === RENDERING MODE ===
             let mut done = false;
+            let mut undelivered_done: Option<AgentToMonitor> = None;
 
             // 1. Process render events (non-blocking)
             for event in executor.poll_events() {
@@ -268,17 +283,17 @@ fn main() {
                             exit_code,
                             elapsed_ms,
                         );
-                        let _ = send_message(
-                            &mut pipe,
-                            &AgentToMonitor::Completed(CompletedMessage {
-                                job_id: executor.job_id.clone(),
-                                frame_start: executor.frame_start,
-                                frame_end: executor.frame_end,
-                                elapsed_ms,
-                                exit_code,
-                                output_file,
-                            }),
-                        );
+                        let msg = AgentToMonitor::Completed(CompletedMessage {
+                            job_id: executor.job_id.clone(),
+                            frame_start: executor.frame_start,
+                            frame_end: executor.frame_end,
+                            elapsed_ms,
+                            exit_code,
+                            output_file,
+                        });
+                        if send_message(&mut pipe, &msg).is_err() {
+                            undelivered_done = Some(msg);
+                        }
                         done = true;
                     }
                     RenderEvent::Failed { exit_code, error } => {
@@ -290,34 +305,58 @@ fn main() {
                             exit_code,
                             error,
                         );
-                        let _ = send_message(
-                            &mut pipe,
-                            &AgentToMonitor::Failed(FailedMessage {
-                                job_id: executor.job_id.clone(),
-                                frame_start: executor.frame_start,
-                                frame_end: executor.frame_end,
-                                exit_code,
-                                error,
-                            }),
-                        );
+                        let msg = AgentToMonitor::Failed(FailedMessage {
+                            job_id: executor.job_id.clone(),
+                            frame_start: executor.frame_start,
+                            frame_end: executor.frame_end,
+                            exit_code,
+                            error,
+                        });
+                        if send_message(&mut pipe, &msg).is_err() {
+                            undelivered_done = Some(msg);
+                        }
                         done = true;
                     }
                 }
             }
 
             if done {
+                if let Some(msg) = undelivered_done {
+                    // Completion/failure message lost (pipe broken) — reconnect to deliver
+                    log::warn!("Pipe broken at render completion — reconnecting to deliver result");
+                    drop(pipe);
+                    match attempt_reconnect(&args.node_id) {
+                        Some(mut new_pipe) => {
+                            log::info!("Reconnected — delivering completion message");
+                            let _ = send_message(&mut new_pipe, &msg);
+                            let _ = send_message(
+                                &mut new_pipe,
+                                &AgentToMonitor::Status(StatusMessage {
+                                    state: "idle".into(),
+                                    pid: process::id(),
+                                }),
+                            );
+                        }
+                        None => {
+                            log::error!("Failed to reconnect — completion message lost");
+                        }
+                    }
+                } else {
+                    let _ = send_message(
+                        &mut pipe,
+                        &AgentToMonitor::Status(StatusMessage {
+                            state: "idle".into(),
+                            pid: process::id(),
+                        }),
+                    );
+                }
                 active_render = None;
-                let _ = send_message(
-                    &mut pipe,
-                    &AgentToMonitor::Status(StatusMessage {
-                        state: "idle".into(),
-                        pid: process::id(),
-                    }),
-                );
                 break;
             }
 
             // 2. Check IPC messages (non-blocking via peek)
+            let mut pipe_error: Option<String> = None;
+
             match pipe.peek_available() {
                 Ok(available) if available > 0 => {
                     match ipc::read_message(&mut pipe) {
@@ -349,11 +388,7 @@ fn main() {
                             }
                         }
                         Err(e) => {
-                            log::error!("Pipe read error during render: {}", e);
-                            if let Some(ref exec) = active_render {
-                                exec.abort();
-                            }
-                            break;
+                            pipe_error = Some(format!("Pipe read error during render: {}", e));
                         }
                     }
                 }
@@ -361,11 +396,34 @@ fn main() {
                     // No data available, continue polling
                 }
                 Err(e) => {
-                    log::error!("Pipe peek error (monitor disconnected?): {}", e);
-                    if let Some(ref exec) = active_render {
-                        exec.abort();
+                    pipe_error = Some(format!("Pipe peek error during render: {}", e));
+                }
+            }
+
+            // Pipe error — attempt reconnection instead of aborting
+            if let Some(err_msg) = pipe_error {
+                log::warn!("{} — attempting reconnect", err_msg);
+                drop(pipe);
+                match attempt_reconnect(&args.node_id) {
+                    Some(new_pipe) => {
+                        pipe = new_pipe;
+                        log::info!("Reconnected to monitor pipe — continuing render");
+                        // Re-announce rendering state so monitor knows we're alive
+                        let _ = send_message(
+                            &mut pipe,
+                            &AgentToMonitor::Status(StatusMessage {
+                                state: "rendering".into(),
+                                pid: process::id(),
+                            }),
+                        );
                     }
-                    break;
+                    None => {
+                        log::error!("Failed to reconnect — aborting render");
+                        if let Some(ref exec) = active_render {
+                            exec.abort();
+                        }
+                        break;
+                    }
                 }
             }
 

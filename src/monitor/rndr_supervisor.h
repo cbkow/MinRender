@@ -52,9 +52,9 @@ private:
     std::chrono::steady_clock::time_point m_lastWatchdogPoll;
     static constexpr int WATCHDOG_INTERVAL_SECONDS = 5;
 
-    // Cooldown after render finishes (30s)
+    // Cooldown after render finishes (120s — let dispatch claim GPU first)
     std::chrono::steady_clock::time_point m_cooldownStart;
-    static constexpr int COOLDOWN_SECONDS = 30;
+    static constexpr int COOLDOWN_SECONDS = 120;
 
     // Hang detection
     std::chrono::steady_clock::time_point m_hangDetectedTime;
@@ -64,6 +64,11 @@ private:
     // Warmup (skip watchdog checks after launch)
     std::chrono::steady_clock::time_point m_launchTime;
     static constexpr int WARMUP_SECONDS = 15;
+
+    // Startup delay — don't launch RNDR for 120s after app start,
+    // giving MinRender's own dispatch a chance to claim the GPU first.
+    std::chrono::steady_clock::time_point m_constructedTime;
+    static constexpr int STARTUP_DELAY_SECONDS = 120;
 };
 
 } // namespace MR
