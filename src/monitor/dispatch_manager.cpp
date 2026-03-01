@@ -289,6 +289,14 @@ void DispatchManager::assignWork()
         if (m_failureTracker.isSuspended(peer.node_id))
             continue;
 
+        // Skip nodes in cooldown after a recent failure
+        {
+            auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (m_failureTracker.isInCooldown(peer.node_id, nowMs))
+                continue;
+        }
+
         // Skip nodes with unhealthy agents
         if (peer.agent_health != "ok")
             continue;

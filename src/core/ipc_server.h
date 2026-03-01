@@ -2,6 +2,7 @@
 
 #include <string>
 #include <optional>
+#include <atomic>
 #include <mutex>
 
 #ifdef _WIN32
@@ -56,7 +57,7 @@ private:
     HANDLE m_pipe = INVALID_HANDLE_VALUE;
     HANDLE m_stopEvent = nullptr;
     HANDLE m_connectEvent = nullptr;
-    bool m_connected = false;
+    std::atomic<bool> m_connected{false};
     std::mutex m_writeMutex;
 
     bool readExact(void* buf, DWORD count, int timeoutMs);

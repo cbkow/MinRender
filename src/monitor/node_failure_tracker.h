@@ -49,6 +49,14 @@ public:
         return it->second.suspended;
     }
 
+    bool isInCooldown(const std::string& nodeId, int64_t nowMs) const
+    {
+        auto it = m_records.find(nodeId);
+        if (it == m_records.end()) return false;
+        if (it->second.suspended) return false; // already handled by isSuspended()
+        return (nowMs - it->second.last_failure_ms) < FAILURE_COOLDOWN_MS;
+    }
+
     void clearNode(const std::string& nodeId)
     {
         m_records.erase(nodeId);
@@ -83,6 +91,7 @@ private:
 
     static constexpr int SUSPEND_THRESHOLD = 5;
     static constexpr int64_t SUSPEND_WINDOW_MS = 300000; // 5 minutes
+    static constexpr int64_t FAILURE_COOLDOWN_MS = 30000; // 30 seconds
 };
 
 } // namespace MR

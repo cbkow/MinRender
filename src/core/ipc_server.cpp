@@ -42,6 +42,8 @@ bool IpcServer::create(const std::string& nodeId)
         return false;
     }
 
+    ResetEvent(m_stopEvent);
+
     std::cout << "[IpcServer] Pipe created for node " << nodeId << std::endl;
     return true;
 }
@@ -149,14 +151,16 @@ bool IpcServer::writeAll(const void* data, DWORD count)
     ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!ov.hEvent) return false;
 
-    DWORD bytesWritten = 0;
-    BOOL result = WriteFile(m_pipe, data, count, &bytesWritten, &ov);
+    BOOL result = WriteFile(m_pipe, data, count, nullptr, &ov);
 
     if (result)
     {
-        // Completed synchronously
+        // Completed synchronously — still must use GetOverlappedResult
+        // to get reliable byte count on an overlapped handle.
+        DWORD transferred = 0;
+        GetOverlappedResult(m_pipe, &ov, &transferred, FALSE);
         CloseHandle(ov.hEvent);
-        return bytesWritten == count;
+        return transferred == count;
     }
 
     DWORD err = GetLastError();
@@ -201,14 +205,16 @@ bool IpcServer::readExact(void* buf, DWORD count, int timeoutMs)
         ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
         if (!ov.hEvent) return false;
 
-        DWORD bytesRead = 0;
-        BOOL result = ReadFile(m_pipe, p + totalRead, count - totalRead, &bytesRead, &ov);
+        BOOL result = ReadFile(m_pipe, p + totalRead, count - totalRead, nullptr, &ov);
 
         if (result)
         {
-            // Read completed synchronously
+            // Read completed synchronously — still must use GetOverlappedResult
+            // to get reliable byte count on an overlapped handle.
+            DWORD transferred = 0;
+            GetOverlappedResult(m_pipe, &ov, &transferred, FALSE);
             CloseHandle(ov.hEvent);
-            totalRead += bytesRead;
+            totalRead += transferred;
             continue;
         }
 
@@ -278,7 +284,12 @@ std::optional<std::string> IpcServer::receive(int timeoutMs)
     // Read payload
     std::string payload(len, '\0');
     if (!readExact(payload.data(), len, timeoutMs))
+    {
+        // Protocol desync: length consumed but payload incomplete.
+        // Force disconnect so the next reconnection starts clean.
+        m_connected = false;
         return std::nullopt;
+    }
 
     return payload;
 }
