@@ -48,7 +48,8 @@ public:
                              const std::string& renderState, const std::string& jobId,
                              const std::string& chunk, int priority,
                              const std::string& agentHealth = "ok",
-                             const std::string& alertReason = "");
+                             const std::string& alertReason = "",
+                             bool readyForWork = true);
     void processUdpGoodbye(const std::string& nodeId);
 
 private:

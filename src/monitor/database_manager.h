@@ -75,6 +75,7 @@ public:
     bool completeChunk(const std::string& jobId, int frameStart, int frameEnd, int64_t nowMs);
     bool failChunk(const std::string& jobId, int frameStart, int frameEnd,
                    int maxRetries, const std::string& failingNodeId = {});
+    bool revertChunkToPending(const std::string& jobId, int frameStart, int frameEnd);
     int reassignDeadWorkerChunks(const std::string& deadNodeId);
     std::string getJobCompletionState(const std::string& jobId);
     bool resetAllChunks(const std::string& jobId);

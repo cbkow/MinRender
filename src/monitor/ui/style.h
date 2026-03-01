@@ -46,6 +46,8 @@ namespace Icons {
     inline const char* Folder   = reinterpret_cast<const char*>(u8"\uE2C7"); // folder
     inline const char* Close    = reinterpret_cast<const char*>(u8"\uE5CD"); // close
     inline const char* Computer = reinterpret_cast<const char*>(u8"\uF346"); // computer
+    inline const char* Hub      = reinterpret_cast<const char*>(u8"\uE97A"); // hub
+    inline const char* Monitor  = reinterpret_cast<const char*>(u8"\uE30A"); // desktop_windows
     inline const char* Wifi     = reinterpret_cast<const char*>(u8"\uF52A"); // wifi
     inline const char* WifiOff  = reinterpret_cast<const char*>(u8"\uF74B"); // wifi_off
     inline const char* Dual     = reinterpret_cast<const char*>(u8"\uE9E4"); // swap_horiz

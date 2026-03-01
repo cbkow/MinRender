@@ -54,6 +54,10 @@ public:
     std::string agentHealth() const;
     void resetHealth();
 
+    // Readiness gating: true when DCC confirmed dead and node is safe for new work
+    bool readyForWork() const { return m_readyForWork.load(); }
+    void clearReady() { m_readyForWork.store(false); }
+
 private:
     void ipcThreadFunc();
     bool sendJson(const std::string& json);
@@ -83,6 +87,9 @@ private:
     std::atomic<AgentHealth> m_agentHealth{AgentHealth::Ok};
     std::atomic<int> m_respawnAttempts{0};
     static constexpr int MAX_RESPAWN_ATTEMPTS = 3;
+
+    // Readiness gating (true on startup — agent is idle)
+    std::atomic<bool> m_readyForWork{true};
 };
 
 } // namespace MR

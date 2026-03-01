@@ -143,6 +143,7 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
             MonitorLog::instance().info("render", "Starting render: job=" + ar.manifest.job_id + " chunk=" + ar.chunk.rangeStr());
 
             m_activeRender = std::move(ar);
+            supervisor.clearReady();
 
             // Dispatch the chunk as a single task
             dispatchChunk(supervisor);

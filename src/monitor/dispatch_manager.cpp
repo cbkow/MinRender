@@ -275,6 +275,27 @@ void DispatchManager::assignWork()
     auto localInfo = m_app->buildLocalPeerInfo();
     peers.push_back(localInfo);
 
+    // Clear dispatched-node entries once the peer snapshot confirms rendering
+    // (heartbeat has propagated), or the node is no longer alive/active.
+    for (auto it = m_dispatchedNodes.begin(); it != m_dispatchedNodes.end(); )
+    {
+        bool confirmed = false;
+        for (const auto& p : peers)
+        {
+            if (p.node_id == *it)
+            {
+                // Heartbeat caught up — node shows rendering, or it already finished
+                if (p.render_state == "rendering" || !p.is_alive)
+                    confirmed = true;
+                break;
+            }
+        }
+        if (confirmed)
+            it = m_dispatchedNodes.erase(it);
+        else
+            ++it;
+    }
+
     for (const auto& peer : peers)
     {
         // Skip non-alive, stopped, or already rendering nodes
@@ -283,6 +304,10 @@ void DispatchManager::assignWork()
         if (peer.node_state == "stopped")
             continue;
         if (peer.render_state == "rendering")
+            continue;
+
+        // Skip nodes we recently dispatched to (heartbeat hasn't caught up yet)
+        if (m_dispatchedNodes.count(peer.node_id))
             continue;
 
         // Skip suspended nodes (machine-level failure tracking)
@@ -299,6 +324,10 @@ void DispatchManager::assignWork()
 
         // Skip nodes with unhealthy agents
         if (peer.agent_health != "ok")
+            continue;
+
+        // Skip nodes not yet ready (DCC subprocess still exiting)
+        if (!peer.ready_for_work)
             continue;
 
         // Find next pending chunk this peer is eligible for (respects tags + blacklist)
@@ -324,6 +353,7 @@ void DispatchManager::assignWork()
                 auto manifest = nlohmann::json::parse(manifestJson).get<JobManifest>();
                 ChunkRange cr{chunk.frame_start, chunk.frame_end};
                 m_app->renderCoordinator().queueDispatch(manifest, cr);
+                m_dispatchedNodes.insert(peer.node_id);
                 MonitorLog::instance().info("dispatch",
                     "Self-assigned: " + chunk.job_id + " f" + std::to_string(chunk.frame_start) +
                     "-" + std::to_string(chunk.frame_end));
@@ -333,7 +363,7 @@ void DispatchManager::assignWork()
                 MonitorLog::instance().error("dispatch",
                     std::string("Self-dispatch parse error: ") + e.what());
                 // Revert assignment
-                m_db->failChunk(chunk.job_id, chunk.frame_start, chunk.frame_end, 999);
+                m_db->revertChunkToPending(chunk.job_id, chunk.frame_start, chunk.frame_end);
             }
         }
         else
@@ -345,7 +375,7 @@ void DispatchManager::assignWork()
                 MonitorLog::instance().error("dispatch",
                     "Invalid endpoint for " + peer.node_id + ": " + peer.endpoint);
                 // Revert: set back to pending
-                m_db->failChunk(chunk.job_id, chunk.frame_start, chunk.frame_end, 999);
+                m_db->revertChunkToPending(chunk.job_id, chunk.frame_start, chunk.frame_end);
                 continue;
             }
 
@@ -369,10 +399,11 @@ void DispatchManager::assignWork()
                         "Assignment POST failed to " + peer.node_id +
                         " (status=" + std::to_string(status) + "), reverting to pending");
                     // Revert: set chunk back to pending immediately
-                    m_db->failChunk(chunk.job_id, chunk.frame_start, chunk.frame_end, 999);
+                    m_db->revertChunkToPending(chunk.job_id, chunk.frame_start, chunk.frame_end);
                 }
                 else
                 {
+                    m_dispatchedNodes.insert(peer.node_id);
                     MonitorLog::instance().info("dispatch",
                         "Assigned to " + peer.node_id + ": " + chunk.job_id +
                         " f" + std::to_string(chunk.frame_start) +
@@ -384,7 +415,7 @@ void DispatchManager::assignWork()
                 MonitorLog::instance().error("dispatch",
                     std::string("HTTP POST error to ") + peer.node_id + ": " + e.what());
                 // Revert
-                m_db->failChunk(chunk.job_id, chunk.frame_start, chunk.frame_end, 999);
+                m_db->revertChunkToPending(chunk.job_id, chunk.frame_start, chunk.frame_end);
             }
         }
     }

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -8,10 +10,13 @@ namespace MR {
 
 class MonitorApp;
 
-struct TaskOutputLine
+struct ChunkLogEntry
 {
-    std::string text;
-    bool isHeader = false;
+    std::string nodeId;
+    std::string rangeStr;
+    int64_t timestampMs = 0;
+    std::filesystem::path path;
+    std::string displayLabel; // "f000001-000010  nodeXYZ  12:34:56"
 };
 
 class LogPanel
@@ -25,6 +30,7 @@ private:
     void renderMonitorLog();
     void renderTaskOutput();
     void scanTaskOutput();
+    void loadChunkContent(int index);
     void renderRemoteNodeLog();
 
     MonitorApp* m_app = nullptr;
@@ -34,9 +40,11 @@ private:
     enum class Mode { MonitorLog, TaskOutput, RemoteNodeLog };
     Mode m_mode = Mode::MonitorLog;
 
-    // Task output cache
+    // Task output state
     std::string m_taskOutputJobId;
-    std::vector<TaskOutputLine> m_taskOutputLines;
+    std::vector<ChunkLogEntry> m_chunkList;
+    int m_selectedChunkIndex = -1;
+    std::vector<std::string> m_selectedChunkLines;
     std::chrono::steady_clock::time_point m_lastTaskOutputScan;
 
     // Remote node log cache

@@ -89,7 +89,6 @@ void JobDetailPanel::render()
             m_detailJobId = m_app->selectedJobId();
             m_hasDetailCache = false;
             m_detailChunksJobId.clear();
-            m_selectedChunkIdx = -1;
         }
     }
     else if (m_app && m_app->selectedJobId().empty() && m_mode == DetailMode::Detail)
@@ -729,10 +728,6 @@ void JobDetailPanel::renderDetailMode()
         }
     }
 
-    // Clamp selection if chunks changed
-    if (m_selectedChunkIdx >= (int)m_detailChunks.size())
-        m_selectedChunkIdx = -1;
-
     // ── Sticky toolbar (above scroll) ──────────────────────────
 
     // Header: job_id + state badge
@@ -808,6 +803,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
             m_pendingCancel = true;
+        ImGui::SameLine();
     }
     else if (job.current_state == "paused")
     {
@@ -816,6 +812,7 @@ void JobDetailPanel::renderDetailMode()
         ImGui::SameLine();
         if (ImGui::Button("Cancel"))
             m_pendingCancel = true;
+        ImGui::SameLine();
     }
     else if (job.current_state == "completed" || job.current_state == "cancelled"
              || job.current_state == "failed")
@@ -859,8 +856,7 @@ void JobDetailPanel::renderDetailMode()
 
     ImGui::Separator();
 
-    // ── Scrollable content ─────────────────────────────────────
-    ImGui::BeginChild("##DetailScroll", ImVec2(0, 0));
+    // ── Content below sticky header ─────────────────────────────
 
     // Progress bar
     if (job.total_chunks > 0)
@@ -875,18 +871,31 @@ void JobDetailPanel::renderDetailMode()
         ImGui::PopStyleColor();
     }
 
-    // Frame grid + chunk table
+    // Frame grid / chunk table as tabs (full remaining height each)
     if (!m_detailChunks.empty())
     {
         ImGui::Separator();
-        ImGui::Text("Frames:");
-        renderFrameGrid(m_detailChunks, job.manifest.frame_start, job.manifest.frame_end);
 
-        ImGui::Separator();
-        renderChunkTable();
+        if (ImGui::BeginTabBar("##DetailTabs"))
+        {
+            if (ImGui::BeginTabItem("Frames"))
+            {
+                m_activeDetailTab = 0;
+                float h = ImGui::GetContentRegionAvail().y;
+                ImGui::BeginChild("##FrameGridScroll", ImVec2(0, h));
+                renderFrameGrid(m_detailChunks, job.manifest.frame_start, job.manifest.frame_end);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Chunks"))
+            {
+                m_activeDetailTab = 1;
+                renderChunkTable();
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
     }
-
-    ImGui::EndChild();
 
     // Confirmation popups (modals render as overlays at parent level)
     if (m_pendingCancel)
@@ -1107,15 +1116,7 @@ void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fS
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     ImVec2 origin = ImGui::GetCursorScreenPos();
 
-    // Determine selected chunk frame range for gold border
-    int selFrameStart = -1, selFrameEnd = -1;
-    if (m_selectedChunkIdx >= 0 && m_selectedChunkIdx < (int)chunks.size())
-    {
-        selFrameStart = chunks[m_selectedChunkIdx].frame_start;
-        selFrameEnd = chunks[m_selectedChunkIdx].frame_end;
-    }
-
-    // Pass 1: colored rectangles + selection border
+    // Pass 1: colored rectangles
     for (int i = 0; i < totalFrames; ++i)
     {
         int col = i % cols;
@@ -1132,16 +1133,6 @@ void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fS
         else                        color = IM_COL32(64, 64, 64, 255);
 
         drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + cellSize, y + cellSize), color, 2.0f);
-
-        // Gold border for frames in selected chunk
-        int frameNum = fStart + i;
-        if (frameNum >= selFrameStart && frameNum <= selFrameEnd)
-        {
-            drawList->AddRect(
-                ImVec2(x - 1.0f, y - 1.0f),
-                ImVec2(x + cellSize + 1.0f, y + cellSize + 1.0f),
-                IM_COL32(255, 200, 50, 255), 2.0f, 0, 2.0f);
-        }
     }
 
     // Pass 2: hover tooltips via InvisibleButton
@@ -1184,7 +1175,8 @@ void JobDetailPanel::renderFrameGrid(const std::vector<ChunkRow>& chunks, int fS
     ImGui::PopID();
 
     int totalRows = (totalFrames + cols - 1) / cols;
-    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + totalRows * (cellSize + gap) + 4.0f));
+    ImGui::SetCursorScreenPos(origin);
+    ImGui::Dummy(ImVec2(cols * (cellSize + gap), totalRows * (cellSize + gap) + 4.0f));
 }
 
 void JobDetailPanel::renderChunkTable()
@@ -1192,10 +1184,14 @@ void JobDetailPanel::renderChunkTable()
     if (m_detailChunks.empty()) return;
 
     ImGui::Text("Chunks:");
+    // Fill remaining space, minus trailing ItemSpacing to avoid parent scrollbar
+    float tableHeight = ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ItemSpacing.y;
+    if (tableHeight < ImGui::GetTextLineHeightWithSpacing() * 3)
+        tableHeight = ImGui::GetTextLineHeightWithSpacing() * 3;
 
     if (ImGui::BeginTable("##ChunkTable", 5,
         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
-        ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 10)))
+        ImVec2(0.0f, tableHeight)))
     {
         ImGui::TableSetupColumn("Chunk", ImGuiTableColumnFlags_WidthFixed, 100.0f);
         ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 80.0f);
@@ -1217,13 +1213,11 @@ void JobDetailPanel::renderChunkTable()
             else
                 snprintf(rangeLabel, sizeof(rangeLabel), "%d-%d", c.frame_start, c.frame_end);
 
-            // Make the row selectable for left-click selection + right-click context
+            // Make the row selectable for right-click context
             ImGui::PushID(static_cast<int>(c.id));
-            bool isSelected = (m_selectedChunkIdx == ci);
-            if (ImGui::Selectable(rangeLabel, isSelected,
+            if (ImGui::Selectable(rangeLabel, false,
                 ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap))
             {
-                m_selectedChunkIdx = isSelected ? -1 : ci;
             }
 
             // Right-click context menu

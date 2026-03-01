@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace MR {
 
@@ -104,6 +105,10 @@ private:
     std::queue<FrameReport> m_frameQueue;
 
     NodeFailureTracker m_failureTracker;
+
+    // Nodes we've dispatched to that haven't yet shown up as "rendering" in a peer snapshot.
+    // Prevents re-assigning work before the UDP heartbeat propagates the busy state.
+    std::unordered_set<std::string> m_dispatchedNodes;
 
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_lastAgentRestartAttempt;
 

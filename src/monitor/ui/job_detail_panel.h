@@ -67,8 +67,8 @@ private:
     std::string m_detailChunksLastState;  // detect state transitions for final refresh
     std::chrono::steady_clock::time_point m_lastChunkRefresh;
 
-    // Chunk selection (frame grid highlighting)
-    int m_selectedChunkIdx = -1;
+    // Detail tab selection (0 = Frames, 1 = Chunks)
+    int m_activeDetailTab = 0;
 
     // Chunk table context menu state
     int64_t m_contextChunkId = 0;

@@ -2,7 +2,7 @@
 ; https://jrsoftware.org/isinfo.php
 
 #define MyAppName "MinRender"
-#define MyAppVersion "0.3.5"
+#define MyAppVersion "0.3.6"
 #define MyAppPublisher "cbkow"
 #define MyAppURL "https://github.com/cbkow/minrender"
 #define MyAppExeName "minrender.exe"

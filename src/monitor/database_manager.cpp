@@ -531,6 +531,25 @@ bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int fr
     }
 }
 
+bool DatabaseManager::revertChunkToPending(const std::string& jobId, int frameStart, int frameEnd)
+{
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "UPDATE chunks SET state = 'pending', assigned_to = NULL, assigned_at_ms = NULL "
+            "WHERE job_id = ? AND frame_start = ? AND frame_end = ?");
+        q.bind(1, jobId);
+        q.bind(2, frameStart);
+        q.bind(3, frameEnd);
+        return q.exec() > 0;
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("revertChunkToPending failed: ") + e.what());
+        return false;
+    }
+}
+
 int DatabaseManager::reassignDeadWorkerChunks(const std::string& deadNodeId)
 {
     try

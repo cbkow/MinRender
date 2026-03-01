@@ -60,6 +60,9 @@ struct PeerInfo
     std::string agent_health = "ok";    // ok | reconnecting | needs_attention
     std::string alert_reason;
 
+    // Readiness gating
+    bool ready_for_work = true;
+
     // Network
     std::string endpoint;   // "ip:port"
 
@@ -95,6 +98,7 @@ inline void to_json(nlohmann::json& j, const PeerInfo& p)
         {"endpoint",     p.endpoint},
         {"agent_health", p.agent_health},
         {"alert_reason", p.alert_reason},
+        {"ready_for_work", p.ready_for_work},
     };
 }
 
@@ -116,6 +120,7 @@ inline void from_json(const nlohmann::json& j, PeerInfo& p)
     if (j.contains("endpoint"))      j.at("endpoint").get_to(p.endpoint);
     if (j.contains("agent_health"))  j.at("agent_health").get_to(p.agent_health);
     if (j.contains("alert_reason"))  j.at("alert_reason").get_to(p.alert_reason);
+    if (j.contains("ready_for_work")) j.at("ready_for_work").get_to(p.ready_for_work);
 }
 
 } // namespace MR

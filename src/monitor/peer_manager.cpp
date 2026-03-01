@@ -100,7 +100,8 @@ void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::stri
                                        const std::string& renderState, const std::string& jobId,
                                        const std::string& chunk, int priority,
                                        const std::string& agentHealth,
-                                       const std::string& alertReason)
+                                       const std::string& alertReason,
+                                       bool readyForWork)
 {
     auto now = nowMs();
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -120,6 +121,7 @@ void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::stri
         info.priority = priority;
         info.agent_health = agentHealth;
         info.alert_reason = alertReason;
+        info.ready_for_work = readyForWork;
         info.is_alive = true;
         info.failed_polls = 0;
         info.last_seen_ms = 0;
@@ -140,6 +142,7 @@ void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::stri
         it->second.priority = priority;
         it->second.agent_health = agentHealth;
         it->second.alert_reason = alertReason;
+        it->second.ready_for_work = readyForWork;
         it->second.is_alive = true;
         it->second.failed_polls = 0;
         it->second.has_udp_contact = true;
@@ -390,6 +393,10 @@ void PeerManager::pollPeers()
                     updated.agent_health = it->second.agent_health;
                     updated.alert_reason = it->second.alert_reason;
                 }
+
+                // Preserve UDP-sourced readiness (UDP updates more frequently)
+                if (it->second.has_udp_contact)
+                    updated.ready_for_work = it->second.ready_for_work;
 
                 it->second = updated;
             }

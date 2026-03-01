@@ -6,6 +6,7 @@
 
 #include <imgui.h>
 #include <algorithm>
+#include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -54,9 +55,28 @@ void LogPanel::render()
                 if (ImGui::Selectable(taskLabel.c_str(), m_mode == Mode::TaskOutput))
                     m_mode = Mode::TaskOutput;
 
-                // Remote Node Logs — list alive peers
+                // Node Logs — local + alive peers
                 if (m_app && m_app->isFarmRunning())
                 {
+                    // Local node
+                    ImGui::Separator();
+                    ImGui::TextDisabled("This Node");
+
+                    const auto& id = m_app->identity();
+                    std::string localHostname = id.systemInfo().hostname;
+                    std::string localLabel = (localHostname.empty() ? id.nodeId() : localHostname) + " (local)";
+                    bool localSelected = (m_mode == Mode::RemoteNodeLog &&
+                                          m_selectedRemoteNodeId == id.nodeId());
+                    if (ImGui::Selectable(("  " + localLabel).c_str(), localSelected))
+                    {
+                        m_mode = Mode::RemoteNodeLog;
+                        m_selectedRemoteNodeId = id.nodeId();
+                        m_selectedRemoteHostname = localHostname;
+                        m_remoteLogCache.clear();
+                        m_lastRemoteLogRefresh = {};
+                    }
+
+                    // Remote peers
                     ImGui::Separator();
                     ImGui::TextDisabled("Remote Node Logs");
 
@@ -64,6 +84,7 @@ void LogPanel::render()
                     for (const auto& peer : peers)
                     {
                         if (!peer.is_alive) continue;
+                        if (peer.node_id == id.nodeId()) continue; // skip local
                         std::string label = peer.hostname.empty() ? peer.node_id : peer.hostname;
                         bool isSelected = (m_mode == Mode::RemoteNodeLog &&
                                           m_selectedRemoteNodeId == peer.node_id);
@@ -115,7 +136,22 @@ void LogPanel::renderMonitorLog()
         else
             col = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
 
-        ImGui::TextColored(col, "[%s] [%s] %s",
+        // Format timestamp: HH:MM:SS.mmm
+        auto secs = entry.timestamp_ms / 1000;
+        auto remainder = entry.timestamp_ms % 1000;
+        time_t t = static_cast<time_t>(secs);
+        struct tm tmBuf;
+#ifdef _WIN32
+        localtime_s(&tmBuf, &t);
+#else
+        localtime_r(&t, &tmBuf);
+#endif
+        char timeBuf[16];
+        std::snprintf(timeBuf, sizeof(timeBuf), "%02d:%02d:%02d.%03d",
+                      tmBuf.tm_hour, tmBuf.tm_min, tmBuf.tm_sec, (int)remainder);
+
+        ImGui::TextColored(col, "%s %s  [%s] %s",
+            timeBuf,
             entry.level.c_str(),
             entry.category.c_str(),
             entry.message.c_str());
@@ -157,59 +193,92 @@ void LogPanel::renderTaskOutput()
     if (needScan)
         scanTaskOutput();
 
-    if (m_taskOutputLines.empty())
+    if (m_chunkList.empty())
     {
         ImGui::TextDisabled("No task output available");
         return;
     }
 
-    ImGui::BeginChild("TaskOutputScroll", ImVec2(0, 0), ImGuiChildFlags_None);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+
+    // Left pane: chunk list (scale width with font size)
+    float chunkListWidth = 200.0f * ImGui::GetIO().FontGlobalScale;
+    ImGui::BeginChild("ChunkList", ImVec2(chunkListWidth, 0), ImGuiChildFlags_Borders);
 
     if (Fonts::mono)
         ImGui::PushFont(Fonts::mono);
 
-    for (const auto& line : m_taskOutputLines)
+    for (int i = 0; i < (int)m_chunkList.size(); ++i)
     {
-        if (line.isHeader)
-            ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), "%s", line.text.c_str());
-        else
-            ImGui::TextUnformatted(line.text.c_str());
+        bool selected = (i == m_selectedChunkIndex);
+        if (ImGui::Selectable(m_chunkList[i].displayLabel.c_str(), selected))
+        {
+            m_selectedChunkIndex = i;
+            loadChunkContent(i);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s  %s", m_chunkList[i].nodeId.c_str(),
+                              m_chunkList[i].displayLabel.c_str());
     }
 
     if (Fonts::mono)
         ImGui::PopFont();
 
-    if (m_autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f)
-        ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // Right pane: selected chunk content
+    ImGui::BeginChild("ChunkContent", ImVec2(0, 0), ImGuiChildFlags_None);
+
+    if (m_selectedChunkIndex < 0)
+    {
+        ImGui::TextDisabled("Select a chunk to view its output");
+    }
+    else
+    {
+        if (Fonts::mono)
+            ImGui::PushFont(Fonts::mono);
+
+        for (const auto& line : m_selectedChunkLines)
+            ImGui::TextUnformatted(line.c_str());
+
+        if (Fonts::mono)
+            ImGui::PopFont();
+
+        if (m_autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f)
+            ImGui::SetScrollHereY(1.0f);
+    }
 
     ImGui::EndChild();
+
+    ImGui::PopStyleColor();
 }
 
 void LogPanel::scanTaskOutput()
 {
     m_lastTaskOutputScan = std::chrono::steady_clock::now();
-    m_taskOutputLines.clear();
 
     if (!m_app) return;
 
     std::string jobId = m_app->selectedJobId();
-    m_taskOutputJobId = jobId;
     if (jobId.empty()) return;
+
+    // Reset selection when job changes
+    bool jobChanged = (jobId != m_taskOutputJobId);
+    m_taskOutputJobId = jobId;
+    if (jobChanged)
+    {
+        m_selectedChunkIndex = -1;
+        m_selectedChunkLines.clear();
+    }
 
     auto stdoutDir = m_app->farmPath() / "jobs" / jobId / "stdout";
     std::error_code ec;
     if (!std::filesystem::is_directory(stdoutDir, ec))
         return;
 
-    // Collect all log files: {nodeId, rangeStr, timestampMs, path}
-    struct LogFile
-    {
-        std::string nodeId;
-        std::string rangeStr;
-        int64_t timestampMs = 0;
-        std::filesystem::path path;
-    };
-    std::vector<LogFile> logFiles;
+    std::vector<ChunkLogEntry> chunks;
 
     for (const auto& nodeEntry : std::filesystem::directory_iterator(stdoutDir, ec))
     {
@@ -224,57 +293,75 @@ void LogPanel::scanTaskOutput()
                 continue;
 
             // Parse: {rangeStr}_{timestamp_ms}.log
-            std::string stem = fname.substr(0, fname.size() - 4); // strip .log
+            std::string stem = fname.substr(0, fname.size() - 4);
             auto underPos = stem.rfind('_');
             if (underPos == std::string::npos) continue;
 
-            LogFile lf;
-            lf.nodeId = nodeId;
-            lf.rangeStr = stem.substr(0, underPos);
-            try { lf.timestampMs = std::stoll(stem.substr(underPos + 1)); }
+            ChunkLogEntry entry;
+            entry.nodeId = nodeId;
+            entry.rangeStr = stem.substr(0, underPos);
+            try { entry.timestampMs = std::stoll(stem.substr(underPos + 1)); }
             catch (...) { continue; }
-            lf.path = fileEntry.path();
-            logFiles.push_back(std::move(lf));
+            entry.path = fileEntry.path();
+
+            // Format timestamp as HH:MM:SS
+            time_t t = static_cast<time_t>(entry.timestampMs / 1000);
+            struct tm tmBuf;
+#ifdef _WIN32
+            localtime_s(&tmBuf, &t);
+#else
+            localtime_r(&t, &tmBuf);
+#endif
+            char timeBuf[16];
+            std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tmBuf);
+
+            entry.displayLabel = "f" + entry.rangeStr + "  " + timeBuf;
+            chunks.push_back(std::move(entry));
         }
     }
 
     // Sort by rangeStr then timestamp
-    std::sort(logFiles.begin(), logFiles.end(), [](const LogFile& a, const LogFile& b)
+    std::sort(chunks.begin(), chunks.end(), [](const ChunkLogEntry& a, const ChunkLogEntry& b)
     {
         if (a.rangeStr != b.rangeStr) return a.rangeStr < b.rangeStr;
         return a.timestampMs < b.timestampMs;
     });
 
-    // Build output lines
-    for (const auto& lf : logFiles)
+    // If selected chunk still exists, preserve selection; reload content if file changed
+    if (m_selectedChunkIndex >= 0 && m_selectedChunkIndex < (int)m_chunkList.size())
     {
-        // Format timestamp as HH:MM:SS
-        time_t t = static_cast<time_t>(lf.timestampMs / 1000);
-        struct tm tmBuf;
-#ifdef _WIN32
-        localtime_s(&tmBuf, &t);
-#else
-        localtime_r(&t, &tmBuf);
-#endif
-        char timeBuf[16];
-        std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tmBuf);
-
-        // Header line
-        std::string header = lf.nodeId + "  |  f" + lf.rangeStr + "  |  " + timeBuf;
-        m_taskOutputLines.push_back({header, true});
-
-        // Read file contents
-        std::ifstream ifs(lf.path);
-        if (ifs.is_open())
+        const auto& oldPath = m_chunkList[m_selectedChunkIndex].path;
+        int newIndex = -1;
+        for (int i = 0; i < (int)chunks.size(); ++i)
         {
-            std::string line;
-            while (std::getline(ifs, line))
-                m_taskOutputLines.push_back({std::move(line), false});
+            if (chunks[i].path == oldPath)
+            {
+                newIndex = i;
+                break;
+            }
         }
-
-        // Blank separator
-        m_taskOutputLines.push_back({"", false});
+        m_chunkList = std::move(chunks);
+        m_selectedChunkIndex = newIndex;
+        if (newIndex >= 0)
+            loadChunkContent(newIndex); // reload to pick up appended content
     }
+    else
+    {
+        m_chunkList = std::move(chunks);
+    }
+}
+
+void LogPanel::loadChunkContent(int index)
+{
+    m_selectedChunkLines.clear();
+    if (index < 0 || index >= (int)m_chunkList.size()) return;
+
+    std::ifstream ifs(m_chunkList[index].path);
+    if (!ifs.is_open()) return;
+
+    std::string line;
+    while (std::getline(ifs, line))
+        m_selectedChunkLines.push_back(std::move(line));
 }
 
 void LogPanel::renderRemoteNodeLog()

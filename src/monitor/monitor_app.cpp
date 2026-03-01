@@ -1173,6 +1173,9 @@ PeerInfo MonitorApp::buildLocalPeerInfo() const
             info.alert_reason += " (disconnected)";
     }
 
+    // Readiness gating
+    info.ready_for_work = m_agentSupervisor.readyForWork();
+
     // Endpoint
     std::string localIp = m_config.ip_override.empty()
         ? getLocalIpAddress()
@@ -1205,8 +1208,9 @@ void MonitorApp::handleUdpMessages()
             int pri = msg.value("pri", 100);
             std::string ah = msg.value("ah", "ok");
             std::string ar = msg.value("ar", "");
+            bool rfw = msg.value("rfw", true);
 
-            m_peerManager.processUdpHeartbeat(nodeId, ip, port, st, rs, job, chunk, pri, ah, ar);
+            m_peerManager.processUdpHeartbeat(nodeId, ip, port, st, rs, job, chunk, pri, ah, ar, rfw);
         }
         else if (type == "bye")
         {
@@ -1233,6 +1237,7 @@ void MonitorApp::sendUdpHeartbeat()
         {"rs", m_renderCoordinator.isRendering() ? "rendering" : "idle"},
         {"pri", m_config.priority},
         {"ah", m_agentSupervisor.agentHealth()},
+        {"rfw", m_agentSupervisor.readyForWork()},
     };
 
     if (m_renderCoordinator.isRendering())

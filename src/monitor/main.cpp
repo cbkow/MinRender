@@ -78,7 +78,7 @@ int main(int argc, char* argv[])
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
     std::string windowTitle = std::string("MinRender Monitor v") + APP_VERSION;
-    GLFWwindow* window = glfwCreateWindow(1280, 720, windowTitle.c_str(), nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1440, 900, windowTitle.c_str(), nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;

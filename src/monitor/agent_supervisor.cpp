@@ -338,10 +338,15 @@ void AgentSupervisor::processMessages()
 
             if (type == "status")
             {
+                std::string prevState = m_agentState;
                 m_agentState = j.value("state", "unknown");
                 uint32_t pid = j.value("pid", 0u);
                 if (pid != 0) m_agentPid = pid;
                 MonitorLog::instance().info("agent", "Agent status: state=" + m_agentState + " pid=" + std::to_string(m_agentPid));
+
+                // DCC confirmed dead → node is ready for new work
+                if (m_agentState == "idle" && prevState == "rendering")
+                    m_readyForWork.store(true);
             }
             else if (type == "pong")
             {

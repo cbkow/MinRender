@@ -29,7 +29,7 @@ void NodePanel::render()
 
     if (ImGui::Begin("Node Overview", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
-        panelHeader("Nodes", Icons::Computer, visible);
+        panelHeader("Nodes", Icons::Hub, visible);
         if (!m_app || !m_app->isFarmRunning())
         {
             ImGui::TextDisabled("Farm not connected.");
@@ -47,7 +47,7 @@ void NodePanel::render()
             // --- Local node ---
             const auto& id = m_app->identity();
             PushOutlineHeaderStyle();
-            bool thisNodeOpen = CollapsingHeaderWithIcon("      This Node", Fonts::icons, Icons::Computer, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen);
+            bool thisNodeOpen = CollapsingHeaderWithIcon("      This Node", Fonts::icons, Icons::Monitor, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen);
             PopOutlineHeaderStyle();
 
             if (thisNodeOpen)
@@ -120,7 +120,7 @@ void NodePanel::render()
 
             // --- Peers ---
             PushOutlineHeaderStyle();
-            bool peersOpen = CollapsingHeaderWithIcon("      Peers", Fonts::icons, Icons::Computer, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen);
+            bool peersOpen = CollapsingHeaderWithIcon("      Peers", Fonts::icons, Icons::Network, getAccentColor(), ImGuiTreeNodeFlags_DefaultOpen);
             PopOutlineHeaderStyle();
 
             auto peers = m_app->peerManager().getPeerSnapshot();
