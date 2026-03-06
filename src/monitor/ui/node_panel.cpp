@@ -4,6 +4,7 @@
 #include "monitor/monitor_app.h"
 #include "monitor/dispatch_manager.h"
 #include "core/net_utils.h"
+#include "core/http_server.h"
 
 #include <imgui.h>
 #include <httplib.h>
@@ -291,13 +292,14 @@ void NodePanel::render()
                             {
                                 m_app->peerManager().setPeerNodeState(peer.node_id, "stopped");
                                 std::string ep = peer.endpoint;
-                                std::thread([ep]() {
+                                std::string secret = m_app->farmSecret();
+                                std::thread([ep, secret]() {
                                     auto [host, port] = parseEndpoint(ep);
                                     if (host.empty()) return;
                                     httplib::Client cli(host, port);
                                     cli.set_connection_timeout(2);
                                     cli.set_read_timeout(2);
-                                    cli.Post("/api/node/stop");
+                                    cli.Post("/api/node/stop", authHeaders(secret), "", "text/plain");
                                 }).detach();
                             }
                         }
@@ -307,13 +309,14 @@ void NodePanel::render()
                             {
                                 m_app->peerManager().setPeerNodeState(peer.node_id, "active");
                                 std::string ep = peer.endpoint;
-                                std::thread([ep]() {
+                                std::string secret = m_app->farmSecret();
+                                std::thread([ep, secret]() {
                                     auto [host, port] = parseEndpoint(ep);
                                     if (host.empty()) return;
                                     httplib::Client cli(host, port);
                                     cli.set_connection_timeout(2);
                                     cli.set_read_timeout(2);
-                                    cli.Post("/api/node/start");
+                                    cli.Post("/api/node/start", authHeaders(secret), "", "text/plain");
                                 }).detach();
                             }
                         }
@@ -323,13 +326,14 @@ void NodePanel::render()
                         if (ImGui::SmallButton("Restart App"))
                         {
                             std::string ep = peer.endpoint;
-                            std::thread([ep]() {
+                            std::string secret = m_app->farmSecret();
+                            std::thread([ep, secret]() {
                                 auto [host, port] = parseEndpoint(ep);
                                 if (host.empty()) return;
                                 httplib::Client cli(host, port);
                                 cli.set_connection_timeout(2);
                                 cli.set_read_timeout(10);
-                                cli.Post("/api/node/restart");
+                                cli.Post("/api/node/restart", authHeaders(secret), "", "text/plain");
                             }).detach();
                         }
 

@@ -4,6 +4,7 @@
 #include "core/platform.h"
 #include "core/monitor_log.h"
 #include "core/net_utils.h"
+#include "core/http_server.h"
 
 #include <nlohmann/json.hpp>
 #include <httplib.h>
@@ -203,7 +204,8 @@ void SubmissionWatcher::processSubmission(const fs::path& jsonPath)
                         {"manifest", nlohmann::json(manifest)},
                         {"priority", priority},
                     };
-                    auto res = cli.Post("/api/jobs", body.dump(), "application/json");
+                    auto res = cli.Post("/api/jobs", authHeaders(m_app->farmSecret()),
+                        body.dump(), "application/json");
                     if (!res || res->status != 200)
                     {
                         MonitorLog::instance().warn("job",

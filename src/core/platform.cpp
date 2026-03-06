@@ -5,6 +5,8 @@
 #include <Windows.h>
 #include <ShlObj.h>
 #include <shellapi.h>
+#include <netfw.h>
+#include <comdef.h>
 #endif
 
 #include <iostream>
@@ -107,24 +109,79 @@ void openUrl(const std::string& url)
 bool addFirewallRule(const std::string& ruleName, uint16_t tcpPort, uint16_t udpPort)
 {
 #ifdef _WIN32
-    std::wstring name(ruleName.begin(), ruleName.end());
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    bool weInitialized = SUCCEEDED(hr);
+    // RPC_E_CHANGED_MODE means COM was already initialized — that's fine
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE)
+        return false;
 
-    // Build a single cmd /c command that deletes old rules and adds new ones.
-    // One UAC prompt covers all operations.
-    std::wstring cmd = L"/c "
-        L"netsh advfirewall firewall delete rule name=\"" + name + L"\" >nul 2>&1 & "
-        L"netsh advfirewall firewall add rule name=\"" + name + L"\" "
-        L"dir=in action=allow protocol=tcp localport=" + std::to_wstring(tcpPort) + L" enable=yes";
+    bool success = false;
+    INetFwPolicy2* policy = nullptr;
+    INetFwRules* rules = nullptr;
 
-    if (udpPort > 0)
+    hr = CoCreateInstance(__uuidof(NetFwPolicy2), nullptr, CLSCTX_INPROC_SERVER,
+                          __uuidof(INetFwPolicy2), reinterpret_cast<void**>(&policy));
+    if (FAILED(hr))
+        goto cleanup;
+
+    hr = policy->get_Rules(&rules);
+    if (FAILED(hr))
+        goto cleanup;
+
     {
-        cmd += L" & netsh advfirewall firewall add rule name=\"" + name + L" UDP\" "
-               L"dir=in action=allow protocol=udp localport=" + std::to_wstring(udpPort) + L" enable=yes";
+        // Remove old rules by name (ignore errors — rule may not exist)
+        _bstr_t bstrName(ruleName.c_str());
+        rules->Remove(bstrName);
+        _bstr_t bstrNameUdp((ruleName + " UDP").c_str());
+        rules->Remove(bstrNameUdp);
+
+        // Add TCP rule
+        {
+            INetFwRule* rule = nullptr;
+            hr = CoCreateInstance(__uuidof(NetFwRule), nullptr, CLSCTX_INPROC_SERVER,
+                                  __uuidof(INetFwRule), reinterpret_cast<void**>(&rule));
+            if (SUCCEEDED(hr))
+            {
+                rule->put_Name(bstrName);
+                rule->put_Protocol(NET_FW_IP_PROTOCOL_TCP);
+                rule->put_LocalPorts(_bstr_t(std::to_wstring(tcpPort).c_str()));
+                rule->put_Direction(NET_FW_RULE_DIR_IN);
+                rule->put_Action(NET_FW_ACTION_ALLOW);
+                rule->put_Enabled(VARIANT_TRUE);
+
+                hr = rules->Add(rule);
+                success = SUCCEEDED(hr);
+                rule->Release();
+            }
+        }
+
+        // Add UDP rule
+        if (success && udpPort > 0)
+        {
+            INetFwRule* rule = nullptr;
+            hr = CoCreateInstance(__uuidof(NetFwRule), nullptr, CLSCTX_INPROC_SERVER,
+                                  __uuidof(INetFwRule), reinterpret_cast<void**>(&rule));
+            if (SUCCEEDED(hr))
+            {
+                rule->put_Name(bstrNameUdp);
+                rule->put_Protocol(NET_FW_IP_PROTOCOL_UDP);
+                rule->put_LocalPorts(_bstr_t(std::to_wstring(udpPort).c_str()));
+                rule->put_Direction(NET_FW_RULE_DIR_IN);
+                rule->put_Action(NET_FW_ACTION_ALLOW);
+                rule->put_Enabled(VARIANT_TRUE);
+
+                hr = rules->Add(rule);
+                success = success && SUCCEEDED(hr);
+                rule->Release();
+            }
+        }
     }
 
-    HINSTANCE result = ShellExecuteW(nullptr, L"runas", L"cmd.exe",
-                                      cmd.c_str(), nullptr, SW_HIDE);
-    return reinterpret_cast<intptr_t>(result) > 32;
+cleanup:
+    if (rules) rules->Release();
+    if (policy) policy->Release();
+    if (weInitialized) CoUninitialize();
+    return success;
 #else
     (void)ruleName;
     (void)tcpPort;

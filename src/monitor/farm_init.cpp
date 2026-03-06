@@ -6,15 +6,38 @@
 #include <nlohmann/json.hpp>
 #include <chrono>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
 #endif
 
 namespace MR {
 
 namespace fs = std::filesystem;
+
+static std::string generateApiSecret()
+{
+    unsigned char buf[32] = {};
+#ifdef _WIN32
+    NTSTATUS status = BCryptGenRandom(nullptr, buf, sizeof(buf), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    if (!BCRYPT_SUCCESS(status))
+        return {};
+#else
+    std::ifstream urandom("/dev/urandom", std::ios::binary);
+    if (!urandom.read(reinterpret_cast<char*>(buf), sizeof(buf)))
+        return {};
+#endif
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (unsigned char b : buf)
+        oss << std::setw(2) << static_cast<int>(b);
+    return oss.str();
+}
 
 static std::string getExeDir()
 {
@@ -136,12 +159,15 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
         auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 
+        std::string apiSecret = generateApiSecret();
+
         nlohmann::json farmJson = {
             {"_version", 1},
             {"protocol_version", PROTOCOL_VERSION},
             {"created_by", nodeId},
             {"created_at_ms", nowMs},
-            {"last_example_update", APP_VERSION}
+            {"last_example_update", APP_VERSION},
+            {"api_secret", apiSecret}
         };
 
         std::ofstream ofs(farmJsonPath);
@@ -163,12 +189,23 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
     }
     else
     {
-        // Check if example templates need update
+        // Check if example templates need update + ensure api_secret exists
         try
         {
             std::ifstream ifs(farmJsonPath);
             nlohmann::json fj = nlohmann::json::parse(ifs);
             ifs.close();
+
+            bool needsWrite = false;
+
+            // Upgrade path: generate api_secret if missing
+            if (!fj.contains("api_secret") || !fj["api_secret"].is_string() ||
+                fj["api_secret"].get<std::string>().empty())
+            {
+                fj["api_secret"] = generateApiSecret();
+                needsWrite = true;
+                MonitorLog::instance().info("farm", "Generated api_secret for existing farm");
+            }
 
             std::string lastUpdate;
             if (fj.contains("last_example_update"))
@@ -183,6 +220,11 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
                 copyPlugins(farmPath);
 
                 fj["last_example_update"] = APP_VERSION;
+                needsWrite = true;
+            }
+
+            if (needsWrite)
+            {
                 std::ofstream ofsUpdate(farmJsonPath);
                 if (ofsUpdate.is_open())
                     ofsUpdate << fj.dump(2);

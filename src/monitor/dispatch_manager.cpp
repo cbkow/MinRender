@@ -3,6 +3,7 @@
 #include "monitor/monitor_app.h"
 #include "core/monitor_log.h"
 #include "core/net_utils.h"
+#include "core/http_server.h"
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -419,7 +420,8 @@ void DispatchManager::assignWork()
                 " f" + std::to_string(chunk.frame_start) +
                 "-" + std::to_string(chunk.frame_end));
 
-            std::thread([this, host, port, bodyStr, jobId, fs, fe, nodeId]()
+            std::string secret = m_app->farmSecret();
+            std::thread([this, host, port, bodyStr, jobId, fs, fe, nodeId, secret]()
             {
                 try
                 {
@@ -427,7 +429,7 @@ void DispatchManager::assignWork()
                     cli.set_connection_timeout(0, 500000); // 500ms
                     cli.set_read_timeout(2);
 
-                    auto res = cli.Post("/api/dispatch/assign", bodyStr, "application/json");
+                    auto res = cli.Post("/api/dispatch/assign", authHeaders(secret), bodyStr, "application/json");
                     if (!res || res->status != 200)
                     {
                         int status = res ? res->status : 0;
@@ -740,14 +742,15 @@ void DispatchManager::tryRemoteAgentRestart(const PeerInfo& peer)
     MonitorLog::instance().info("dispatch",
         "Attempting remote agent restart on " + peer.node_id);
 
-    std::thread([host, port, nodeId = peer.node_id]()
+    std::string secret = m_app->farmSecret();
+    std::thread([host, port, nodeId = peer.node_id, secret]()
     {
         try
         {
             httplib::Client cli(host, port);
             cli.set_connection_timeout(2);
             cli.set_read_timeout(5);
-            auto res = cli.Post("/api/agent/restart", "", "application/json");
+            auto res = cli.Post("/api/agent/restart", authHeaders(secret), "", "application/json");
             if (res && res->status == 200)
                 MonitorLog::instance().info("dispatch",
                     "Remote agent restart succeeded on " + nodeId);

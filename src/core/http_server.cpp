@@ -468,6 +468,32 @@ bool HttpServer::start(const std::string& bindAddress, uint16_t port)
         return true;
 
     setupRoutes();
+
+    // Auth middleware: require Bearer token on all /api/ routes except GET /api/status
+    if (!m_apiSecret.empty())
+    {
+        m_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) -> httplib::Server::HandlerResponse
+        {
+            // Skip auth for GET /api/status (used by peer discovery)
+            if (req.method == "GET" && req.path == "/api/status")
+                return httplib::Server::HandlerResponse::Unhandled;
+
+            // Only protect /api/ routes
+            if (req.path.rfind("/api/", 0) != 0)
+                return httplib::Server::HandlerResponse::Unhandled;
+
+            auto it = req.headers.find("Authorization");
+            if (it == req.headers.end() || it->second != "Bearer " + m_apiSecret)
+            {
+                res.status = 401;
+                res.set_content(R"({"error":"unauthorized"})", "application/json");
+                return httplib::Server::HandlerResponse::Handled;
+            }
+
+            return httplib::Server::HandlerResponse::Unhandled;
+        });
+    }
+
     m_port = port;
 
     // Try to bind before launching thread

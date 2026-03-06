@@ -29,6 +29,12 @@ bool MonitorApp::init()
     m_configPath = m_appDataDir / "config.json";
     loadConfig();
 
+    // Cleanup leftover restart.bat from older versions
+    {
+        std::error_code ec;
+        std::filesystem::remove(m_appDataDir / "restart.bat", ec);
+    }
+
     // Apply font scale
     ImGui::GetIO().FontGlobalScale = m_config.font_scale;
 
@@ -243,6 +249,20 @@ bool MonitorApp::startFarm()
     auto initResult = FarmInit::init(m_farmPath, m_identity.nodeId());
     if (!initResult.success)
         MonitorLog::instance().warn("farm", "Farm init: " + initResult.error);
+
+    // Load API secret from farm.json
+    {
+        auto farmJsonPath = m_farmPath / "farm.json";
+        try
+        {
+            std::ifstream ifs(farmJsonPath);
+            nlohmann::json fj = nlohmann::json::parse(ifs);
+            if (fj.contains("api_secret") && fj["api_secret"].is_string())
+                m_farmSecret = fj["api_secret"].get<std::string>();
+        }
+        catch (...) {}
+    }
+    m_httpServer.setApiSecret(m_farmSecret);
 
     // Start file logging
     MonitorLog::instance().startFileLogging(m_farmPath, m_identity.nodeId());
@@ -493,7 +513,7 @@ std::vector<ChunkRow> MonitorApp::getChunksForJob(const std::string& jobId)
         cli.set_connection_timeout(0, 500000); // 500ms
         cli.set_read_timeout(1);
 
-        auto res = cli.Get("/api/jobs/" + jobId);
+        auto res = cli.Get("/api/jobs/" + jobId, authHeaders(m_farmSecret));
         if (!res || res->status != 200)
         {
             if (!res)
@@ -614,7 +634,7 @@ void MonitorApp::refreshCachedJobs()
                         cli.set_connection_timeout(0, 500000); // 500ms
                         cli.set_read_timeout(1);
 
-                        auto res = cli.Get("/api/jobs");
+                        auto res = cli.Get("/api/jobs", authHeaders(m_farmSecret));
                         if (res && res->status == 200)
                         {
                             auto arr = nlohmann::json::parse(res->body);
@@ -1046,46 +1066,34 @@ bool MonitorApp::launchRestartSidecar()
     GetModuleFileNameW(nullptr, exePathW, MAX_PATH);
     std::filesystem::path exePath(exePathW);
 
-    auto batPath = m_appDataDir / "restart.bat";
-
-    // Write restart batch script
+    // Find mr-restart.exe next to monitor exe
+    std::filesystem::path restartExe = exePath.parent_path() / "mr-restart.exe";
+    if (!std::filesystem::exists(restartExe))
     {
-        std::ofstream bat(batPath);
-        if (!bat.good())
-        {
-            MonitorLog::instance().error("farm", "Failed to write restart.bat");
-            return false;
-        }
-        bat << "@echo off\n";
-        bat << "set PID=" << pid << "\n";
-        bat << "set \"EXE=" << exePath.string() << "\"\n";
-        bat << "set TRIES=0\n";
-        bat << ":wait\n";
-        bat << "tasklist /FI \"PID eq %PID%\" 2>NUL | find \"%PID%\" >NUL\n";
-        bat << "if errorlevel 1 goto :launch\n";
-        bat << "set /a TRIES+=1\n";
-        bat << "if %TRIES% GEQ 15 goto :kill\n";
-        bat << "timeout /t 1 /nobreak >NUL\n";
-        bat << "goto :wait\n";
-        bat << ":kill\n";
-        bat << "taskkill /F /PID %PID% >NUL 2>&1\n";
-        bat << ":launch\n";
-        bat << "timeout /t 2 /nobreak >NUL\n";
-        bat << "start \"\" \"%EXE%\" --minimized\n";
+        MonitorLog::instance().error("farm", "mr-restart.exe not found at: " + restartExe.string());
+        return false;
     }
 
-    // Launch the batch script detached with no window
-    std::wstring cmdLine = L"cmd.exe /c \"" + batPath.wstring() + L"\"";
+    // Cleanup leftover restart.bat from older versions
+    {
+        auto oldBat = m_appDataDir / "restart.bat";
+        std::error_code ec;
+        std::filesystem::remove(oldBat, ec);
+    }
+
+    // Build command line
+    std::wstring cmdLine = L"\"" + restartExe.wstring() + L"\" --pid " +
+        std::to_wstring(pid) + L" --exe \"" + exePath.wstring() + L"\" --minimized";
 
     STARTUPINFOW si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
 
     BOOL ok = CreateProcessW(
-        nullptr,
+        restartExe.wstring().c_str(),
         cmdLine.data(),
         nullptr, nullptr, FALSE,
-        CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP,
+        CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP,
         nullptr, nullptr,
         &si, &pi);
 
@@ -1101,7 +1109,7 @@ bool MonitorApp::launchRestartSidecar()
         return false;
     }
 
-    // Defer shutdown so cmd.exe has time to start and read the bat file
+    // Defer shutdown so mr-restart.exe has time to open process handle
     m_restartPending = true;
     m_restartLaunchedAt = std::chrono::steady_clock::now();
     return true;
@@ -1323,10 +1331,11 @@ void MonitorApp::httpWorkerLoop()
                     httplib::Client cli(req.host, req.port);
                     cli.set_connection_timeout(0, 500000); // 500ms
                     cli.set_read_timeout(2);
+                    auto hdrs = authHeaders(m_farmSecret);
 
                     httplib::Result res = (req.method == "DELETE")
-                        ? cli.Delete(req.endpoint)
-                        : cli.Post(req.endpoint, req.body, "application/json");
+                        ? cli.Delete(req.endpoint, hdrs)
+                        : cli.Post(req.endpoint, hdrs, req.body, "application/json");
 
                     if (res)
                     {
@@ -1429,7 +1438,7 @@ bool MonitorApp::flushCompletionReports()
                 endpoint = "/api/dispatch/failed";
             }
 
-            auto res = cli.Post(endpoint, body.dump(), "application/json");
+            auto res = cli.Post(endpoint, authHeaders(m_farmSecret), body.dump(), "application/json");
             if (!res || res->status != 200)
             {
                 anyFailed = true;
@@ -1503,7 +1512,7 @@ bool MonitorApp::flushFrameReports()
             };
 
             auto res = cli.Post("/api/dispatch/frame-complete",
-                body.dump(), "application/json");
+                authHeaders(m_farmSecret), body.dump(), "application/json");
             if (!res || res->status != 200)
                 allSent = false;
         }

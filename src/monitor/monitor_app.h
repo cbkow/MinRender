@@ -115,6 +115,7 @@ public:
     const std::filesystem::path& farmPath() const { return m_farmPath; }
     bool hasFarmError() const { return !m_farmError.empty(); }
     const std::string& farmError() const { return m_farmError; }
+    const std::string& farmSecret() const { return m_farmSecret; }
 
     // Job selection state
     void selectJob(const std::string& id);
@@ -168,6 +169,7 @@ private:
     // Farm state
     std::filesystem::path m_farmPath;
     std::string m_farmError;
+    std::string m_farmSecret;
     bool m_farmRunning = false;
     NodeState m_nodeState = NodeState::Active;
 

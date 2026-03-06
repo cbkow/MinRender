@@ -4,6 +4,7 @@
 #include <cstring>
 
 #ifdef _WIN32
+#include <sddl.h>
 
 namespace MR {
 
@@ -25,6 +26,44 @@ bool IpcServer::create(const std::string& nodeId)
     std::wstring pipeName = L"\\\\.\\pipe\\MinRenderAgent_";
     for (char c : nodeId) pipeName += static_cast<wchar_t>(c);
 
+    // Build DACL restricting pipe to current user
+    SECURITY_ATTRIBUTES sa = {};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = FALSE;
+    PSECURITY_DESCRIPTOR pSD = nullptr;
+    bool hasDacl = false;
+
+    // Get current user's SID string
+    HANDLE token = nullptr;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    {
+        DWORD tokenLen = 0;
+        GetTokenInformation(token, TokenUser, nullptr, 0, &tokenLen);
+        if (tokenLen > 0)
+        {
+            auto* tokenUser = reinterpret_cast<TOKEN_USER*>(new char[tokenLen]);
+            if (GetTokenInformation(token, TokenUser, tokenUser, tokenLen, &tokenLen))
+            {
+                LPWSTR sidStr = nullptr;
+                if (ConvertSidToStringSidW(tokenUser->User.Sid, &sidStr))
+                {
+                    // SDDL: grant Generic All to this user only
+                    std::wstring sddl = L"D:(A;;GA;;;" + std::wstring(sidStr) + L")";
+                    LocalFree(sidStr);
+
+                    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                            sddl.c_str(), SDDL_REVISION_1, &pSD, nullptr))
+                    {
+                        sa.lpSecurityDescriptor = pSD;
+                        hasDacl = true;
+                    }
+                }
+            }
+            delete[] reinterpret_cast<char*>(tokenUser);
+        }
+        CloseHandle(token);
+    }
+
     m_pipe = CreateNamedPipeW(
         pipeName.c_str(),
         PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
@@ -33,8 +72,10 @@ bool IpcServer::create(const std::string& nodeId)
         65536,      // out buffer
         65536,      // in buffer
         0,          // default timeout
-        nullptr     // default security
+        hasDacl ? &sa : nullptr
     );
+
+    if (pSD) LocalFree(pSD);
 
     if (m_pipe == INVALID_HANDLE_VALUE)
     {

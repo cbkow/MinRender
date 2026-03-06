@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MinRender VERSION 0.3.8 LANGUAGES C CXX)
+project(MinRender VERSION 0.3.9 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -144,6 +144,7 @@ target_link_libraries(minrender PRIVATE
     opengl32
     shell32
     ole32
+    oleaut32
     Rpcrt4
     dwmapi
     Advapi32
@@ -165,4 +166,12 @@ if(MSVC)
     # Windows subsystem (no console window)
     set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
     set_target_properties(minrender PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
+endif()
+
+# --- Restart Helper ---
+add_executable(mr-restart src/restart/main.cpp)
+if(MSVC)
+    target_compile_options(mr-restart PRIVATE /W4)
+    set_target_properties(mr-restart PROPERTIES WIN32_EXECUTABLE TRUE)
+    set_target_properties(mr-restart PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif()

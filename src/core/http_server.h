@@ -15,6 +15,9 @@ class HttpServer
 public:
     void init(MonitorApp* app);
 
+    // Set the API secret for bearer token auth. Must be called before start().
+    void setApiSecret(const std::string& secret) { m_apiSecret = secret; }
+
     // Bind to address:port and launch background thread. Returns false if bind fails.
     bool start(const std::string& bindAddress, uint16_t port);
     void stop();
@@ -31,6 +34,15 @@ private:
     std::atomic<bool> m_running{false};
     MonitorApp* m_app = nullptr;
     uint16_t m_port = 0;
+    std::string m_apiSecret;
 };
+
+// Build Authorization header for HTTP client calls
+inline httplib::Headers authHeaders(const std::string& secret)
+{
+    if (secret.empty())
+        return {};
+    return {{"Authorization", "Bearer " + secret}};
+}
 
 } // namespace MR
