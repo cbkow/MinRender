@@ -7,6 +7,9 @@
 #include <shellapi.h>
 #include <netfw.h>
 #include <comdef.h>
+#else
+#include <unistd.h>
+#include <cstdlib>
 #endif
 
 #include <iostream>
@@ -25,6 +28,30 @@ std::filesystem::path getAppDataDir()
         return dir;
     }
     CoTaskMemFree(appData);
+#elif defined(__APPLE__)
+    const char* home = std::getenv("HOME");
+    if (home)
+    {
+        auto dir = std::filesystem::path(home) / "Library" / "Application Support" / "MinRender";
+        ensureDir(dir);
+        return dir;
+    }
+#elif defined(__linux__)
+    // XDG_DATA_HOME or ~/.local/share
+    const char* xdg = std::getenv("XDG_DATA_HOME");
+    if (xdg)
+    {
+        auto dir = std::filesystem::path(xdg) / "MinRender";
+        ensureDir(dir);
+        return dir;
+    }
+    const char* home = std::getenv("HOME");
+    if (home)
+    {
+        auto dir = std::filesystem::path(home) / ".local" / "share" / "MinRender";
+        ensureDir(dir);
+        return dir;
+    }
 #endif
     // Fallback
     auto dir = std::filesystem::current_path() / "MinRender_data";
@@ -75,6 +102,10 @@ std::string getHostname()
         WideCharToMultiByte(CP_UTF8, 0, buf, static_cast<int>(size), result.data(), len, nullptr, nullptr);
         return result;
     }
+#else
+    char buf[256];
+    if (gethostname(buf, sizeof(buf)) == 0)
+        return buf;
 #endif
     return "unknown";
 }

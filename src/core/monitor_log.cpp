@@ -52,6 +52,12 @@ void MonitorLog::error(const std::string& category, const std::string& message)
     append("ERROR", category, message);
 }
 
+void MonitorLog::setCallback(LogCallback cb)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_callback = std::move(cb);
+}
+
 void MonitorLog::append(const std::string& level, const std::string& category,
                         const std::string& message)
 {
@@ -84,6 +90,10 @@ void MonitorLog::append(const std::string& level, const std::string& category,
     entry.level = level;
     entry.category = category;
     entry.message = message;
+
+    // Notify callback before move (UI IPC push)
+    if (m_callback)
+        m_callback(entry);
 
     if (m_buffer.size() < MAX_ENTRIES)
     {

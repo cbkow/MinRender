@@ -10,6 +10,9 @@
 using SocketType = SOCKET;
 constexpr SocketType INVALID_SOCK = INVALID_SOCKET;
 #else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 using SocketType = int;
 constexpr SocketType INVALID_SOCK = -1;
 #endif

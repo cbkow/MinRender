@@ -27,8 +27,11 @@ public:
 private:
 #ifdef _WIN32
     HANDLE m_mutex = nullptr;
-    bool m_isFirst = false;
+#else
+    int m_lockFd = -1;
+    std::string m_lockPath;
 #endif
+    bool m_isFirst = false;
 };
 
 } // namespace MR

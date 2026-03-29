@@ -50,18 +50,28 @@ public:
     void signalStop();
 
     /// Check if a client is currently connected.
-    bool isConnected() const { return m_connected; }
+    bool isConnected() const { return m_connected.load(); }
 
 private:
+    std::atomic<bool> m_connected{false};
+    std::atomic<bool> m_stopRequested{false};
+    std::mutex m_writeMutex;
+
 #ifdef _WIN32
     HANDLE m_pipe = INVALID_HANDLE_VALUE;
     HANDLE m_stopEvent = nullptr;
     HANDLE m_connectEvent = nullptr;
-    std::atomic<bool> m_connected{false};
-    std::mutex m_writeMutex;
 
     bool readExact(void* buf, DWORD count, int timeoutMs);
     bool writeAll(const void* data, DWORD count);
+#else
+    int m_listenFd = -1;
+    int m_clientFd = -1;
+    int m_stopPipe[2] = {-1, -1}; // self-pipe for signaling stop
+    std::string m_socketPath;
+
+    bool readExact(void* buf, size_t count, int timeoutMs);
+    bool writeAll(const void* data, size_t count);
 #endif
 };
 

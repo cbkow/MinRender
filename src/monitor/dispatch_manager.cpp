@@ -4,6 +4,7 @@
 #include "core/monitor_log.h"
 #include "core/net_utils.h"
 #include "core/http_server.h"
+#include "core/path_mapping.h"
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -404,8 +405,49 @@ void DispatchManager::assignWork()
             // on the next cycle when the node doesn't show as "rendering".
             m_dispatchedNodes.insert(peer.node_id);
 
+            nlohmann::json manifestData = nlohmann::json::parse(manifestJson);
+
+            // Translate flag paths if worker is on a different OS
+            {
+                std::string submittedOs = manifestData.value("submitted_os", "");
+                std::string workerOs = peer.os;
+                const auto& mappings = m_app->config().path_mappings;
+                if (!submittedOs.empty() && !workerOs.empty() &&
+                    submittedOs != workerOs && !mappings.empty())
+                {
+                    // Map OS names to short tags
+                    auto osTag = [](const std::string& os) -> std::string {
+                        if (os == "windows") return "win";
+                        if (os == "macos") return "mac";
+                        return "lin";
+                    };
+                    std::string srcTag = osTag(submittedOs);
+                    std::string tgtTag = osTag(workerOs);
+
+                    // Translate flag values that contain paths
+                    if (manifestData.contains("flags") && manifestData["flags"].is_array())
+                    {
+                        for (auto& flag : manifestData["flags"])
+                        {
+                            if (flag.contains("value") && flag["value"].is_string())
+                            {
+                                std::string val = flag["value"].get<std::string>();
+                                flag["value"] = translatePath(srcTag, tgtTag, val, mappings);
+                            }
+                        }
+                    }
+
+                    // Translate output_dir
+                    if (manifestData.contains("output_dir") && manifestData["output_dir"].is_string())
+                    {
+                        std::string od = manifestData["output_dir"].get<std::string>();
+                        manifestData["output_dir"] = translatePath(srcTag, tgtTag, od, mappings);
+                    }
+                }
+            }
+
             nlohmann::json body = {
-                {"manifest", nlohmann::json::parse(manifestJson)},
+                {"manifest", manifestData},
                 {"frame_start", chunk.frame_start},
                 {"frame_end", chunk.frame_end},
             };

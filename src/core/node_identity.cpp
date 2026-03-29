@@ -13,6 +13,11 @@
 #include <rpc.h>
 #include <dxgi.h>
 #pragma comment(lib, "dxgi.lib")
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#include <cstdio>
+#elif defined(__linux__)
+#include <unistd.h>
 #endif
 
 namespace MR {
@@ -114,6 +119,40 @@ void NodeIdentity::querySystemInfo()
             adapter->Release();
         }
         factory->Release();
+    }
+#elif defined(__APPLE__)
+    // RAM via sysctl
+    {
+        int64_t memSize = 0;
+        size_t len = sizeof(memSize);
+        if (sysctlbyname("hw.memsize", &memSize, &len, nullptr, 0) == 0)
+            m_systemInfo.ramMB = static_cast<uint64_t>(memSize / (1024 * 1024));
+    }
+
+    // GPU via system_profiler (lightweight, no Metal framework dependency)
+    {
+        FILE* pipe = popen("system_profiler SPDisplaysDataType 2>/dev/null | grep 'Chipset Model' | head -1 | sed 's/.*: //'", "r");
+        if (pipe)
+        {
+            char buf[256];
+            if (fgets(buf, sizeof(buf), pipe))
+            {
+                std::string name(buf);
+                while (!name.empty() && (name.back() == '\n' || name.back() == '\r'))
+                    name.pop_back();
+                if (!name.empty())
+                    m_systemInfo.gpuName = name;
+            }
+            pclose(pipe);
+        }
+    }
+#elif defined(__linux__)
+    // RAM via sysconf
+    {
+        long pages = sysconf(_SC_PHYS_PAGES);
+        long pageSize = sysconf(_SC_PAGE_SIZE);
+        if (pages > 0 && pageSize > 0)
+            m_systemInfo.ramMB = static_cast<uint64_t>(pages) * static_cast<uint64_t>(pageSize) / (1024 * 1024);
     }
 #endif
 

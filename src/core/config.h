@@ -7,6 +7,30 @@
 
 namespace MR {
 
+struct PathMapping
+{
+    std::string win;
+    std::string mac;
+    std::string lin;
+    bool enabled = true;
+    std::string label;
+};
+
+inline void to_json(nlohmann::json& j, const PathMapping& m)
+{
+    j = nlohmann::json{{"win", m.win}, {"mac", m.mac}, {"lin", m.lin},
+                        {"enabled", m.enabled}, {"label", m.label}};
+}
+
+inline void from_json(const nlohmann::json& j, PathMapping& m)
+{
+    if (j.contains("win")) j.at("win").get_to(m.win);
+    if (j.contains("mac")) j.at("mac").get_to(m.mac);
+    if (j.contains("lin")) j.at("lin").get_to(m.lin);
+    if (j.contains("enabled")) j.at("enabled").get_to(m.enabled);
+    if (j.contains("label")) j.at("label").get_to(m.label);
+}
+
 struct Config
 {
     // Sync root path (shared filesystem mount point)
@@ -43,6 +67,9 @@ struct Config
 
     // Persisted node state
     bool node_stopped = false;
+
+    // Cross-platform path mappings (synced from Tauri UI)
+    std::vector<PathMapping> path_mappings;
 };
 
 // JSON serialization
@@ -62,6 +89,7 @@ inline void to_json(nlohmann::json& j, const Config& c)
         {"staging_enabled", c.staging_enabled},
         {"rndr_dual_mode", c.rndr_dual_mode},
         {"node_stopped", c.node_stopped},
+        {"path_mappings", c.path_mappings},
     };
 }
 
@@ -80,6 +108,7 @@ inline void from_json(const nlohmann::json& j, Config& c)
     if (j.contains("staging_enabled"))    j.at("staging_enabled").get_to(c.staging_enabled);
     if (j.contains("rndr_dual_mode"))    j.at("rndr_dual_mode").get_to(c.rndr_dual_mode);
     if (j.contains("node_stopped"))       j.at("node_stopped").get_to(c.node_stopped);
+    if (j.contains("path_mappings"))     j.at("path_mappings").get_to(c.path_mappings);
 }
 
 // --- Constants ---

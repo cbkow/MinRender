@@ -99,6 +99,13 @@ inline void to_json(nlohmann::json& j, const PeerInfo& p)
         {"agent_health", p.agent_health},
         {"alert_reason", p.alert_reason},
         {"ready_for_work", p.ready_for_work},
+        // Runtime fields (for UI snapshot — not sent over peer HTTP)
+        {"is_local",    p.is_local},
+        {"is_alive",    p.is_alive},
+        {"is_leader",   p.is_leader},
+        {"last_seen_ms", p.last_seen_ms},
+        {"has_udp_contact", p.has_udp_contact},
+        {"failed_polls", p.failed_polls},
     };
 }
 

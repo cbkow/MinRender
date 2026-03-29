@@ -1,6 +1,8 @@
 #include "core/http_server.h"
 #include "core/peer_info.h"
 #include "core/monitor_log.h"
+#include "core/platform.h"
+#include "core/path_mapping.h"
 #include "monitor/monitor_app.h"
 #include "monitor/dispatch_manager.h"
 #include "monitor/database_manager.h"
@@ -8,6 +10,9 @@
 #include <nlohmann/json.hpp>
 #include <thread>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <set>
 
 namespace MR {
 
@@ -460,6 +465,424 @@ void HttpServer::setupRoutes()
             res.set_content(err.dump(), "application/json");
         }
     });
+
+    // ---------------------------------------------------------------
+    // Tauri UI support endpoints
+    // ---------------------------------------------------------------
+
+    // GET /api/jobs/:id/task-output -- list chunk log files for a job
+    m_server.Get(R"(/api/jobs/([^/]+)/task-output)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
+
+        std::string jobId = req.matches[1];
+        auto stdoutDir = m_app->farmPath() / "jobs" / jobId / "stdout";
+
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        if (!fs::is_directory(stdoutDir, ec))
+        {
+            res.set_content("[]", "application/json");
+            return;
+        }
+
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& nodeEntry : fs::directory_iterator(stdoutDir, ec))
+        {
+            if (!nodeEntry.is_directory()) continue;
+            std::string nodeId = nodeEntry.path().filename().string();
+
+            for (const auto& fileEntry : fs::directory_iterator(nodeEntry.path(), ec))
+            {
+                if (!fileEntry.is_regular_file()) continue;
+                std::string fname = fileEntry.path().filename().string();
+                if (fname.size() < 5 || fname.substr(fname.size() - 4) != ".log")
+                    continue;
+
+                std::string stem = fname.substr(0, fname.size() - 4);
+                auto underPos = stem.rfind('_');
+                if (underPos == std::string::npos) continue;
+
+                std::string rangeStr = stem.substr(0, underPos);
+                int64_t timestampMs = 0;
+                try { timestampMs = std::stoll(stem.substr(underPos + 1)); }
+                catch (...) { continue; }
+
+                arr.push_back({
+                    {"node_id", nodeId},
+                    {"range", rangeStr},
+                    {"timestamp_ms", timestampMs},
+                    {"path", fileEntry.path().string()}
+                });
+            }
+        }
+
+        res.set_content(arr.dump(), "application/json");
+    });
+
+    // GET /api/jobs/:id/task-output/:node/:filename -- read a chunk log file
+    m_server.Get(R"(/api/jobs/([^/]+)/task-output/([^/]+)/([^/]+))",
+        [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
+
+        std::string jobId = req.matches[1];
+        std::string nodeId = req.matches[2];
+        std::string filename = req.matches[3];
+
+        auto logPath = m_app->farmPath() / "jobs" / jobId / "stdout" / nodeId / filename;
+
+        std::ifstream ifs(logPath, std::ios::in);
+        if (!ifs.is_open())
+        {
+            res.status = 404;
+            res.set_content(R"({"error":"not_found"})", "application/json");
+            return;
+        }
+
+        std::string content((std::istreambuf_iterator<char>(ifs)),
+                             std::istreambuf_iterator<char>());
+        res.set_content(content, "text/plain");
+    });
+
+    // GET /api/nodes/:id/log -- read a remote node's monitor log
+    m_server.Get(R"(/api/nodes/([^/]+)/log)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
+
+        std::string nodeId = req.matches[1];
+        int maxLines = 500;
+        if (req.has_param("max_lines"))
+        {
+            try { maxLines = std::stoi(req.get_param_value("max_lines")); }
+            catch (...) {}
+        }
+
+        auto lines = MonitorLog::readNodeLog(m_app->farmPath(), nodeId, maxLines);
+        nlohmann::json j = lines;
+        res.set_content(j.dump(), "application/json");
+    });
+
+    // POST /api/farm/scan-cleanup -- scan for cleanup items
+    m_server.Post("/api/farm/scan-cleanup", [this](const httplib::Request&, httplib::Response& res)
+    {
+        if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
+
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        nlohmann::json result;
+
+        // Sections 1 & 2: Finished/Archived jobs (leader only)
+        nlohmann::json finishedJobs = nlohmann::json::array();
+        nlohmann::json archivedJobs = nlohmann::json::array();
+        std::set<std::string> dbJobIds;
+
+        if (m_app->isLeader() && m_app->databaseManager().isOpen())
+        {
+            auto allJobs = m_app->databaseManager().getAllJobs();
+            for (const auto& s : allJobs)
+            {
+                dbJobIds.insert(s.job.job_id);
+                if (s.job.current_state == "completed" || s.job.current_state == "cancelled")
+                {
+                    finishedJobs.push_back({
+                        {"id", s.job.job_id},
+                        {"label", s.job.job_id},
+                        {"detail", s.job.current_state + " | " + std::to_string(s.progress.total) + " chunks"}
+                    });
+                }
+                else if (s.job.current_state == "archived")
+                {
+                    archivedJobs.push_back({
+                        {"id", s.job.job_id},
+                        {"label", s.job.job_id},
+                        {"detail", "archived"}
+                    });
+                }
+            }
+        }
+        result["finished_jobs"] = finishedJobs;
+        result["archived_jobs"] = archivedJobs;
+
+        // Section 3: Orphaned directories
+        nlohmann::json orphanedDirs = nlohmann::json::array();
+        {
+            auto jobsDir = m_app->farmPath() / "jobs";
+            if (fs::is_directory(jobsDir, ec))
+            {
+                // If not leader, use cached job IDs
+                if (dbJobIds.empty())
+                {
+                    for (const auto& j : m_app->cachedJobs())
+                        dbJobIds.insert(j.manifest.job_id);
+                }
+
+                for (const auto& entry : fs::directory_iterator(jobsDir, ec))
+                {
+                    if (!entry.is_directory()) continue;
+                    std::string dirName = entry.path().filename().string();
+                    if (dbJobIds.find(dirName) == dbJobIds.end())
+                    {
+                        orphanedDirs.push_back({
+                            {"id", entry.path().string()},
+                            {"label", dirName},
+                            {"detail", "no matching job"}
+                        });
+                    }
+                }
+            }
+        }
+        result["orphaned_dirs"] = orphanedDirs;
+
+        // Section 4: Stale peers
+        nlohmann::json stalePeers = nlohmann::json::array();
+        {
+            auto peers = m_app->peerManager().getPeerSnapshot();
+            for (const auto& p : peers)
+            {
+                if (!p.is_alive && !p.is_local)
+                {
+                    stalePeers.push_back({
+                        {"id", p.node_id},
+                        {"label", p.hostname + " (" + p.node_id.substr(0, 8) + ")"},
+                        {"detail", "last seen: " + std::to_string(p.last_seen_ms)}
+                    });
+                }
+            }
+        }
+        result["stale_peers"] = stalePeers;
+
+        // Sections 5 & 6: Staging directories
+        nlohmann::json staleStagingDirs = nlohmann::json::array();
+        nlohmann::json failedStagingCopies = nlohmann::json::array();
+        {
+            auto stagingRoot = getAppDataDir() / "staging";
+            if (fs::is_directory(stagingRoot, ec))
+            {
+                for (const auto& jobEntry : fs::directory_iterator(stagingRoot, ec))
+                {
+                    if (!jobEntry.is_directory(ec)) continue;
+                    std::string jobName = jobEntry.path().filename().string();
+
+                    int fileCount = 0;
+                    uintmax_t totalSize = 0;
+                    for (const auto& f : fs::recursive_directory_iterator(jobEntry.path(), ec))
+                    {
+                        if (f.is_regular_file(ec))
+                        {
+                            fileCount++;
+                            totalSize += f.file_size(ec);
+                        }
+                    }
+
+                    if (fileCount > 0)
+                    {
+                        std::string sizeStr;
+                        if (totalSize < 1024 * 1024)
+                            sizeStr = std::to_string(totalSize / 1024) + " KB";
+                        else if (totalSize < 1024ULL * 1024 * 1024)
+                            sizeStr = std::to_string(totalSize / (1024 * 1024)) + " MB";
+                        else
+                            sizeStr = std::to_string(totalSize / (1024ULL * 1024 * 1024)) + " GB";
+
+                        failedStagingCopies.push_back({
+                            {"id", jobEntry.path().string()},
+                            {"label", jobName},
+                            {"detail", std::to_string(fileCount) + " files (" + sizeStr + ")"}
+                        });
+                    }
+                    else
+                    {
+                        staleStagingDirs.push_back({
+                            {"id", jobEntry.path().string()},
+                            {"label", jobName},
+                            {"detail", "empty"}
+                        });
+                    }
+                }
+            }
+        }
+        result["stale_staging_dirs"] = staleStagingDirs;
+        result["failed_staging_copies"] = failedStagingCopies;
+        result["is_leader"] = m_app->isLeader();
+
+        res.set_content(result.dump(), "application/json");
+    });
+
+    // POST /api/farm/cleanup -- execute cleanup actions on selected items
+    m_server.Post("/api/farm/cleanup", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
+
+        namespace fs = std::filesystem;
+        std::error_code ec;
+
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            std::string action = body.at("action").get<std::string>();
+            auto ids = body.at("ids").get<std::vector<std::string>>();
+            int count = 0;
+
+            if (action == "archive")
+            {
+                for (const auto& id : ids)
+                {
+                    m_app->archiveJob(id);
+                    count++;
+                }
+            }
+            else if (action == "delete_jobs")
+            {
+                for (const auto& id : ids)
+                {
+                    m_app->deleteJob(id);
+                    count++;
+                }
+            }
+            else if (action == "delete_dirs")
+            {
+                for (const auto& id : ids)
+                {
+                    fs::remove_all(fs::path(id), ec);
+                    if (!ec) count++;
+                    else MonitorLog::instance().warn("farm", "Cleanup: failed to remove " + id + ": " + ec.message());
+                }
+            }
+            else if (action == "remove_peers")
+            {
+                for (const auto& id : ids)
+                {
+                    auto nodeDir = m_app->farmPath() / "nodes" / id;
+                    fs::remove_all(nodeDir, ec);
+                    if (!ec) count++;
+                    else MonitorLog::instance().warn("farm", "Cleanup: failed to remove peer " + id + ": " + ec.message());
+                }
+            }
+            else
+            {
+                res.status = 400;
+                res.set_content(R"({"error":"unknown_action"})", "application/json");
+                return;
+            }
+
+            nlohmann::json resp = {{"status", "ok"}, {"count", count}};
+            res.set_content(resp.dump(), "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
+    // GET /api/config -- return full sidecar config
+    m_server.Get("/api/config", [this](const httplib::Request&, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+        nlohmann::json j = m_app->config();
+        // Also include node identity info
+        j["node_id"] = m_app->identity().nodeId();
+        j["hostname"] = m_app->identity().systemInfo().hostname;
+        j["cpu_cores"] = m_app->identity().systemInfo().cpuCores;
+        j["ram_mb"] = m_app->identity().systemInfo().ramMB;
+        j["gpu_name"] = m_app->identity().systemInfo().gpuName;
+        j["farm_running"] = m_app->isFarmRunning();
+        j["farm_path"] = m_app->farmPath().string();
+        j["farm_error"] = m_app->farmError();
+        j["is_leader"] = m_app->isLeader();
+        res.set_content(j.dump(), "application/json");
+    });
+
+    // POST /api/config -- update sidecar config (partial update)
+    m_server.Post("/api/config", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            auto& cfg = m_app->config();
+            bool needsRestart = false;
+
+            if (body.contains("sync_root"))
+            {
+                std::string newRoot = body["sync_root"].get<std::string>();
+                if (newRoot != cfg.sync_root) { cfg.sync_root = newRoot; needsRestart = true; }
+            }
+            if (body.contains("http_port"))
+            {
+                uint16_t p = body["http_port"].get<uint16_t>();
+                if (p != cfg.http_port) { cfg.http_port = p; needsRestart = true; }
+            }
+            if (body.contains("ip_override"))
+                cfg.ip_override = body["ip_override"].get<std::string>();
+            if (body.contains("udp_enabled"))
+            {
+                bool v = body["udp_enabled"].get<bool>();
+                if (v != cfg.udp_enabled) { cfg.udp_enabled = v; needsRestart = true; }
+            }
+            if (body.contains("udp_port"))
+            {
+                uint16_t p = body["udp_port"].get<uint16_t>();
+                if (p != cfg.udp_port) { cfg.udp_port = p; needsRestart = true; }
+            }
+            if (body.contains("priority"))
+                cfg.priority = body["priority"].get<int>();
+            if (body.contains("tags"))
+                cfg.tags = body["tags"].get<std::vector<std::string>>();
+            if (body.contains("staging_enabled"))
+                cfg.staging_enabled = body["staging_enabled"].get<bool>();
+            if (body.contains("rndr_dual_mode"))
+                cfg.rndr_dual_mode = body["rndr_dual_mode"].get<bool>();
+            if (body.contains("show_notifications"))
+                cfg.show_notifications = body["show_notifications"].get<bool>();
+            if (body.contains("path_mappings"))
+                cfg.path_mappings = body["path_mappings"].get<std::vector<PathMapping>>();
+
+            m_app->saveConfig();
+            MonitorLog::instance().info("config", "Config updated via API");
+
+            // Flag for deferred farm restart on the main thread.
+            // Cannot restart here — we're on the HTTP handler thread,
+            // and stopFarm() joins threads including the HTTP server.
+            if (needsRestart)
+                m_app->requestFarmRestart();
+
+            nlohmann::json resp = {{"status", "ok"}, {"restarted", needsRestart}};
+            res.set_content(resp.dump(), "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
+    // POST /api/config/path-mappings -- accept path mappings from Tauri UI
+    m_server.Post("/api/config/path-mappings", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app) { res.status = 503; return; }
+
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            auto mappings = body.get<std::vector<PathMapping>>();
+            m_app->config().path_mappings = std::move(mappings);
+            m_app->saveConfig();
+            MonitorLog::instance().info("config",
+                "Updated " + std::to_string(m_app->config().path_mappings.size()) + " path mapping(s)");
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
 }
 
 bool HttpServer::start(const std::string& bindAddress, uint16_t port)
@@ -475,7 +898,10 @@ bool HttpServer::start(const std::string& bindAddress, uint16_t port)
         m_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) -> httplib::Server::HandlerResponse
         {
             // Skip auth for GET /api/status (used by peer discovery)
+            // and /api/config* (used by local Tauri UI)
             if (req.method == "GET" && req.path == "/api/status")
+                return httplib::Server::HandlerResponse::Unhandled;
+            if (req.path.rfind("/api/config", 0) == 0)
                 return httplib::Server::HandlerResponse::Unhandled;
 
             // Only protect /api/ routes

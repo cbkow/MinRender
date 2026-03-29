@@ -5,6 +5,7 @@
 #include "core/peer_info.h"
 #include "core/http_server.h"
 #include "core/udp_notify.h"
+#include "core/ui_ipc_server.h"
 #include "monitor/agent_supervisor.h"
 #include "monitor/rndr_supervisor.h"
 #include "monitor/render_coordinator.h"
@@ -13,7 +14,10 @@
 #include "monitor/database_manager.h"
 #include "monitor/dispatch_manager.h"
 #include "monitor/submission_watcher.h"
+
+#ifndef MINRENDER_HEADLESS
 #include "monitor/ui/dashboard.h"
+#endif
 
 #include "core/system_tray.h"
 
@@ -37,6 +41,10 @@ public:
     void update();
     void renderUI();
     void shutdown();
+
+    // Headless mode — skips ImGui/Dashboard initialization
+    void setHeadless(bool headless) { m_headless = headless; }
+    bool isHeadless() const { return m_headless; }
 
     // Config accessors
     Config& config() { return m_config; }
@@ -111,6 +119,7 @@ public:
     // Farm lifecycle
     bool startFarm();
     void stopFarm();
+    void requestFarmRestart() { m_farmRestartRequested.store(true); }
     bool isFarmRunning() const { return m_farmRunning; }
     const std::filesystem::path& farmPath() const { return m_farmPath; }
     bool hasFarmError() const { return !m_farmError.empty(); }
@@ -134,6 +143,10 @@ private:
     void handleUdpMessages();
     void sendUdpHeartbeat();
 
+    // UI IPC push events
+    void pushStateSnapshot();
+    void handleUiCommand(const std::string& json);
+
     // Background HTTP worker
     void startHttpWorker();
     void stopHttpWorker();
@@ -156,7 +169,10 @@ private:
     DispatchManager m_dispatchManager;
     SubmissionWatcher m_submissionWatcher;
     UdpNotify m_udpNotify;
+    UiIpcServer m_uiIpc;
+#ifndef MINRENDER_HEADLESS
     Dashboard m_dashboard;
+#endif
 
     // Cached snapshots
     std::vector<JobInfo> m_cachedJobs;
@@ -224,9 +240,18 @@ private:
     // Job cache refresh timing
     std::chrono::steady_clock::time_point m_lastJobCacheRefresh;
 
+    // UI IPC render progress throttle (~1s)
+    std::chrono::steady_clock::time_point m_lastProgressPush;
+
     // Job selection
     std::string m_selectedJobId;
     bool m_requestSubmission = false;
+
+    // Deferred farm restart (set by HTTP handler, processed by update())
+    std::atomic<bool> m_farmRestartRequested{false};
+
+    // Mode
+    bool m_headless = false;
 
     // Exit state
     bool m_exitRequested = false;

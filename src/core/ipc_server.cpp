@@ -366,4 +366,250 @@ void IpcServer::signalStop()
 
 } // namespace MR
 
+#else // !_WIN32 — Unix domain socket implementation
+
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <cerrno>
+
+namespace MR {
+
+IpcServer::IpcServer()
+{
+    // Create self-pipe for signaling stop
+    if (pipe(m_stopPipe) != 0)
+    {
+        m_stopPipe[0] = m_stopPipe[1] = -1;
+    }
+    else
+    {
+        // Make write end non-blocking
+        fcntl(m_stopPipe[1], F_SETFL, O_NONBLOCK);
+    }
+}
+
+IpcServer::~IpcServer()
+{
+    close();
+    if (m_stopPipe[0] >= 0) ::close(m_stopPipe[0]);
+    if (m_stopPipe[1] >= 0) ::close(m_stopPipe[1]);
+}
+
+bool IpcServer::create(const std::string& nodeId)
+{
+    // Socket path: /tmp/minrender-agent-{nodeId}.sock
+    m_socketPath = "/tmp/minrender-agent-" + nodeId + ".sock";
+
+    // Remove stale socket file
+    ::unlink(m_socketPath.c_str());
+
+    m_listenFd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (m_listenFd < 0)
+    {
+        std::cerr << "[IpcServer] socket() failed: " << strerror(errno) << std::endl;
+        return false;
+    }
+
+    struct sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, m_socketPath.c_str(), sizeof(addr.sun_path) - 1);
+
+    if (::bind(m_listenFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0)
+    {
+        std::cerr << "[IpcServer] bind() failed: " << strerror(errno) << std::endl;
+        ::close(m_listenFd);
+        m_listenFd = -1;
+        return false;
+    }
+
+    if (::listen(m_listenFd, 1) != 0)
+    {
+        std::cerr << "[IpcServer] listen() failed: " << strerror(errno) << std::endl;
+        ::close(m_listenFd);
+        m_listenFd = -1;
+        return false;
+    }
+
+    m_stopRequested.store(false);
+    std::cout << "[IpcServer] Unix socket created: " << m_socketPath << std::endl;
+    return true;
+}
+
+bool IpcServer::acceptConnection()
+{
+    if (m_listenFd < 0) return false;
+
+    // Poll on listen fd + stop pipe
+    struct pollfd fds[2];
+    fds[0].fd = m_listenFd;
+    fds[0].events = POLLIN;
+    fds[1].fd = m_stopPipe[0];
+    fds[1].events = POLLIN;
+
+    int ret = ::poll(fds, 2, -1); // infinite wait
+    if (ret <= 0) return false;
+
+    // Stop signaled?
+    if (fds[1].revents & POLLIN)
+    {
+        std::cout << "[IpcServer] Accept cancelled (stop signaled)" << std::endl;
+        return false;
+    }
+
+    if (fds[0].revents & POLLIN)
+    {
+        m_clientFd = ::accept(m_listenFd, nullptr, nullptr);
+        if (m_clientFd < 0)
+        {
+            std::cerr << "[IpcServer] accept() failed: " << strerror(errno) << std::endl;
+            return false;
+        }
+        m_connected.store(true);
+        std::cout << "[IpcServer] Client connected" << std::endl;
+        return true;
+    }
+
+    return false;
+}
+
+bool IpcServer::send(const std::string& json)
+{
+    if (!m_connected.load() || m_clientFd < 0) return false;
+
+    std::lock_guard<std::mutex> lock(m_writeMutex);
+
+    uint32_t len = static_cast<uint32_t>(json.size());
+    if (!writeAll(&len, sizeof(len)))
+    {
+        m_connected.store(false);
+        return false;
+    }
+    if (!writeAll(json.data(), len))
+    {
+        m_connected.store(false);
+        return false;
+    }
+    return true;
+}
+
+std::optional<std::string> IpcServer::receive(int timeoutMs)
+{
+    if (!m_connected.load() || m_clientFd < 0) return std::nullopt;
+
+    // Read 4-byte length prefix
+    uint32_t len = 0;
+    if (!readExact(&len, sizeof(len), timeoutMs))
+        return std::nullopt;
+
+    if (len > 16 * 1024 * 1024)
+    {
+        std::cerr << "[IpcServer] Message too large: " << len << " bytes" << std::endl;
+        m_connected.store(false);
+        return std::nullopt;
+    }
+
+    std::string payload(len, '\0');
+    if (!readExact(payload.data(), len, timeoutMs))
+    {
+        m_connected.store(false);
+        return std::nullopt;
+    }
+
+    return payload;
+}
+
+bool IpcServer::readExact(void* buf, size_t count, int timeoutMs)
+{
+    size_t totalRead = 0;
+    auto* p = static_cast<char*>(buf);
+
+    while (totalRead < count)
+    {
+        // Poll with timeout and stop pipe
+        struct pollfd fds[2];
+        fds[0].fd = m_clientFd;
+        fds[0].events = POLLIN;
+        fds[1].fd = m_stopPipe[0];
+        fds[1].events = POLLIN;
+
+        int timeout = (timeoutMs < 0) ? -1 : timeoutMs;
+        int ret = ::poll(fds, 2, timeout);
+
+        if (ret <= 0) return false; // timeout or error
+        if (fds[1].revents & POLLIN) return false; // stop signaled
+
+        if (fds[0].revents & POLLIN)
+        {
+            ssize_t n = ::read(m_clientFd, p + totalRead, count - totalRead);
+            if (n <= 0)
+            {
+                m_connected.store(false);
+                return false;
+            }
+            totalRead += static_cast<size_t>(n);
+        }
+    }
+    return true;
+}
+
+bool IpcServer::writeAll(const void* data, size_t count)
+{
+    const char* p = static_cast<const char*>(data);
+    size_t written = 0;
+    while (written < count)
+    {
+        ssize_t n = ::write(m_clientFd, p + written, count - written);
+        if (n <= 0)
+        {
+            m_connected.store(false);
+            return false;
+        }
+        written += static_cast<size_t>(n);
+    }
+    return true;
+}
+
+void IpcServer::disconnect()
+{
+    if (m_clientFd >= 0)
+    {
+        ::close(m_clientFd);
+        m_clientFd = -1;
+        m_connected.store(false);
+        std::cout << "[IpcServer] Client disconnected" << std::endl;
+    }
+}
+
+void IpcServer::close()
+{
+    signalStop();
+    disconnect();
+    if (m_listenFd >= 0)
+    {
+        ::close(m_listenFd);
+        m_listenFd = -1;
+    }
+    if (!m_socketPath.empty())
+    {
+        ::unlink(m_socketPath.c_str());
+        m_socketPath.clear();
+        std::cout << "[IpcServer] Socket closed" << std::endl;
+    }
+}
+
+void IpcServer::signalStop()
+{
+    m_stopRequested.store(true);
+    if (m_stopPipe[1] >= 0)
+    {
+        char c = 1;
+        ::write(m_stopPipe[1], &c, 1);
+    }
+}
+
+} // namespace MR
+
 #endif // _WIN32

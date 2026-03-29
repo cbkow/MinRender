@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <functional>
 #include <filesystem>
 #include <cstdint>
 
@@ -34,6 +35,11 @@ public:
     std::vector<Entry> getEntries() const;
     void clearEntries();
 
+    // Callback for new log entries (e.g. push to UI IPC).
+    // Called under lock — must be fast, do NOT call back into MonitorLog.
+    using LogCallback = std::function<void(const Entry&)>;
+    void setCallback(LogCallback cb);
+
     // Read another node's log file (for remote troubleshooting)
     static std::vector<std::string> readNodeLog(
         const std::filesystem::path& farmPath,
@@ -60,6 +66,7 @@ private:
     bool m_fileEnabled = false;
     std::string m_currentDate;
 
+    LogCallback m_callback;
     mutable std::mutex m_mutex;
 };
 
