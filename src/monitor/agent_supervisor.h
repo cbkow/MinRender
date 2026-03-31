@@ -74,6 +74,8 @@ private:
 #ifdef _WIN32
     HANDLE m_processHandle = nullptr;
     HANDLE m_threadHandle = nullptr;
+#else
+    pid_t m_childPid = 0;
 #endif
     uint32_t m_agentPid = 0;
     std::string m_agentState;

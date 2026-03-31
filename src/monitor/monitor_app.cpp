@@ -317,6 +317,12 @@ void MonitorApp::pushStateSnapshot()
     // Node state
     j["node_state"] = (m_nodeState == NodeState::Active) ? "active" : "stopped";
 
+    // RNDR state
+    j["rndr_available"] = m_rndrSupervisor.isBinaryAvailable();
+    j["rndr_status"] = m_rndrSupervisor.statusText();
+    static const char* rndrStateNames[] = {"inactive", "running", "render_active", "cooldown"};
+    j["rndr_state"] = rndrStateNames[static_cast<int>(m_rndrSupervisor.state())];
+
     m_uiIpc.push(j.dump());
 }
 
@@ -336,6 +342,21 @@ void MonitorApp::handleUiCommand(const std::string& json)
         else if (type == "get_state")
         {
             pushStateSnapshot();
+        }
+        else if (type == "get_logs")
+        {
+            // Send buffered log entries to newly connected UI client
+            auto entries = MonitorLog::instance().getEntries();
+            for (const auto& e : entries)
+            {
+                nlohmann::json lj;
+                lj["type"] = "log_entry";
+                lj["timestamp_ms"] = e.timestamp_ms;
+                lj["level"] = e.level;
+                lj["category"] = e.category;
+                lj["message"] = e.message;
+                m_uiIpc.push(lj.dump());
+            }
         }
         else if (type == "get_chunks")
         {
@@ -848,6 +869,11 @@ void MonitorApp::refreshCachedJobs()
                             }
 
                             m_cachedJobs = std::move(jobs);
+
+                            {
+                                std::lock_guard<std::mutex> lock(m_cachedJsonMutex);
+                                m_cachedJobsJson = res->body;
+                            }
                         }
                         else
                         {

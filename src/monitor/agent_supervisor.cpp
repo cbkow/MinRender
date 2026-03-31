@@ -6,6 +6,15 @@
 
 #ifdef _WIN32
 #include <Psapi.h>
+#else
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <spawn.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+extern char** environ;
 #endif
 
 namespace MR {
@@ -122,8 +131,55 @@ bool AgentSupervisor::spawnAgent()
     MonitorLog::instance().info("agent", "Agent spawned, PID=" + std::to_string(m_agentPid));
     return true;
 #else
-    MonitorLog::instance().error("agent", "spawnAgent not implemented on this platform");
-    return false;
+    // macOS/Linux: find mr-agent next to this executable
+    char exePath[4096];
+    uint32_t exeSize = sizeof(exePath);
+
+#ifdef __APPLE__
+    if (_NSGetExecutablePath(exePath, &exeSize) != 0)
+    {
+        MonitorLog::instance().error("agent", "Failed to get executable path");
+        return false;
+    }
+#else
+    ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (len <= 0)
+    {
+        MonitorLog::instance().error("agent", "Failed to get executable path");
+        return false;
+    }
+    exePath[len] = '\0';
+#endif
+
+    std::filesystem::path monitorPath(exePath);
+    std::filesystem::path agentPath = monitorPath.parent_path() / "mr-agent";
+
+    if (!std::filesystem::exists(agentPath))
+    {
+        MonitorLog::instance().error("agent", "mr-agent not found at: " + agentPath.string());
+        return false;
+    }
+
+    std::string nodeIdArg = "--node-id";
+    char* argv[] = {
+        const_cast<char*>(agentPath.c_str()),
+        const_cast<char*>(nodeIdArg.c_str()),
+        const_cast<char*>(m_nodeId.c_str()),
+        nullptr
+    };
+
+    pid_t pid = 0;
+    int status = posix_spawn(&pid, agentPath.c_str(), nullptr, nullptr, argv, environ);
+    if (status != 0)
+    {
+        MonitorLog::instance().error("agent", "posix_spawn failed: " + std::string(strerror(status)));
+        return false;
+    }
+
+    m_childPid = pid;
+    m_agentPid = static_cast<uint32_t>(pid);
+    MonitorLog::instance().info("agent", "Agent spawned, PID=" + std::to_string(m_agentPid));
+    return true;
 #endif
 }
 
@@ -151,6 +207,26 @@ void AgentSupervisor::shutdownAgent()
             m_threadHandle = nullptr;
         }
     }
+#else
+    if (m_childPid > 0)
+    {
+        // Wait up to 5 seconds for graceful exit
+        for (int i = 0; i < 50; ++i)
+        {
+            int status = 0;
+            pid_t result = waitpid(m_childPid, &status, WNOHANG);
+            if (result != 0) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        // Force kill if still running
+        if (kill(m_childPid, 0) == 0)
+        {
+            MonitorLog::instance().warn("agent", "Agent didn't exit gracefully, terminating");
+            kill(m_childPid, SIGKILL);
+            waitpid(m_childPid, nullptr, 0);
+        }
+        m_childPid = 0;
+    }
 #endif
 
     m_agentPid = 0;
@@ -173,6 +249,13 @@ void AgentSupervisor::killAgent()
             CloseHandle(m_threadHandle);
             m_threadHandle = nullptr;
         }
+    }
+#else
+    if (m_childPid > 0)
+    {
+        kill(m_childPid, SIGKILL);
+        waitpid(m_childPid, nullptr, 0);
+        m_childPid = 0;
     }
 #endif
 
@@ -246,11 +329,14 @@ void AgentSupervisor::ipcThreadFunc()
                         CloseHandle(m_threadHandle);
                         m_threadHandle = nullptr;
                     }
-                    // Don't clear m_agentPid / m_agentState here — queued
-                    // messages (Completed, Status) may not have been processed
-                    // yet by the main thread.  Clearing now would race with
-                    // processMessages() and break the readyForWork transition.
                 }
+            }
+#else
+            if (m_childPid > 0)
+            {
+                int status = 0;
+                pid_t result = waitpid(m_childPid, &status, WNOHANG);
+                if (result != 0) m_childPid = 0;
             }
 #endif
         }
@@ -330,7 +416,8 @@ bool AgentSupervisor::isAgentRunning() const
         return exitCode == STILL_ACTIVE;
     return false;
 #else
-    return false;
+    if (m_childPid <= 0) return false;
+    return kill(m_childPid, 0) == 0;
 #endif
 }
 

@@ -25,6 +25,8 @@ FetchContent_Declare(
     GIT_SHALLOW    TRUE
 )
 set(HTTPLIB_COMPILE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(httplib)
 
 # SQLiteCpp
@@ -205,6 +207,8 @@ target_include_directories(minrender-headless PRIVATE
 target_compile_definitions(minrender-headless PRIVATE
     APP_VERSION="${PROJECT_VERSION}"
     CPPHTTPLIB_THREAD_POOL_COUNT=4
+    CPPHTTPLIB_NO_OPENSSL
+    CPPHTTPLIB_NO_BROTLI
     MINRENDER_HEADLESS
 )
 
