@@ -308,9 +308,7 @@ void MonitorApp::pushStateSnapshot()
     j["agent_connected"] = m_agentSupervisor.isAgentConnected();
 
     // Tray state (for macOS Swift companion or external consumers)
-    auto trayIcon = trayState();
-    static const char* iconNames[] = {"green", "blue", "yellow", "red", "gray"};
-    j["tray_icon"] = iconNames[static_cast<int>(trayIcon)];
+    j["tray_icon"] = trayIconName();
     j["tray_tooltip"] = trayTooltip();
     j["tray_status"] = trayStatusText();
 
@@ -1205,21 +1203,21 @@ std::string MonitorApp::getLeaderEndpoint() const
 
 // --- Tray state ---
 
-TrayIconState MonitorApp::trayState() const
+std::string MonitorApp::trayIconName() const
 {
     if (!m_farmRunning)
-        return TrayIconState::Gray;
+        return "gray";
 
     if (m_nodeState == NodeState::Stopped)
-        return TrayIconState::Gray;
+        return "gray";
 
     if (!m_agentSupervisor.isAgentConnected())
-        return TrayIconState::Red;
+        return "red";
 
     if (m_renderCoordinator.isRendering())
-        return TrayIconState::Green;
+        return "green";
 
-    return TrayIconState::Blue;
+    return "blue";
 }
 
 std::string MonitorApp::trayTooltip() const

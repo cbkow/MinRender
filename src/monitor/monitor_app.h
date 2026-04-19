@@ -100,7 +100,10 @@ public:
     std::string getLeaderEndpoint() const;
 
     // Tray state
-    TrayIconState trayState() const;
+    // trayIconName() returns "green" | "blue" | "yellow" | "red" | "gray" for
+    // external consumers (e.g. macOS Swift companion via IPC). The Windows
+    // tray itself uses a single icon and surfaces status via trayStatusText().
+    std::string trayIconName() const;
     std::string trayTooltip() const;
     std::string trayStatusText() const;
 

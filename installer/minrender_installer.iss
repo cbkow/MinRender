@@ -2,7 +2,7 @@
 ; https://jrsoftware.org/isinfo.php
 
 #define MyAppName "MinRender"
-#define MyAppVersion "0.3.9"
+#define MyAppVersion "0.3.10"
 #define MyAppPublisher "cbkow"
 #define MyAppURL "https://github.com/cbkow/minrender"
 #define MyAppExeName "minrender.exe"
@@ -86,7 +86,6 @@ Source: "..\build\Release\resources\fonts\*"; DestDir: "{app}\resources\fonts"; 
 
 ; Resources — icons (exclude source artwork)
 Source: "..\build\Release\resources\icons\minrender.ico"; DestDir: "{app}\resources\icons"; Flags: ignoreversion; Components: core
-Source: "..\build\Release\resources\icons\tray_*.ico"; DestDir: "{app}\resources\icons"; Flags: ignoreversion; Components: core
 
 ; Resources — templates (top-level + plugins subfolder)
 Source: "..\build\Release\resources\templates\*.json"; DestDir: "{app}\resources\templates"; Flags: ignoreversion; Components: core

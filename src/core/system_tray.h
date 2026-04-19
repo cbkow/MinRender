@@ -11,8 +11,6 @@
 
 namespace MR {
 
-enum class TrayIconState { Green, Blue, Yellow, Red, Gray };
-
 class SystemTray
 {
 public:
@@ -25,7 +23,6 @@ public:
     bool init();
     void shutdown();
 
-    void setIcon(TrayIconState state);
     void setTooltip(const std::string& text);
     void setStatusText(const std::string& text);
     void setNodeActive(bool active);
@@ -38,14 +35,12 @@ public:
 private:
 #ifdef _WIN32
     static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    void createIcons();
-    void destroyIcons();
+    void loadIcon();
     void showContextMenu();
 
     HWND m_hwnd = nullptr;
     NOTIFYICONDATAW m_nid = {};
-    HICON m_icons[5] = {}; // Green, Blue, Yellow, Red, Gray
-    TrayIconState m_currentState = TrayIconState::Gray;
+    HICON m_icon = nullptr;
     std::string m_statusText = "Initializing";
     bool m_nodeActive = false;
     bool m_initialized = false;

@@ -99,7 +99,6 @@ int main(int argc, char* argv[])
     {
         app.update();
 
-        tray.setIcon(app.trayState());
         tray.setTooltip(app.trayTooltip());
         tray.setStatusText(app.trayStatusText());
         tray.setNodeActive(app.nodeState() == MR::NodeState::Active);
@@ -293,7 +292,6 @@ int main(int argc, char* argv[])
             visible = true;
         }
 
-        tray.setIcon(app.trayState());
         tray.setTooltip(app.trayTooltip());
         tray.setStatusText(app.trayStatusText());
         tray.setNodeActive(app.nodeState() == MR::NodeState::Active);
