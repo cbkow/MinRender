@@ -7,6 +7,7 @@
 #include <chrono>
 #include <fstream>
 #include <iomanip>
+#include <set>
 #include <sstream>
 
 #ifdef _WIN32
@@ -66,6 +67,36 @@ static fs::path findBundledPluginsDir()
     return {};
 }
 
+// Delete any .json in dest that isn't present in bundle. Safe because these
+// dirs (templates/examples and templates/plugins) are bundle-managed; user
+// overrides live in templates/ (non-recursive).
+static void pruneStaleJson(const fs::path& destDir, const fs::path& bundleDir)
+{
+    std::error_code ec;
+    if (!fs::is_directory(destDir, ec) || !fs::is_directory(bundleDir, ec))
+        return;
+
+    std::set<std::string> expected;
+    for (auto& entry : fs::directory_iterator(bundleDir, ec))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".json")
+            expected.insert(entry.path().filename().string());
+    }
+
+    for (auto& entry : fs::directory_iterator(destDir, ec))
+    {
+        if (!entry.is_regular_file(ec) || entry.path().extension() != ".json")
+            continue;
+        auto name = entry.path().filename().string();
+        if (expected.count(name) == 0)
+        {
+            fs::remove(entry.path(), ec);
+            if (!ec)
+                MonitorLog::instance().info("farm", "Pruned stale template: " + name);
+        }
+    }
+}
+
 static void copyExampleTemplates(const fs::path& farmPath)
 {
     auto bundled = findBundledTemplatesDir();
@@ -90,6 +121,9 @@ static void copyExampleTemplates(const fs::path& farmPath)
         }
     }
 
+    // Remove .json files that no longer ship in the bundle (e.g. renamed templates)
+    pruneStaleJson(destDir, bundled);
+
     // Copy plugins/*.json into templates/plugins/ (separate from examples so
     // they don't appear in the Monitor's template picker — only DCC plugins scan this dir)
     auto pluginTemplatesDir = bundled / "plugins";
@@ -108,6 +142,8 @@ static void copyExampleTemplates(const fs::path& farmPath)
                     MonitorLog::instance().info("farm", "Copied plugin template: " + entry.path().filename().string());
             }
         }
+
+        pruneStaleJson(pluginDestDir, pluginTemplatesDir);
     }
 }
 

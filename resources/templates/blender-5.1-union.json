@@ -1,10 +1,10 @@
 {
     "_version": 2,
-    "template_id": "blender-5.0-plugin",
-    "name": "Blender 5.0 \u2014 plugin",
+    "template_id": "blender-5.1-union",
+    "name": "Blender 5.1 \u2014 Union (Simple)",
 
     "cmd": {
-        "windows": "C:/Program Files/Blender Foundation/Blender 5.0/blender.exe",
+        "windows": "C:/Program Files/Blender Foundation/Blender 5.1/blender.exe",
         "linux": "/usr/bin/blender",
         "macos": "/Applications/Blender.app/Contents/MacOS/Blender",
         "label": "Blender Executable",
@@ -16,10 +16,9 @@
     "flags": [
         { "flag": "-b", "value": null, "info": "Background mode", "editable": false },
         { "flag": "", "value": "", "id": "scene_file", "info": "Scene File (.blend)", "editable": true, "required": true, "type": "file", "filter": "blend" },
-        { "flag": "-S", "value": null, "info": "Scene name flag", "editable": false },
-        { "flag": "", "value": "", "id": "scene_name", "info": "Scene Name (optional)", "editable": true, "required": false },
         { "flag": "-o", "value": null, "info": "Output path flag", "editable": false },
-        { "flag": "", "value": "", "id": "output_path", "info": "Output Path", "editable": true, "required": true, "type": "output" },
+        { "flag": "", "value": "", "id": "output_path", "info": "Output Path", "editable": true, "required": true, "type": "output",
+          "default_pattern": "{project_dir}\\..\\renders\\{file_name}\\{file_name}_{frame_pad}" },
         { "flag": "-F", "value": "OPEN_EXR_MULTILAYER", "info": "Output Format", "editable": false },
         { "flag": "--python-exit-code", "value": null, "info": "Enable reliable exit codes", "editable": false },
         { "flag": "", "value": "1", "info": "Exit code on Python error", "editable": false },
