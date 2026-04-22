@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.20)
-project(MinRender VERSION 0.3.10 LANGUAGES C CXX)
+cmake_minimum_required(VERSION 3.24)
+project(MinRender VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- FetchContent dependencies ---
+# --- FetchContent dependencies (backend-only, no UI toolkit) ---
 include(FetchContent)
 
 # nlohmann/json
@@ -43,61 +43,20 @@ set(SQLITECPP_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SQLITECPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(SQLiteCpp)
 
-# --- GUI-only dependencies (Windows only for now) ---
-if(WIN32)
-    # GLFW 3.4
-    FetchContent_Declare(
-        glfw
-        GIT_REPOSITORY https://github.com/glfw/glfw.git
-        GIT_TAG        3.4
-        GIT_SHALLOW    TRUE
-    )
-    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(glfw)
-
-    # ImGui (docking branch)
-    FetchContent_Declare(
-        imgui
-        GIT_REPOSITORY https://github.com/ocornut/imgui.git
-        GIT_TAG        docking
-        GIT_SHALLOW    TRUE
-    )
-    FetchContent_MakeAvailable(imgui)
-
-    # Native File Dialog Extended
-    FetchContent_Declare(
-        nfd
-        GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
-        GIT_TAG        v1.2.1
-        GIT_SHALLOW    TRUE
-    )
-    FetchContent_MakeAvailable(nfd)
-
-    # GLAD (pre-generated, GL 3.3 Core)
-    add_library(glad STATIC external/glad/src/gl.c)
-    target_include_directories(glad PUBLIC external/glad/include)
-
-    # ImGui (manual target — no upstream CMakeLists.txt)
-    add_library(imgui_lib STATIC
-        ${imgui_SOURCE_DIR}/imgui.cpp
-        ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/imgui_draw.cpp
-        ${imgui_SOURCE_DIR}/imgui_tables.cpp
-        ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
-    )
-    target_include_directories(imgui_lib PUBLIC
-        ${imgui_SOURCE_DIR}
-        ${imgui_SOURCE_DIR}/backends
-    )
-    target_link_libraries(imgui_lib PUBLIC glfw glad)
-endif()
+# --- Qt 6.8 (GUI target only; headless target has no Qt dependency) ---
+find_package(Qt6 6.8 REQUIRED COMPONENTS
+    Core
+    Gui
+    Qml
+    Quick
+    QuickControls2
+    Widgets        # needed for QApplication + QSystemTrayIcon (Phase 1)
+)
+qt_standard_project_setup(REQUIRES 6.8)
 
 # --- Core sources (shared between GUI and headless) ---
+# NOTE: main_qt.cpp and main_headless.cpp are NOT in this list —
+# each is added to exactly one target below.
 set(MINRENDER_CORE_SOURCES
     src/core/platform.cpp
     src/core/node_identity.cpp
@@ -110,7 +69,6 @@ set(MINRENDER_CORE_SOURCES
     src/core/http_server.cpp
     src/core/udp_notify.cpp
     src/monitor/peer_manager.cpp
-    src/monitor/main.cpp
     src/monitor/monitor_app.cpp
     src/monitor/agent_supervisor.cpp
     src/monitor/rndr_supervisor.cpp
@@ -126,6 +84,7 @@ set(MINRENDER_CORE_SOURCES
 if(WIN32)
     set(PLATFORM_LIBS
         shell32 ole32 oleaut32 Rpcrt4 dwmapi Advapi32 Ws2_32 Iphlpapi
+        dxgi bcrypt
     )
 elseif(APPLE)
     find_library(COREFOUNDATION_LIB CoreFoundation)
@@ -140,56 +99,65 @@ else()
 endif()
 
 # ===========================================================================
-# MinRender Monitor (GUI — Windows only, uses ImGui/GLFW/OpenGL)
+# MinRender Monitor (Qt 6 Quick GUI)
 # ===========================================================================
+qt_add_executable(minrender
+    ${MINRENDER_CORE_SOURCES}
+    src/monitor/main_qt.cpp
+    $<$<BOOL:${WIN32}>:resources/minrender.rc>
+)
+
+# QML-only UI — no .ui forms ever, so turn AUTOUIC off so it doesn't
+# misread core/ui_ipc_server.h as a UIC-generated header.
+set_target_properties(minrender PROPERTIES AUTOUIC OFF)
+
+target_include_directories(minrender PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_compile_definitions(minrender PRIVATE
+    APP_VERSION="${PROJECT_VERSION}"
+    CPPHTTPLIB_THREAD_POOL_COUNT=4
+)
+
+# QML module — compiled ahead-of-time into the binary via qmlsc.
+qt_add_qml_module(minrender
+    URI MinRenderUi
+    VERSION 1.0
+    QML_FILES
+        src/ui/qml/Main.qml
+    RESOURCE_PREFIX /qt/qml
+)
+
+target_link_libraries(minrender PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Qml
+    Qt6::Quick
+    Qt6::QuickControls2
+    Qt6::Widgets
+    nlohmann_json::nlohmann_json
+    httplib::httplib
+    SQLiteCpp
+    ${PLATFORM_LIBS}
+)
+
+# Copy resources/ next to the executable at build time
+add_custom_command(TARGET minrender POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:minrender>/resources"
+    COMMENT "Copying resources to build output"
+)
+
+# Windowed-subsystem app on Windows (MSVC or MinGW).
 if(WIN32)
-    add_executable(minrender
-        ${MINRENDER_CORE_SOURCES}
-        src/monitor/ui/dashboard.cpp
-        src/monitor/ui/settings_panel.cpp
-        src/monitor/ui/node_panel.cpp
-        src/monitor/ui/job_list_panel.cpp
-        src/monitor/ui/job_detail_panel.cpp
-        src/monitor/ui/log_panel.cpp
-        src/monitor/ui/farm_cleanup_dialog.cpp
-        src/monitor/ui/style.cpp
-        resources/minrender.rc
-    )
-
-    target_include_directories(minrender PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-    )
-
-    target_compile_definitions(minrender PRIVATE
-        APP_VERSION="${PROJECT_VERSION}"
-        CPPHTTPLIB_THREAD_POOL_COUNT=4
-    )
-
-    target_link_libraries(minrender PRIVATE
-        imgui_lib
-        glad
-        nlohmann_json::nlohmann_json
-        httplib::httplib
-        SQLiteCpp
-        nfd
-        opengl32
-        ${PLATFORM_LIBS}
-    )
-
-    # Copy resources/ next to the executable at build time
-    add_custom_command(TARGET minrender POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-            "$<TARGET_FILE_DIR:minrender>/resources"
-        COMMENT "Copying resources to build output"
-    )
-
-    # MSVC-specific settings
-    if(MSVC)
-        target_compile_options(minrender PRIVATE /W4)
-        set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
-        set_target_properties(minrender PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
-    endif()
+    set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
+if(MSVC)
+    target_compile_options(minrender PRIVATE /W4)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(minrender PRIVATE -Wall -Wextra)
 endif()
 
 # ===========================================================================
@@ -197,7 +165,16 @@ endif()
 # ===========================================================================
 add_executable(minrender-headless
     ${MINRENDER_CORE_SOURCES}
+    src/monitor/main_headless.cpp
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
+)
+
+# Headless has no Qt dependency; disable Qt autogen (AUTOUIC otherwise
+# misinterprets core/ui_ipc_server.h as a UIC-generated header).
+set_target_properties(minrender-headless PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
 )
 
 target_include_directories(minrender-headless PRIVATE
@@ -219,7 +196,6 @@ target_link_libraries(minrender-headless PRIVATE
     ${PLATFORM_LIBS}
 )
 
-# Copy resources/ next to the executable at build time
 add_custom_command(TARGET minrender-headless POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/resources"
@@ -234,7 +210,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 # ===========================================================================
-# Restart Helper (Windows only)
+# Restart Helper (Windows only, unchanged)
 # ===========================================================================
 if(WIN32)
     add_executable(mr-restart src/restart/main.cpp)

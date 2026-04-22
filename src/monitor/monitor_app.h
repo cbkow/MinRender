@@ -15,10 +15,6 @@
 #include "monitor/dispatch_manager.h"
 #include "monitor/submission_watcher.h"
 
-#ifndef MINRENDER_HEADLESS
-#include "monitor/ui/dashboard.h"
-#endif
-
 #include "core/system_tray.h"
 
 #include <atomic>
@@ -39,12 +35,7 @@ class MonitorApp
 public:
     bool init();
     void update();
-    void renderUI();
     void shutdown();
-
-    // Headless mode — skips ImGui/Dashboard initialization
-    void setHeadless(bool headless) { m_headless = headless; }
-    bool isHeadless() const { return m_headless; }
 
     // Config accessors
     Config& config() { return m_config; }
@@ -173,9 +164,6 @@ private:
     SubmissionWatcher m_submissionWatcher;
     UdpNotify m_udpNotify;
     UiIpcServer m_uiIpc;
-#ifndef MINRENDER_HEADLESS
-    Dashboard m_dashboard;
-#endif
 
     // Cached snapshots
     std::vector<JobInfo> m_cachedJobs;
@@ -252,9 +240,6 @@ private:
 
     // Deferred farm restart (set by HTTP handler, processed by update())
     std::atomic<bool> m_farmRestartRequested{false};
-
-    // Mode
-    bool m_headless = false;
 
     // Exit state
     bool m_exitRequested = false;

@@ -6,9 +6,6 @@
 
 #include <nlohmann/json.hpp>
 #include <httplib.h>
-#ifndef MINRENDER_HEADLESS
-#include <imgui.h>
-#endif
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -37,10 +34,8 @@ bool MonitorApp::init()
         std::filesystem::remove(m_appDataDir / "restart.bat", ec);
     }
 
-    // Apply font scale (GUI mode only)
-#ifndef MINRENDER_HEADLESS
-    ImGui::GetIO().FontGlobalScale = m_config.font_scale;
-#endif
+    // Font scale is applied by the Qt UI layer via AppBridge (Phase 2+).
+    // The backend only stores the value in m_config.font_scale.
 
     // Restore persisted node state
     if (m_config.node_stopped)
@@ -84,10 +79,8 @@ bool MonitorApp::init()
         m_uiIpc.push(j.dump());
     });
 
-    // Initialize dashboard (GUI mode only)
-#ifndef MINRENDER_HEADLESS
-    m_dashboard.init(this);
-#endif
+    // (Qt UI layer initializes separately in main_qt.cpp via AppBridge;
+    // the backend here is UI-agnostic.)
 
     // Auto-start farm if sync_root is configured
     if (!m_config.sync_root.empty() &&
@@ -245,12 +238,6 @@ void MonitorApp::update()
     }
 }
 
-void MonitorApp::renderUI()
-{
-#ifndef MINRENDER_HEADLESS
-    m_dashboard.render();
-#endif
-}
 
 void MonitorApp::shutdown()
 {

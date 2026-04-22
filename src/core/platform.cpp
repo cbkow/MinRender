@@ -14,6 +14,24 @@
 
 #include <iostream>
 
+// MinGW doesn't ship comsuppw (which provides _com_util::ConvertStringToBSTR
+// that _bstr_t(const char*) forwards to). Provide a minimal inline shim so
+// comdef.h's _bstr_t works. MSVC links its own implementation from comsuppw.
+#if defined(_WIN32) && !defined(_MSC_VER)
+namespace _com_util {
+BSTR ConvertStringToBSTR(const char* pSrc)
+{
+    if (!pSrc) return nullptr;
+    int wlen = MultiByteToWideChar(CP_ACP, 0, pSrc, -1, nullptr, 0);
+    if (wlen <= 0) return nullptr;
+    BSTR bstr = SysAllocStringLen(nullptr, static_cast<UINT>(wlen - 1));
+    if (!bstr) return nullptr;
+    MultiByteToWideChar(CP_ACP, 0, pSrc, -1, bstr, wlen);
+    return bstr;
+}
+} // namespace _com_util
+#endif
+
 namespace MR {
 
 std::filesystem::path getAppDataDir()
