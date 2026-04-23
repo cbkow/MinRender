@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -10,25 +11,156 @@ ApplicationWindow {
     visible: true
     title: qsTr("MinRender Monitor")
 
-    // Phase 0 placeholder. The real menu bar, SplitView layout, panels,
-    // tray, and AppBridge wiring land in Phase 1 and Phase 2.
-    // See docs/qt-port-plan.md.
+    // Phase 1 Step 2c scaffold: menu bar + four-panel SplitView shell.
+    // Every placeholder is an unstyled Rectangle with a label; Phase 4
+    // replaces them one by one with the real panels. AppBridge wiring and
+    // hide-on-close lifecycle land in later steps (2d, Phase 2).
 
-    ColumnLayout {
-        anchors.centerIn: parent
-        spacing: 12
+    // Persisted split sizes + panel visibility across launches.
+    // QtCore's Settings resolves to the same %LOCALAPPDATA%/MinRender
+    // location QCoreApplication::setOrganizationName("MinRender") establishes
+    // in main_qt.cpp, so this piggybacks on the existing config root.
+    Settings {
+        id: panelSettings
+        category: "panels"
 
-        Label {
-            Layout.alignment: Qt.AlignHCenter
-            text: qsTr("MinRender — Qt 6 port")
-            font.pixelSize: 22
-            font.bold: true
+        property real nodePanelWidth: window.width * 0.28
+        property real jobListHeight: (window.height - menuBarArea.height) * 0.33
+        property real jobDetailWidth: window.width * 0.36
+
+        property bool nodePanelVisible: true
+        property bool jobListVisible: true
+        property bool jobDetailVisible: true
+        property bool logVisible: true
+    }
+
+    menuBar: MenuBar {
+        id: menuBarArea
+
+        Menu {
+            title: qsTr("&File")
+            Action { text: qsTr("Settings…");     onTriggered: console.log("[Menu] File → Settings (Phase 2)") }
+            Action { text: qsTr("Farm Cleanup…"); onTriggered: console.log("[Menu] File → Farm Cleanup (Phase 4)") }
+            MenuSeparator {}
+            Action { text: qsTr("E&xit"); onTriggered: Qt.quit() }
         }
 
-        Label {
-            Layout.alignment: Qt.AlignHCenter
-            text: qsTr("Phase 0 scaffold. Empty window only. No backend wired.")
-            opacity: 0.7
+        Menu {
+            title: qsTr("&Jobs")
+            Action { text: qsTr("New Job…"); onTriggered: console.log("[Menu] Jobs → New Job (Phase 4)") }
+        }
+
+        Menu {
+            title: qsTr("&View")
+            MenuItem {
+                text: qsTr("Node Panel")
+                checkable: true
+                checked: panelSettings.nodePanelVisible
+                onToggled: panelSettings.nodePanelVisible = checked
+            }
+            MenuItem {
+                text: qsTr("Job List")
+                checkable: true
+                checked: panelSettings.jobListVisible
+                onToggled: panelSettings.jobListVisible = checked
+            }
+            MenuItem {
+                text: qsTr("Job Detail")
+                checkable: true
+                checked: panelSettings.jobDetailVisible
+                onToggled: panelSettings.jobDetailVisible = checked
+            }
+            MenuItem {
+                text: qsTr("Log")
+                checkable: true
+                checked: panelSettings.logVisible
+                onToggled: panelSettings.logVisible = checked
+            }
+        }
+
+        Menu {
+            title: qsTr("&Help")
+            Action { text: qsTr("Guide");               onTriggered: console.log("[Menu] Help → Guide (Phase 4)") }
+            Action { text: qsTr("Check for Updates…"); onTriggered: console.log("[Menu] Help → Updates (Phase 2)") }
+            MenuSeparator {}
+            Action {
+                text: qsTr("MinRender %1").arg(Qt.application.version)
+                enabled: false
+            }
+        }
+    }
+
+    // Outer horizontal split: NodePanel on the left, everything else on the right.
+    SplitView {
+        id: outerSplit
+        anchors.fill: parent
+        orientation: Qt.Horizontal
+
+        Rectangle {
+            id: nodePanelPlaceholder
+            visible: panelSettings.nodePanelVisible
+            color: "#1e1e1e"
+            SplitView.preferredWidth: panelSettings.nodePanelWidth
+            SplitView.minimumWidth: 220
+            onWidthChanged: if (SplitView.view) panelSettings.nodePanelWidth = width
+            Label {
+                anchors.centerIn: parent
+                text: qsTr("Node Panel (Phase 4)")
+                color: "#888"
+            }
+        }
+
+        // Right side: vertical split — JobList on top, JobDetail+Log below.
+        SplitView {
+            orientation: Qt.Vertical
+            SplitView.fillWidth: true
+
+            Rectangle {
+                id: jobListPlaceholder
+                visible: panelSettings.jobListVisible
+                color: "#232323"
+                SplitView.preferredHeight: panelSettings.jobListHeight
+                SplitView.minimumHeight: 120
+                onHeightChanged: if (SplitView.view) panelSettings.jobListHeight = height
+                Label {
+                    anchors.centerIn: parent
+                    text: qsTr("Job List (Phase 4)")
+                    color: "#888"
+                }
+            }
+
+            // Bottom pane: horizontal split — JobDetail on left, Log on right.
+            SplitView {
+                orientation: Qt.Horizontal
+                SplitView.fillHeight: true
+
+                Rectangle {
+                    id: jobDetailPlaceholder
+                    visible: panelSettings.jobDetailVisible
+                    color: "#1a1a1a"
+                    SplitView.preferredWidth: panelSettings.jobDetailWidth
+                    SplitView.minimumWidth: 240
+                    onWidthChanged: if (SplitView.view) panelSettings.jobDetailWidth = width
+                    Label {
+                        anchors.centerIn: parent
+                        text: qsTr("Job Detail (Phase 5)")
+                        color: "#888"
+                    }
+                }
+
+                Rectangle {
+                    id: logPlaceholder
+                    visible: panelSettings.logVisible
+                    color: "#161616"
+                    SplitView.fillWidth: true
+                    SplitView.minimumWidth: 200
+                    Label {
+                        anchors.centerIn: parent
+                        text: qsTr("Log (Phase 4)")
+                        color: "#888"
+                    }
+                }
+            }
         }
     }
 }
