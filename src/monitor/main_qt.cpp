@@ -3,17 +3,19 @@
 // Linked only into the `minrender` target. The `minrender-headless` target
 // uses main_headless.cpp instead.
 //
-// Phase 0 scope: open an empty ApplicationWindow from QML. MonitorApp,
-// system tray, single-instance, and panels are added in Phase 1+.
-// See docs/qt-port-plan.md.
+// Phase 1 scope: empty ApplicationWindow with menu bar + placeholder
+// panels, system tray, single-instance guard, hide-to-tray lifecycle.
+// MonitorApp and AppBridge arrive in Phase 2. See docs/qt-port-plan.md.
 
+#include "core/single_instance.h"
 #include "ui/platform/tray.h"
 
 #include <QApplication>
-#include <QQmlApplicationEngine>
-#include <QQuickStyle>
 #include <QIcon>
 #include <QLoggingCategory>
+#include <QQmlApplicationEngine>
+#include <QQuickStyle>
+#include <QWindow>
 
 #ifdef _MSC_VER
 #include <crtdbg.h>
@@ -45,6 +47,16 @@ int main(int argc, char* argv[])
     QApplication::setApplicationName("MinRender");
     QApplication::setApplicationVersion(APP_VERSION);
 
+    // Single-instance guard. If another minrender.exe is already running,
+    // signalExisting() pokes it via QLocalSocket and this process exits —
+    // the first instance's activation callback (set below) pops its window.
+    MR::SingleInstance singleInstance("MinRenderMonitor");
+    if (!singleInstance.isFirst())
+    {
+        singleInstance.signalExisting();
+        return 0;
+    }
+
     // Pick the Fusion style — most customizable, dark-theme friendly,
     // cross-platform. See Phase 6 for the full theme pass.
     QQuickStyle::setStyle("Fusion");
@@ -65,17 +77,33 @@ int main(int argc, char* argv[])
 
     engine.loadFromModule("MinRenderUi", "Main");
 
-    // System tray. onShowWindow / onStopResume arrive properly in Step 2d
-    // (lifecycle) and Phase 2 (AppBridge). For now: exit is the only live
-    // action; the others log so we can verify menu wiring works.
+    // Restore the main window from hidden state — used by both the tray's
+    // Show Window menu item and the single-instance activation callback.
+    auto showWindow = [&engine]() {
+        const auto objs = engine.rootObjects();
+        if (objs.isEmpty())
+            return;
+        if (auto* w = qobject_cast<QWindow*>(objs.first()))
+        {
+            w->setVisible(true);
+            w->raise();
+            w->requestActivate();
+        }
+    };
+
+    // A second launch asks this instance to pop forward. Fires on the Qt
+    // event loop, same thread as `showWindow`'s callers — safe to invoke
+    // directly without invokeMethod.
+    singleInstance.setActivationCallback(showWindow);
+
+    // System tray. onStopResume is still a stub until Phase 2 (AppBridge
+    // wires it to MonitorApp::setNodeState).
     MR::Tray tray;
     if (!tray.init())
     {
         qWarning("System tray unavailable; continuing without tray");
     }
-    tray.onShowWindow = []() {
-        qInfo("[Tray] Show Window requested (window restore lands in Step 2d)");
-    };
+    tray.onShowWindow = showWindow;
     tray.onStopResume = []() {
         qInfo("[Tray] Stop/Resume requested (backend toggle lands in Phase 2)");
     };
@@ -83,9 +111,9 @@ int main(int argc, char* argv[])
         QCoreApplication::quit();
     };
 
-    // Don't quit the app when the (still-absent) last window closes —
-    // Step 2d will make window-close hide to tray. Until then, explicit
-    // Exit via the tray menu is the only way out.
+    // Window close hides to tray (see Main.qml onClosing). Without this,
+    // closing the window would quit the app the moment the engine tears
+    // down its last window.
     QGuiApplication::setQuitOnLastWindowClosed(false);
 
     return app.exec();

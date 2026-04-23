@@ -11,10 +11,14 @@ ApplicationWindow {
     visible: true
     title: qsTr("MinRender Monitor")
 
-    // Phase 1 Step 2c scaffold: menu bar + four-panel SplitView shell.
-    // Every placeholder is an unstyled Rectangle with a label; Phase 4
-    // replaces them one by one with the real panels. AppBridge wiring and
-    // hide-on-close lifecycle land in later steps (2d, Phase 2).
+    // Hide to tray on close. The user quits via tray → Exit (which calls
+    // QCoreApplication::quit via main_qt.cpp) or File → Exit menu item.
+    // main_qt.cpp sets setQuitOnLastWindowClosed(false), so hiding the
+    // window keeps the app alive.
+    onClosing: (close) => {
+        close.accepted = false
+        window.visible = false
+    }
 
     // Persisted split sizes + panel visibility across launches.
     // QtCore's Settings resolves to the same %LOCALAPPDATA%/MinRender
