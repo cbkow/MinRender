@@ -44,6 +44,8 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     , m_chunksModel(std::make_unique<ChunksModel>())
     , m_templatesModel(std::make_unique<TemplatesModel>())
     , m_lastFarmRunning(monitor ? monitor->isFarmRunning() : false)
+    , m_lastIsLeader(monitor ? monitor->isLeader() : false)
+    , m_lastNodeActive(monitor ? monitor->nodeState() == MR::NodeState::Active : true)
 {
     takeSnapshot();
     if (m_monitor)
@@ -255,6 +257,21 @@ void AppBridge::refresh()
         emit farmRunningChanged();
     }
 
+    const bool leaderNow = m_monitor->isLeader();
+    if (leaderNow != m_lastIsLeader)
+    {
+        m_lastIsLeader = leaderNow;
+        emit thisNodeIsLeaderChanged();
+    }
+
+    const bool activeNow =
+        m_monitor->nodeState() == MR::NodeState::Active;
+    if (activeNow != m_lastNodeActive)
+    {
+        m_lastNodeActive = activeNow;
+        emit thisNodeActiveChanged();
+    }
+
     // MonitorApp::refreshCachedJobs runs on the same thread (the 50 ms
     // QTimer that calls this method), so direct push is safe. The model
     // diffs internally and only emits dataChanged for changed rows.
@@ -282,6 +299,66 @@ void AppBridge::saveSettings()
     if (!m_monitor) return;
     m_monitor->saveConfig();
     takeSnapshot();
+}
+
+QString AppBridge::thisNodeId() const
+{
+    return m_monitor
+        ? QString::fromStdString(m_monitor->identity().nodeId())
+        : QString();
+}
+
+QString AppBridge::thisNodeHostname() const
+{
+    return m_monitor
+        ? QString::fromStdString(m_monitor->identity().systemInfo().hostname)
+        : QString();
+}
+
+QString AppBridge::thisNodeGpu() const
+{
+    return m_monitor
+        ? QString::fromStdString(m_monitor->identity().systemInfo().gpuName)
+        : QString();
+}
+
+int AppBridge::thisNodeCpuCores() const
+{
+    return m_monitor ? m_monitor->identity().systemInfo().cpuCores : 0;
+}
+
+qint64 AppBridge::thisNodeRamMb() const
+{
+    return m_monitor
+        ? static_cast<qint64>(m_monitor->identity().systemInfo().ramMB)
+        : 0;
+}
+
+bool AppBridge::thisNodeIsLeader() const
+{
+    return m_monitor ? m_monitor->isLeader() : false;
+}
+
+bool AppBridge::thisNodeActive() const
+{
+    return m_monitor
+        ? m_monitor->nodeState() == MR::NodeState::Active
+        : true;
+}
+
+void AppBridge::toggleNodeActive()
+{
+    if (!m_monitor) return;
+    m_monitor->setNodeState(
+        m_monitor->nodeState() == MR::NodeState::Active
+            ? MR::NodeState::Stopped
+            : MR::NodeState::Active);
+}
+
+void AppBridge::unsuspendNode(const QString& nodeId)
+{
+    if (!m_monitor || nodeId.isEmpty()) return;
+    m_monitor->unsuspendNode(nodeId.toStdString());
 }
 
 void AppBridge::requestRestart()

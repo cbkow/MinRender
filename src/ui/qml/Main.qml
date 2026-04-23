@@ -100,18 +100,12 @@ ApplicationWindow {
         anchors.fill: parent
         orientation: Qt.Horizontal
 
-        Rectangle {
-            id: nodePanelPlaceholder
+        NodePanel {
+            id: nodePanelInstance
             visible: panelSettings.nodePanelVisible
-            color: "#1e1e1e"
             SplitView.preferredWidth: panelSettings.nodePanelWidth
-            SplitView.minimumWidth: 220
+            SplitView.minimumWidth: 260
             onWidthChanged: if (SplitView.view) panelSettings.nodePanelWidth = width
-            Label {
-                anchors.centerIn: parent
-                text: qsTr("Node Panel (Phase 4)")
-                color: "#888"
-            }
         }
 
         // Right side: vertical split — JobList on top, JobDetail+Log below.

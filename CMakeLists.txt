@@ -138,6 +138,7 @@ qt_add_qml_module(minrender
     QML_FILES
         src/ui/qml/Main.qml
         src/ui/qml/panels/LogPanel.qml
+        src/ui/qml/panels/NodePanel.qml
         src/ui/qml/panels/SettingsPanel.qml
     RESOURCE_PREFIX /qt/qml
 )

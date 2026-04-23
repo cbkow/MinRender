@@ -39,6 +39,16 @@ class AppBridge : public QObject
     Q_PROPERTY(QString currentJobId READ currentJobId WRITE setCurrentJobId
                NOTIFY currentJobIdChanged)
 
+    // "This Node" descriptors — stable for the life of the process except
+    // for isLeader and nodeState, which flip with leadership / tray toggles.
+    Q_PROPERTY(QString thisNodeId       READ thisNodeId       CONSTANT)
+    Q_PROPERTY(QString thisNodeHostname READ thisNodeHostname CONSTANT)
+    Q_PROPERTY(QString thisNodeGpu      READ thisNodeGpu      CONSTANT)
+    Q_PROPERTY(int     thisNodeCpuCores READ thisNodeCpuCores CONSTANT)
+    Q_PROPERTY(qint64  thisNodeRamMb    READ thisNodeRamMb    CONSTANT)
+    Q_PROPERTY(bool    thisNodeIsLeader READ thisNodeIsLeader NOTIFY thisNodeIsLeaderChanged)
+    Q_PROPERTY(bool    thisNodeActive   READ thisNodeActive   NOTIFY thisNodeActiveChanged)
+
     Q_PROPERTY(QString syncRoot           READ syncRoot           WRITE setSyncRoot           NOTIFY syncRootChanged)
     Q_PROPERTY(QString tagsCsv            READ tagsCsv            WRITE setTagsCsv            NOTIFY tagsCsvChanged)
     Q_PROPERTY(int     httpPort           READ httpPort           WRITE setHttpPort           NOTIFY httpPortChanged)
@@ -63,6 +73,17 @@ public:
 
     QString currentJobId() const { return m_currentJobId; }
     void setCurrentJobId(const QString& jobId);
+
+    QString thisNodeId() const;
+    QString thisNodeHostname() const;
+    QString thisNodeGpu() const;
+    int     thisNodeCpuCores() const;
+    qint64  thisNodeRamMb() const;
+    bool    thisNodeIsLeader() const;
+    bool    thisNodeActive() const;
+
+    Q_INVOKABLE void toggleNodeActive();
+    Q_INVOKABLE void unsuspendNode(const QString& nodeId);
 
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
@@ -111,6 +132,8 @@ signals:
     void showNotificationsChanged();
     void stagingEnabledChanged();
     void currentJobIdChanged();
+    void thisNodeIsLeaderChanged();
+    void thisNodeActiveChanged();
 
 private:
     // Snapshot of MonitorApp::config() taken at construction and after each
@@ -132,7 +155,9 @@ private:
     std::unique_ptr<TemplatesModel> m_templatesModel;
     QTimer                          m_chunksTimer;
     QString                         m_currentJobId;
-    bool m_lastFarmRunning = false;
+    bool m_lastFarmRunning  = false;
+    bool m_lastIsLeader     = false;
+    bool m_lastNodeActive   = true;
 };
 
 } // namespace MR
