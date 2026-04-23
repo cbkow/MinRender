@@ -133,6 +133,16 @@ qt_add_qml_module(minrender
     RESOURCE_PREFIX /qt/qml
 )
 
+# Embed icons into the binary at :/icons/… — the Inno Setup payload still
+# ships resources/ on disk for fonts, but the app window + tray read icons
+# from the embedded copy so a missing resources/ dir can't break either.
+qt_add_resources(minrender "app_icons"
+    PREFIX "/icons"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
+    FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/minrender.ico"
+)
+
 target_link_libraries(minrender PRIVATE
     Qt6::Core
     Qt6::Gui

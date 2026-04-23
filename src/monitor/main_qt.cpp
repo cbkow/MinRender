@@ -62,11 +62,11 @@ int main(int argc, char* argv[])
     // cross-platform. See Phase 6 for the full theme pass.
     QQuickStyle::setStyle("Fusion");
 
-#ifdef _WIN32
-    // Icon from resources/minrender.rc — Qt picks up the Win32 icon resource
-    // automatically for the taskbar and window decoration.
+    // Icon for taskbar / Alt-Tab / QML window titlebar. On Windows the
+    // .exe icon itself comes from resources/minrender.rc (linked into the
+    // binary as a Win32 resource); this QIcon drives runtime decoration.
+    // Phase 8 adds .icns / .png variants under the same :/icons/ prefix.
     app.setWindowIcon(QIcon(":/icons/minrender.ico"));
-#endif
 
     QQmlApplicationEngine engine;
     QObject::connect(

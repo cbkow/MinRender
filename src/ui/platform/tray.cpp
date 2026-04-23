@@ -15,13 +15,13 @@ namespace {
 
 QIcon loadTrayIcon()
 {
-    const QString appDir = QCoreApplication::applicationDirPath();
-    QIcon icon(appDir + QStringLiteral("/resources/icons/minrender.ico"));
+    // Embedded first (always present post-link); fall back to the copy
+    // POST_BUILD places next to the binary in dev builds.
+    QIcon icon(QStringLiteral(":/icons/minrender.ico"));
     if (icon.isNull())
     {
-        // Fall back to a bundled QRC path if CMake's POST_BUILD copy didn't run
-        // (e.g. running from an install layout). Phase 6 will move icons into qrc.
-        icon = QIcon(QStringLiteral(":/icons/minrender.ico"));
+        icon = QIcon(QCoreApplication::applicationDirPath()
+                     + QStringLiteral("/resources/icons/minrender.ico"));
     }
     return icon;
 }
