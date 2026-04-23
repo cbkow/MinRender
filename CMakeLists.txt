@@ -132,6 +132,7 @@ qt_add_qml_module(minrender
     VERSION 1.0
     QML_FILES
         src/ui/qml/Main.qml
+        src/ui/qml/panels/SettingsPanel.qml
     RESOURCE_PREFIX /qt/qml
 )
 
