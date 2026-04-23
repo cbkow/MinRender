@@ -43,7 +43,7 @@ ApplicationWindow {
 
         Menu {
             title: qsTr("&File")
-            Action { text: qsTr("Settings…");     onTriggered: console.log("[Menu] File → Settings (Phase 2)") }
+            Action { text: qsTr("Settings…");     onTriggered: settingsDialog.open() }
             Action { text: qsTr("Farm Cleanup…"); onTriggered: console.log("[Menu] File → Farm Cleanup (Phase 4)") }
             MenuSeparator {}
             Action { text: qsTr("E&xit"); onTriggered: Qt.quit() }
@@ -164,6 +164,39 @@ ApplicationWindow {
                         color: "#888"
                     }
                 }
+            }
+        }
+    }
+
+    // --- Settings dialog ---
+    // Loader with `active: settingsDialog.visible` destroys and re-creates
+    // the SettingsPanel each time the dialog opens. That way binding
+    // breakage from previous edits doesn't persist, and an external revert
+    // always shows in the fields on the next open.
+    //
+    // closePolicy is NoAutoClose — the panel's Save/Cancel are the only
+    // exits, so we never leave the dialog with unsaved in-memory config
+    // edits hanging on MonitorApp::config().
+    Dialog {
+        id: settingsDialog
+        title: qsTr("Settings")
+        modal: true
+        anchors.centerIn: parent
+        width: 600
+        height: Math.min(760, window.height - 80)
+        closePolicy: Popup.NoAutoClose
+
+        Loader {
+            anchors.fill: parent
+            active: settingsDialog.visible
+            sourceComponent: settingsPanelComponent
+        }
+
+        Component {
+            id: settingsPanelComponent
+            SettingsPanel {
+                onAccepted: settingsDialog.close()
+                onRejected: settingsDialog.close()
             }
         }
     }
