@@ -2,6 +2,7 @@
 
 #include "core/config.h"
 #include "ui/models/jobs_model.h"
+#include "ui/models/nodes_model.h"
 
 #include <QColor>
 #include <QObject>
@@ -25,7 +26,8 @@ class AppBridge : public QObject
     Q_PROPERTY(bool    farmRunning        READ farmRunning        NOTIFY farmRunningChanged)
     Q_PROPERTY(QColor  accentColor        READ accentColor        NOTIFY accentColorChanged)
 
-    Q_PROPERTY(MR::JobsModel* jobsModel READ jobsModel CONSTANT)
+    Q_PROPERTY(MR::JobsModel*  jobsModel  READ jobsModel  CONSTANT)
+    Q_PROPERTY(MR::NodesModel* nodesModel READ nodesModel CONSTANT)
 
     Q_PROPERTY(QString syncRoot           READ syncRoot           WRITE setSyncRoot           NOTIFY syncRootChanged)
     Q_PROPERTY(QString tagsCsv            READ tagsCsv            WRITE setTagsCsv            NOTIFY tagsCsvChanged)
@@ -43,7 +45,8 @@ public:
     bool farmRunning() const;
     QColor accentColor() const { return m_accentColor; }
 
-    JobsModel* jobsModel() const { return m_jobsModel.get(); }
+    JobsModel*  jobsModel()  const { return m_jobsModel.get(); }
+    NodesModel* nodesModel() const { return m_nodesModel.get(); }
 
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
@@ -102,7 +105,8 @@ private:
     MonitorApp* m_monitor;
     QColor m_accentColor;
     Config m_snapshot;
-    std::unique_ptr<JobsModel> m_jobsModel;
+    std::unique_ptr<JobsModel>  m_jobsModel;
+    std::unique_ptr<NodesModel> m_nodesModel;
     bool m_lastFarmRunning = false;
 };
 

@@ -108,6 +108,7 @@ qt_add_executable(minrender
     src/monitor/main_qt.cpp
     src/ui/app_bridge.cpp
     src/ui/models/jobs_model.cpp
+    src/ui/models/nodes_model.cpp
     src/ui/platform/accent_color.cpp
     src/ui/platform/title_bar.cpp
     src/ui/platform/tray.cpp

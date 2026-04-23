@@ -2,7 +2,9 @@
 
 #include "core/config.h"
 #include "monitor/monitor_app.h"
+#include "monitor/peer_manager.h"
 #include "ui/models/jobs_model.h"
+#include "ui/models/nodes_model.h"
 #include "ui/platform/accent_color.h"
 
 #include <QStringList>
@@ -34,11 +36,15 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     , m_monitor(monitor)
     , m_accentColor(systemAccentColor())
     , m_jobsModel(std::make_unique<JobsModel>())
+    , m_nodesModel(std::make_unique<NodesModel>())
     , m_lastFarmRunning(monitor ? monitor->isFarmRunning() : false)
 {
     takeSnapshot();
     if (m_monitor)
+    {
         m_jobsModel->setJobs(m_monitor->cachedJobs());
+        m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
+    }
 }
 
 AppBridge::~AppBridge() = default;
@@ -204,6 +210,10 @@ void AppBridge::refresh()
     // QTimer that calls this method), so direct push is safe. The model
     // diffs internally and only emits dataChanged for changed rows.
     m_jobsModel->setJobs(m_monitor->cachedJobs());
+
+    // PeerManager::getPeerSnapshot takes a mutex under the hood so it's
+    // safe from any thread; we call it from the UI thread anyway.
+    m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
 }
 
 void AppBridge::revertSettings()
