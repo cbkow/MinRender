@@ -1,6 +1,6 @@
 # MinRender Qt 6 Quick Port Plan
 
-Status: **Phase 3 models live — awaiting runtime smoke test before Phase 4** · Owner: Chris · Last updated: 2026-04-23
+Status: **Phase 4 3/5 panels complete (Log/Node/JobList) — FarmCleanup + Submission remaining** · Owner: Chris · Last updated: 2026-04-23
 
 ## Current state (read this first if you are a fresh agent)
 
@@ -292,15 +292,13 @@ Not in Phase 3 scope:
 - Surgical insert/remove diff on `JobsModel`/`NodesModel`/`ChunksModel`. Current slow path is `beginResetModel`, which rebuilds delegates and drops ListView selection. Acceptable for Phase 3 milestone; Phase 4 panels may justify the proper LCS-style diff.
 - **Milestone:** bind a bare `ListView` to each model and see rows appear/update/disappear when backend state changes.
 
-### Phase 4 — Remaining panels (no JobDetail) · 2 weeks
+### Phase 4 — Remaining panels (no JobDetail) · 2 weeks · **3 of 5 panels landed**
 
-Port in order, each independent:
-
-1. **Log panel** (~2 days). `ListView` bound to `LogModel`. Delegate: monospaced text with level-colored prefix. Filter chips for `info`/`warn`/`error`/`debug`. Autoscroll toggle. Copy-visible-to-clipboard.
-2. **Node panel** (~2–3 days). Two sections: "This Node" (static `AppBridge` properties) and a `ListView` bound to `NodesModel` for peers. Per-peer menu for Unsuspend.
-3. **Job list panel** (~3–4 days). `TableView` (Qt Quick 6.5+ standard table) bound to `JobsModel`. Columns: Name, State, Progress, Created. Multi-select with checkbox column. Context menu (pause/resume/cancel/delete/requeue). "New Job" button → `AppBridge.requestSubmissionMode()`.
-4. **Farm Cleanup dialog** (~2 days). `Dialog` modal with file preview list and confirm/destructive action.
-5. **Submission mode** (~3 days). Form rendered inside JobDetail panel's Empty/Submission branch (panel itself is Phase 5, but this subtree can be built first as a standalone `Loader`). Template picker, dynamic flag fields, frame range, chunk size, output pattern resolution, submit handling (sync on leader, async via `postToLeaderAsync` on workers).
+1. **Log panel** · `7bcfbc4` **done.** ListView over `appBridge.logModel`. Toolbar with Info/Warn/Error filter chips (delegate `height: 0` filter — upgrade to `QSortFilterProxyModel` if churn becomes measurable), autoscroll that pauses when the user scrolls away from the bottom, entry counter, Clear button. Monospaced four-column delegate (time / level / category / message).
+2. **Node panel** · `a7cb77d` **done.** Top section: "This Node" static info (hostname, node id, GPU, CPU/RAM, tags, LEADER badge) + Stop/Resume button. Bottom section: peer ListView (status dot coloured by `agentHealth`, hostname, LEADER badge on leader, status line). Right-click on a peer opens a Menu with Unsuspend. AppBridge gained `thisNode*` Q_PROPERTYs and `toggleNodeActive` / `unsuspendNode` invokables.
+3. **Job list panel** · `91abfc0` **done.** ListView (not TableView — simpler, same column alignment via fixed widths) over `appBridge.jobsModel`. Columns: checkbox / name / state (colour-coded) / progress (ProgressBar + "done/total") / created. Per-row right-click menu: Pause, Resume, Retry failed chunks, Requeue, Cancel, Archive, Delete — each goes through a new AppBridge invokable. "New Job…" button in toolbar calls `appBridge.requestSubmissionMode()`. Header select-all is tristate for display, two-state on click. AppBridge.setCurrentJobId now also calls `MonitorApp::selectJob` so HTTP handlers stay in sync.
+4. **Farm Cleanup dialog** · _deferred_. The endpoints (`POST /api/farm/scan-cleanup`, `POST /api/farm/cleanup`) are async HTTP — dialog needs AppBridge to expose a scan→results→execute pipeline with callbacks. Options the next session picks between: (a) full implementation, (b) stub modal with "Coming soon" text until Phase 7, (c) hide the File menu entry until Phase 7 and revisit. User-facing impact is low (farms rarely need cleanup), so stubbing is the likely call.
+5. **Submission mode** · _deferred_. The largest single piece of UI — template picker + dynamic flag fields (vary per template) + frame range / chunk size / output pattern + submit via `postToLeaderAsync`. Warrants a dedicated session so the layout choices get proper attention.
 
 ### Phase 5 — JobDetail + frame grid · 1–1.5 weeks
 
