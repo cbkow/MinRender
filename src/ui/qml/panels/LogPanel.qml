@@ -124,7 +124,7 @@ Item {
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             delegate: Rectangle {
-                required property qint64 timestamp
+                required property var    timestamp
                 required property string level
                 required property string category
                 required property string message

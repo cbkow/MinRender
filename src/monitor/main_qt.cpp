@@ -18,6 +18,7 @@
 #include <QLoggingCategory>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlError>
 #include <QQuickStyle>
 #include <QTimer>
 #include <QWindow>
@@ -78,6 +79,15 @@ int main(int argc, char* argv[])
         &app,
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
+
+    QObject::connect(
+        &engine,
+        &QQmlApplicationEngine::warnings,
+        [](const QList<QQmlError>& warnings) {
+            for (const auto& w : warnings)
+                std::cerr << "[QML warning] " << w.toString().toStdString()
+                          << std::endl;
+        });
 
     // Expose AppBridge to QML before loading the module so Main.qml's
     // context has `appBridge` available at first bind.

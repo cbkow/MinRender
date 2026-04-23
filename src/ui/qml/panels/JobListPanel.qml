@@ -193,7 +193,7 @@ Item {
                 required property int    totalChunks
                 required property int    doneChunks
                 required property int    failedChunks
-                required property qint64 createdAt
+                required property var    createdAt
                 required property int    index
 
                 width: jobList.width
