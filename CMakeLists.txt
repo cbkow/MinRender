@@ -57,14 +57,15 @@ qt_standard_project_setup(REQUIRES 6.8)
 
 # --- Core sources (shared between GUI and headless) ---
 # NOTE: main_qt.cpp and main_headless.cpp are NOT in this list —
-# each is added to exactly one target below.
+# each is added to exactly one target below. Same for tray: the GUI
+# uses src/ui/platform/tray.cpp (Qt), headless keeps the Win32 tray
+# in src/core/system_tray.cpp until Phase 8 gives headless Qt too.
 set(MINRENDER_CORE_SOURCES
     src/core/platform.cpp
     src/core/node_identity.cpp
     src/core/ipc_server.cpp
     src/core/ui_ipc_server.cpp
     src/core/monitor_log.cpp
-    src/core/system_tray.cpp
     src/core/single_instance.cpp
     src/core/net_utils.cpp
     src/core/http_server.cpp
@@ -105,6 +106,7 @@ endif()
 qt_add_executable(minrender
     ${MINRENDER_CORE_SOURCES}
     src/monitor/main_qt.cpp
+    src/ui/platform/tray.cpp
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )
 
@@ -167,6 +169,7 @@ endif()
 # ===========================================================================
 add_executable(minrender-headless
     ${MINRENDER_CORE_SOURCES}
+    src/core/system_tray.cpp
     src/monitor/main_headless.cpp
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )

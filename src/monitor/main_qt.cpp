@@ -7,6 +7,8 @@
 // system tray, single-instance, and panels are added in Phase 1+.
 // See docs/qt-port-plan.md.
 
+#include "ui/platform/tray.h"
+
 #include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
@@ -62,6 +64,29 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
 
     engine.loadFromModule("MinRenderUi", "Main");
+
+    // System tray. onShowWindow / onStopResume arrive properly in Step 2d
+    // (lifecycle) and Phase 2 (AppBridge). For now: exit is the only live
+    // action; the others log so we can verify menu wiring works.
+    MR::Tray tray;
+    if (!tray.init())
+    {
+        qWarning("System tray unavailable; continuing without tray");
+    }
+    tray.onShowWindow = []() {
+        qInfo("[Tray] Show Window requested (window restore lands in Step 2d)");
+    };
+    tray.onStopResume = []() {
+        qInfo("[Tray] Stop/Resume requested (backend toggle lands in Phase 2)");
+    };
+    tray.onExit = []() {
+        QCoreApplication::quit();
+    };
+
+    // Don't quit the app when the (still-absent) last window closes —
+    // Step 2d will make window-close hide to tray. Until then, explicit
+    // Exit via the tray menu is the only way out.
+    QGuiApplication::setQuitOnLastWindowClosed(false);
 
     return app.exec();
 }
