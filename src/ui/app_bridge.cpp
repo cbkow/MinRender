@@ -4,6 +4,7 @@
 #include "monitor/monitor_app.h"
 #include "monitor/peer_manager.h"
 #include "ui/models/jobs_model.h"
+#include "ui/models/log_model.h"
 #include "ui/models/nodes_model.h"
 #include "ui/platform/accent_color.h"
 
@@ -37,6 +38,7 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     , m_accentColor(systemAccentColor())
     , m_jobsModel(std::make_unique<JobsModel>())
     , m_nodesModel(std::make_unique<NodesModel>())
+    , m_logModel(std::make_unique<LogModel>())
     , m_lastFarmRunning(monitor ? monitor->isFarmRunning() : false)
 {
     takeSnapshot();
@@ -45,6 +47,10 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
         m_jobsModel->setJobs(m_monitor->cachedJobs());
         m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
     }
+    // attach() seeds from MonitorLog's existing ring and installs the
+    // callback — safe to call even if MonitorApp::init() hasn't run yet,
+    // since MonitorLog is a singleton that's always available.
+    m_logModel->attach();
 }
 
 AppBridge::~AppBridge() = default;

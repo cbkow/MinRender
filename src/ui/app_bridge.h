@@ -2,6 +2,7 @@
 
 #include "core/config.h"
 #include "ui/models/jobs_model.h"
+#include "ui/models/log_model.h"
 #include "ui/models/nodes_model.h"
 
 #include <QColor>
@@ -28,6 +29,7 @@ class AppBridge : public QObject
 
     Q_PROPERTY(MR::JobsModel*  jobsModel  READ jobsModel  CONSTANT)
     Q_PROPERTY(MR::NodesModel* nodesModel READ nodesModel CONSTANT)
+    Q_PROPERTY(MR::LogModel*   logModel   READ logModel   CONSTANT)
 
     Q_PROPERTY(QString syncRoot           READ syncRoot           WRITE setSyncRoot           NOTIFY syncRootChanged)
     Q_PROPERTY(QString tagsCsv            READ tagsCsv            WRITE setTagsCsv            NOTIFY tagsCsvChanged)
@@ -47,6 +49,7 @@ public:
 
     JobsModel*  jobsModel()  const { return m_jobsModel.get(); }
     NodesModel* nodesModel() const { return m_nodesModel.get(); }
+    LogModel*   logModel()   const { return m_logModel.get(); }
 
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
@@ -107,6 +110,7 @@ private:
     Config m_snapshot;
     std::unique_ptr<JobsModel>  m_jobsModel;
     std::unique_ptr<NodesModel> m_nodesModel;
+    std::unique_ptr<LogModel>   m_logModel;
     bool m_lastFarmRunning = false;
 };
 
