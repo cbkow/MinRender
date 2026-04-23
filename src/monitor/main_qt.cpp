@@ -9,6 +9,7 @@
 
 #include "core/single_instance.h"
 #include "monitor/monitor_app.h"
+#include "ui/app_bridge.h"
 #include "ui/platform/title_bar.h"
 #include "ui/platform/tray.h"
 
@@ -16,6 +17,7 @@
 #include <QIcon>
 #include <QLoggingCategory>
 #include <QQmlApplicationEngine>
+#include <QQmlContext>
 #include <QQuickStyle>
 #include <QTimer>
 #include <QWindow>
@@ -77,6 +79,12 @@ int main(int argc, char* argv[])
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
 
+    // Expose AppBridge to QML before loading the module so Main.qml's
+    // context has `appBridge` available at first bind.
+    MR::AppBridge bridge(&monitor);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("appBridge"), &bridge);
+
     engine.loadFromModule("MinRenderUi", "Main");
 
     for (QObject* obj : engine.rootObjects())
@@ -123,6 +131,7 @@ int main(int argc, char* argv[])
     pumpTimer.setInterval(50);
     QObject::connect(&pumpTimer, &QTimer::timeout, [&]() {
         monitor.update();
+        bridge.refresh();
 
         tray.setTooltip(monitor.trayTooltip());
         tray.setStatusText(monitor.trayStatusText());
