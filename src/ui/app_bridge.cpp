@@ -7,6 +7,7 @@
 #include "ui/models/jobs_model.h"
 #include "ui/models/log_model.h"
 #include "ui/models/nodes_model.h"
+#include "ui/models/templates_model.h"
 #include "ui/platform/accent_color.h"
 
 #include <QStringList>
@@ -41,6 +42,7 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     , m_nodesModel(std::make_unique<NodesModel>())
     , m_logModel(std::make_unique<LogModel>())
     , m_chunksModel(std::make_unique<ChunksModel>())
+    , m_templatesModel(std::make_unique<TemplatesModel>())
     , m_lastFarmRunning(monitor ? monitor->isFarmRunning() : false)
 {
     takeSnapshot();
@@ -48,6 +50,7 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     {
         m_jobsModel->setJobs(m_monitor->cachedJobs());
         m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
+        m_templatesModel->setTemplates(m_monitor->cachedTemplates());
     }
     // attach() seeds from MonitorLog's existing ring and installs the
     // callback — safe to call even if MonitorApp::init() hasn't run yet,
@@ -260,6 +263,11 @@ void AppBridge::refresh()
     // PeerManager::getPeerSnapshot takes a mutex under the hood so it's
     // safe from any thread; we call it from the UI thread anyway.
     m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
+
+    // Template cache is refreshed alongside jobs (every 2 s in
+    // MonitorApp::update). TemplatesModel short-circuits when the set
+    // is equivalent, so polling here at 20 Hz is essentially free.
+    m_templatesModel->setTemplates(m_monitor->cachedTemplates());
 }
 
 void AppBridge::revertSettings()

@@ -5,6 +5,7 @@
 #include "ui/models/jobs_model.h"
 #include "ui/models/log_model.h"
 #include "ui/models/nodes_model.h"
+#include "ui/models/templates_model.h"
 
 #include <QColor>
 #include <QObject>
@@ -29,10 +30,11 @@ class AppBridge : public QObject
     Q_PROPERTY(bool    farmRunning        READ farmRunning        NOTIFY farmRunningChanged)
     Q_PROPERTY(QColor  accentColor        READ accentColor        NOTIFY accentColorChanged)
 
-    Q_PROPERTY(MR::JobsModel*   jobsModel   READ jobsModel   CONSTANT)
-    Q_PROPERTY(MR::NodesModel*  nodesModel  READ nodesModel  CONSTANT)
-    Q_PROPERTY(MR::LogModel*    logModel    READ logModel    CONSTANT)
-    Q_PROPERTY(MR::ChunksModel* chunksModel READ chunksModel CONSTANT)
+    Q_PROPERTY(MR::JobsModel*      jobsModel      READ jobsModel      CONSTANT)
+    Q_PROPERTY(MR::NodesModel*     nodesModel     READ nodesModel     CONSTANT)
+    Q_PROPERTY(MR::LogModel*       logModel       READ logModel       CONSTANT)
+    Q_PROPERTY(MR::ChunksModel*    chunksModel    READ chunksModel    CONSTANT)
+    Q_PROPERTY(MR::TemplatesModel* templatesModel READ templatesModel CONSTANT)
 
     Q_PROPERTY(QString currentJobId READ currentJobId WRITE setCurrentJobId
                NOTIFY currentJobIdChanged)
@@ -53,10 +55,11 @@ public:
     bool farmRunning() const;
     QColor accentColor() const { return m_accentColor; }
 
-    JobsModel*   jobsModel()   const { return m_jobsModel.get(); }
-    NodesModel*  nodesModel()  const { return m_nodesModel.get(); }
-    LogModel*    logModel()    const { return m_logModel.get(); }
-    ChunksModel* chunksModel() const { return m_chunksModel.get(); }
+    JobsModel*      jobsModel()      const { return m_jobsModel.get(); }
+    NodesModel*     nodesModel()     const { return m_nodesModel.get(); }
+    LogModel*       logModel()       const { return m_logModel.get(); }
+    ChunksModel*    chunksModel()    const { return m_chunksModel.get(); }
+    TemplatesModel* templatesModel() const { return m_templatesModel.get(); }
 
     QString currentJobId() const { return m_currentJobId; }
     void setCurrentJobId(const QString& jobId);
@@ -122,12 +125,13 @@ private:
     // Drives the 3 s ChunksModel refresh while m_currentJobId is set.
     void refreshChunks();
 
-    std::unique_ptr<JobsModel>   m_jobsModel;
-    std::unique_ptr<NodesModel>  m_nodesModel;
-    std::unique_ptr<LogModel>    m_logModel;
-    std::unique_ptr<ChunksModel> m_chunksModel;
-    QTimer                       m_chunksTimer;
-    QString                      m_currentJobId;
+    std::unique_ptr<JobsModel>      m_jobsModel;
+    std::unique_ptr<NodesModel>     m_nodesModel;
+    std::unique_ptr<LogModel>       m_logModel;
+    std::unique_ptr<ChunksModel>    m_chunksModel;
+    std::unique_ptr<TemplatesModel> m_templatesModel;
+    QTimer                          m_chunksTimer;
+    QString                         m_currentJobId;
     bool m_lastFarmRunning = false;
 };
 
