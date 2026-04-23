@@ -152,17 +152,11 @@ ApplicationWindow {
                     }
                 }
 
-                Rectangle {
-                    id: logPlaceholder
+                LogPanel {
+                    id: logPanelInstance
                     visible: panelSettings.logVisible
-                    color: "#161616"
                     SplitView.fillWidth: true
-                    SplitView.minimumWidth: 200
-                    Label {
-                        anchors.centerIn: parent
-                        text: qsTr("Log (Phase 4)")
-                        color: "#888"
-                    }
+                    SplitView.minimumWidth: 240
                 }
             }
         }
