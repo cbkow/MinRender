@@ -113,18 +113,12 @@ ApplicationWindow {
             orientation: Qt.Vertical
             SplitView.fillWidth: true
 
-            Rectangle {
-                id: jobListPlaceholder
+            JobListPanel {
+                id: jobListInstance
                 visible: panelSettings.jobListVisible
-                color: "#232323"
                 SplitView.preferredHeight: panelSettings.jobListHeight
                 SplitView.minimumHeight: 120
                 onHeightChanged: if (SplitView.view) panelSettings.jobListHeight = height
-                Label {
-                    anchors.centerIn: parent
-                    text: qsTr("Job List (Phase 4)")
-                    color: "#888"
-                }
             }
 
             // Bottom pane: horizontal split — JobDetail on left, Log on right.

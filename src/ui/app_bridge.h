@@ -85,6 +85,18 @@ public:
     Q_INVOKABLE void toggleNodeActive();
     Q_INVOKABLE void unsuspendNode(const QString& nodeId);
 
+    // Job controls — forwarded to MonitorApp. Each takes the slug /
+    // job_id exposed by JobsModel. No-op when jobId is empty.
+    Q_INVOKABLE void pauseJob(const QString& jobId);
+    Q_INVOKABLE void resumeJob(const QString& jobId);
+    Q_INVOKABLE void cancelJob(const QString& jobId);
+    Q_INVOKABLE void deleteJob(const QString& jobId);
+    Q_INVOKABLE void requeueJob(const QString& jobId);
+    Q_INVOKABLE void archiveJob(const QString& jobId);
+    Q_INVOKABLE void retryFailedChunks(const QString& jobId);
+
+    Q_INVOKABLE void requestSubmissionMode();
+
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
 

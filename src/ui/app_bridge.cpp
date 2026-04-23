@@ -222,6 +222,11 @@ void AppBridge::setCurrentJobId(const QString& jobId)
     m_currentJobId = jobId;
     emit currentJobIdChanged();
 
+    // Keep MonitorApp's selected-job state in sync — HTTP handlers
+    // and render logic key off selectedJobId() for some behavior.
+    if (m_monitor)
+        m_monitor->selectJob(m_currentJobId.toStdString());
+
     if (m_currentJobId.isEmpty())
     {
         m_chunksTimer.stop();
@@ -359,6 +364,54 @@ void AppBridge::unsuspendNode(const QString& nodeId)
 {
     if (!m_monitor || nodeId.isEmpty()) return;
     m_monitor->unsuspendNode(nodeId.toStdString());
+}
+
+void AppBridge::pauseJob(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->pauseJob(jobId.toStdString());
+}
+
+void AppBridge::resumeJob(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->resumeJob(jobId.toStdString());
+}
+
+void AppBridge::cancelJob(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->cancelJob(jobId.toStdString());
+}
+
+void AppBridge::deleteJob(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->deleteJob(jobId.toStdString());
+}
+
+void AppBridge::requeueJob(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->requeueJob(jobId.toStdString());
+}
+
+void AppBridge::archiveJob(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->archiveJob(jobId.toStdString());
+}
+
+void AppBridge::retryFailedChunks(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->retryFailedChunks(jobId.toStdString());
+}
+
+void AppBridge::requestSubmissionMode()
+{
+    if (!m_monitor) return;
+    m_monitor->requestSubmissionMode();
 }
 
 void AppBridge::requestRestart()

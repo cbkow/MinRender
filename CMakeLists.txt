@@ -137,6 +137,7 @@ qt_add_qml_module(minrender
     VERSION 1.0
     QML_FILES
         src/ui/qml/Main.qml
+        src/ui/qml/panels/JobListPanel.qml
         src/ui/qml/panels/LogPanel.qml
         src/ui/qml/panels/NodePanel.qml
         src/ui/qml/panels/SettingsPanel.qml
