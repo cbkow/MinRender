@@ -7,6 +7,8 @@
 #include "core/system_tray.h"
 #include "core/single_instance.h"
 
+#include <QCoreApplication>
+
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -26,12 +28,19 @@ static void invalidParameterHandler(
 }
 #endif
 
-int main(int /*argc*/, char* /*argv*/[])
+int main(int argc, char* argv[])
 {
 #ifdef _MSC_VER
     _set_invalid_parameter_handler(invalidParameterHandler);
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_DEBUG);
 #endif
+
+    // Minimal Qt init so QLockFile / QLocalServer (used inside SingleInstance)
+    // have a thread-affinity root. No event loop runs here — headless pumps
+    // its own loop below. Kept dormant; costs one Qt6Core.dll at runtime.
+    QCoreApplication qtApp(argc, argv);
+    QCoreApplication::setOrganizationName("MinRender");
+    QCoreApplication::setApplicationName("MinRender");
 
     // --- Single Instance Check ---
     MR::SingleInstance singleInstance("MinRenderMonitor");

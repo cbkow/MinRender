@@ -47,6 +47,7 @@ FetchContent_MakeAvailable(SQLiteCpp)
 find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core
     Gui
+    Network        # needed for QLocalServer / QLocalSocket in single_instance
     Qml
     Quick
     QuickControls2
@@ -132,6 +133,7 @@ qt_add_qml_module(minrender
 target_link_libraries(minrender PRIVATE
     Qt6::Core
     Qt6::Gui
+    Qt6::Network
     Qt6::Qml
     Qt6::Quick
     Qt6::QuickControls2
@@ -190,6 +192,8 @@ target_compile_definitions(minrender-headless PRIVATE
 )
 
 target_link_libraries(minrender-headless PRIVATE
+    Qt6::Core          # for QLockFile in single_instance
+    Qt6::Network       # for QLocalServer / QLocalSocket in single_instance
     nlohmann_json::nlohmann_json
     httplib::httplib
     SQLiteCpp
