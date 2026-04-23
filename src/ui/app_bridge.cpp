@@ -3,6 +3,7 @@
 #include "core/config.h"
 #include "monitor/monitor_app.h"
 #include "monitor/peer_manager.h"
+#include "ui/models/chunks_model.h"
 #include "ui/models/jobs_model.h"
 #include "ui/models/log_model.h"
 #include "ui/models/nodes_model.h"
@@ -39,6 +40,7 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     , m_jobsModel(std::make_unique<JobsModel>())
     , m_nodesModel(std::make_unique<NodesModel>())
     , m_logModel(std::make_unique<LogModel>())
+    , m_chunksModel(std::make_unique<ChunksModel>())
     , m_lastFarmRunning(monitor ? monitor->isFarmRunning() : false)
 {
     takeSnapshot();
@@ -51,6 +53,13 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     // callback — safe to call even if MonitorApp::init() hasn't run yet,
     // since MonitorLog is a singleton that's always available.
     m_logModel->attach();
+
+    // Chunks refresh cadence matches the existing ImGui panel (3 s).
+    // Timer only runs while a job is selected; setCurrentJobId starts /
+    // stops it.
+    m_chunksTimer.setInterval(3000);
+    QObject::connect(&m_chunksTimer, &QTimer::timeout,
+                     this, &AppBridge::refreshChunks);
 }
 
 AppBridge::~AppBridge() = default;
@@ -199,6 +208,37 @@ void AppBridge::setStagingEnabled(bool v)
     if (m_monitor->config().staging_enabled == v) return;
     m_monitor->config().staging_enabled = v;
     emit stagingEnabledChanged();
+}
+
+void AppBridge::setCurrentJobId(const QString& jobId)
+{
+    if (m_currentJobId == jobId)
+        return;
+    m_currentJobId = jobId;
+    emit currentJobIdChanged();
+
+    if (m_currentJobId.isEmpty())
+    {
+        m_chunksTimer.stop();
+        m_chunksModel->clear();
+    }
+    else
+    {
+        // Fetch immediately; timer fires every 3 s after that.
+        refreshChunks();
+        m_chunksTimer.start();
+    }
+}
+
+void AppBridge::refreshChunks()
+{
+    if (!m_monitor || m_currentJobId.isEmpty())
+        return;
+    // On workers this is a blocking HTTP GET to the leader (~1.5 s
+    // worst case). Phase 5's frame grid may promote this to the async
+    // postToLeaderAsync path if the UI stalls become noticeable.
+    m_chunksModel->setChunks(
+        m_monitor->getChunksForJob(m_currentJobId.toStdString()));
 }
 
 void AppBridge::refresh()
