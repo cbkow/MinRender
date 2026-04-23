@@ -1,6 +1,6 @@
 # MinRender Qt 6 Quick Port Plan
 
-Status: **Phase 0 builds verified (MinGW/Qt 6.11) — awaiting commit review** · Owner: Chris · Last updated: 2026-04-22
+Status: **Phase 1 shell complete (MinGW/Qt 6.11) — awaiting runtime smoke test before Phase 2** · Owner: Chris · Last updated: 2026-04-23
 
 ## Current state (read this first if you are a fresh agent)
 
@@ -248,20 +248,19 @@ Status summary is in the "Current state" section at the top. The code changes be
 - [x] **`minrender` (Qt) build verified** — links on MinGW/Qt 6.11. Runtime smoke test pending.
 - [ ] **Commit applied** — pending Chris's review of the toolchain change.
 
-### Phase 1 — Shell, tray, lifecycle · 3–5 days
+### Phase 1 — Shell, tray, lifecycle · 3–5 days · **code complete, runtime smoke test pending**
 
-- Menu bar in QML: File (Settings, Farm Cleanup, Exit), Jobs (New Job), View (panel visibility toggles), Help (Guide, Check for Updates, version string).
-- Nested `SplitView` layout:
-  - Outer horizontal: left 28% (NodePanel placeholder) · right 72%.
-  - Right side vertical: top 33% (JobListPanel placeholder) · bottom 67%.
-  - Bottom horizontal: left 50% (JobDetailPanel) · right 50% (LogPanel).
-- View menu toggles set `visible` on each placeholder.
-- Save/restore split sizes via `Settings` QML type (or a small C++ helper that writes to the same config JSON).
-- `QSystemTrayIcon` in `ui/platform/tray.*`. Show/hide window, toggle active state, exit.
-- `ui/platform/title_bar.*` — Windows DWM dark title bar, no-op elsewhere.
-- Rewrite `src/core/single_instance.*` with `QLockFile` + `QLocalSocket`.
-- Hide-on-close via `ApplicationWindow.onClosing: { close.accepted = false; visible = false }`.
-- App icon wired per platform.
+Commits (chronological):
+- `ef50f4e` Step 2a — `QLockFile` + `QLocalServer` single_instance. Headless gained `Qt6::Core`+`Qt6::Network` link and a bare `QCoreApplication`.
+- `6c90177` Step 2b — `src/ui/platform/tray.{h,cpp}` wraps `QSystemTrayIcon`. Legacy Win32 `src/core/system_tray.cpp` is now headless-only (moved out of MINRENDER_CORE_SOURCES).
+- `9f7dab5` Step 2c — `Main.qml` menu bar (File/Jobs/View/Help) + nested SplitView with 4 tinted placeholder rectangles. `QtCore.Settings` persists split sizes and per-panel visibility.
+- `2eb37d8` Step 2d — `ApplicationWindow.onClosing` hides instead of quits; tray Show Window + SingleInstance activation callback share a `showWindow` lambda that restores/raises/activates the root QWindow.
+- `1bbee06` Step 2e — `src/ui/platform/title_bar.{h,cpp}` calls `DwmSetWindowAttribute` (20, fallback 19) for dark non-client area on Windows; no-op on macOS/Linux.
+- `f747411` Step 2f — `qt_add_resources` bundles `minrender.ico` at `:/icons/minrender.ico`. Tray and `QApplication::setWindowIcon` both resolve through the embedded resource.
+
+Outstanding:
+- Runtime smoke test (hide-to-tray, tray restore, second-launch activation, dark title bar actually renders dark). Link succeeds; behavior not yet verified on real launch.
+- `onStopResume` in main_qt.cpp is still a log stub — lands in Phase 2 when AppBridge ties to `MonitorApp::setNodeState`.
 - **Milestone:** launch, minimize to tray, restore from tray, exit cleanly. Panels are still empty.
 
 ### Phase 2 — AppBridge + Settings · 3–4 days
