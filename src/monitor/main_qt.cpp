@@ -8,6 +8,7 @@
 // MonitorApp and AppBridge arrive in Phase 2. See docs/qt-port-plan.md.
 
 #include "core/single_instance.h"
+#include "ui/platform/title_bar.h"
 #include "ui/platform/tray.h"
 
 #include <QApplication>
@@ -76,6 +77,14 @@ int main(int argc, char* argv[])
         Qt::QueuedConnection);
 
     engine.loadFromModule("MinRenderUi", "Main");
+
+    // Apply the dark title bar to every top-level QWindow the engine
+    // produced. No-op off Windows.
+    for (QObject* obj : engine.rootObjects())
+    {
+        if (auto* w = qobject_cast<QWindow*>(obj))
+            MR::enableDarkTitleBar(w);
+    }
 
     // Restore the main window from hidden state — used by both the tray's
     // Show Window menu item and the single-instance activation callback.
