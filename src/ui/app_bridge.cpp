@@ -53,8 +53,6 @@ void AppBridge::emitAllSettingsChanged()
     emit udpPortChanged();
     emit showNotificationsChanged();
     emit stagingEnabledChanged();
-    emit rndrDualModeChanged();
-    emit fontScaleChanged();
 }
 
 bool AppBridge::farmRunning() const
@@ -183,33 +181,6 @@ void AppBridge::setStagingEnabled(bool v)
     if (m_monitor->config().staging_enabled == v) return;
     m_monitor->config().staging_enabled = v;
     emit stagingEnabledChanged();
-}
-
-bool AppBridge::rndrDualMode() const
-{
-    return m_monitor ? m_monitor->config().rndr_dual_mode : false;
-}
-
-void AppBridge::setRndrDualMode(bool v)
-{
-    if (!m_monitor) return;
-    if (m_monitor->config().rndr_dual_mode == v) return;
-    m_monitor->config().rndr_dual_mode = v;
-    emit rndrDualModeChanged();
-}
-
-qreal AppBridge::fontScale() const
-{
-    return m_monitor ? static_cast<qreal>(m_monitor->config().font_scale) : 1.0;
-}
-
-void AppBridge::setFontScale(qreal v)
-{
-    if (!m_monitor) return;
-    const auto f = static_cast<float>(std::clamp(v, 0.5, 2.0));
-    if (m_monitor->config().font_scale == f) return;
-    m_monitor->config().font_scale = f;
-    emit fontScaleChanged();
 }
 
 void AppBridge::refresh()

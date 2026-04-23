@@ -30,8 +30,6 @@ class AppBridge : public QObject
     Q_PROPERTY(int     udpPort            READ udpPort            WRITE setUdpPort            NOTIFY udpPortChanged)
     Q_PROPERTY(bool    showNotifications  READ showNotifications  WRITE setShowNotifications  NOTIFY showNotificationsChanged)
     Q_PROPERTY(bool    stagingEnabled     READ stagingEnabled     WRITE setStagingEnabled     NOTIFY stagingEnabledChanged)
-    Q_PROPERTY(bool    rndrDualMode       READ rndrDualMode       WRITE setRndrDualMode       NOTIFY rndrDualModeChanged)
-    Q_PROPERTY(qreal   fontScale          READ fontScale          WRITE setFontScale          NOTIFY fontScaleChanged)
 
 public:
     explicit AppBridge(MonitorApp* monitor, QObject* parent = nullptr);
@@ -63,12 +61,6 @@ public:
     bool stagingEnabled() const;
     void setStagingEnabled(bool v);
 
-    bool rndrDualMode() const;
-    void setRndrDualMode(bool v);
-
-    qreal fontScale() const;
-    void setFontScale(qreal v);
-
     // Polled from main_qt.cpp's 50 ms tick. Emits *Changed signals only
     // when the underlying MonitorApp state actually shifted.
     void refresh();
@@ -91,8 +83,6 @@ signals:
     void udpPortChanged();
     void showNotificationsChanged();
     void stagingEnabledChanged();
-    void rndrDualModeChanged();
-    void fontScaleChanged();
 
 private:
     // Snapshot of MonitorApp::config() taken at construction and after each

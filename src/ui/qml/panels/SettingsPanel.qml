@@ -115,47 +115,18 @@ Item {
 
         // --- Render ---
         Label { text: qsTr("Rendering"); font.bold: true }
-        ColumnLayout {
-            spacing: 4
-            CheckBox {
-                text: qsTr("Enable staging")
-                checked: appBridge.stagingEnabled
-                onToggled: appBridge.stagingEnabled = checked
-            }
-            CheckBox {
-                text: qsTr("RNDR dual mode")
-                checked: appBridge.rndrDualMode
-                onToggled: appBridge.rndrDualMode = checked
-            }
+        CheckBox {
+            text: qsTr("Enable staging")
+            checked: appBridge.stagingEnabled
+            onToggled: appBridge.stagingEnabled = checked
         }
 
         // --- UI ---
         Label { text: qsTr("User interface"); font.bold: true }
-        GridLayout {
-            Layout.fillWidth: true
-            columns: 2
-            columnSpacing: 12
-            rowSpacing: 8
-
-            CheckBox {
-                Layout.columnSpan: 2
-                text: qsTr("Show notifications")
-                checked: appBridge.showNotifications
-                onToggled: appBridge.showNotifications = checked
-            }
-
-            Label { text: qsTr("Font scale") }
-            SpinBox {
-                id: fontScaleField
-                from: 50
-                to: 200
-                stepSize: 5
-                editable: true
-                value: Math.round(appBridge.fontScale * 100)
-                textFromValue: (v) => (v / 100).toFixed(2) + "×"
-                valueFromText: (text) => Math.round(parseFloat(text) * 100)
-                onValueModified: appBridge.fontScale = value / 100.0
-            }
+        CheckBox {
+            text: qsTr("Show notifications")
+            checked: appBridge.showNotifications
+            onToggled: appBridge.showNotifications = checked
         }
 
         Item { Layout.fillHeight: true; Layout.minimumHeight: 8 }

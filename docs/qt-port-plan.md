@@ -332,6 +332,15 @@ Port in order, each independent:
 (ImGui / GLFW / NFD / glad removal already happened in Phase 0. Phase 7 is about shipping.)
 
 - Delete `src/core/ui_ipc_server.*` and the "Tauri Phase 2" scaffolding (since in-process is locked).
+- **Strip RNDR dual-mode code.** User no longer runs in dual-mode; drop the whole subsystem in one atomic change. Surface area (from `git grep -il rndr` at time of writing):
+  - `src/monitor/rndr_supervisor.{h,cpp}` — delete outright
+  - `src/monitor/monitor_app.{h,cpp}` — remove `m_rndrSupervisor`, `rndrSupervisor()` accessor, every `m_rndrSupervisor.…` call in `init`/`update`/`shutdown`
+  - `src/core/config.h` — drop `rndr_dual_mode` field + its `to_json`/`from_json` lines
+  - `src/core/http_server.cpp` — drop any RNDR status endpoints (`grep rndr` for exact lines)
+  - `CMakeLists.txt` — drop `src/monitor/rndr_supervisor.cpp` from `MINRENDER_CORE_SOURCES`
+  - `docs/qt-port-plan.md` — remove historical RNDR mentions once the code is gone
+  - (The QML / AppBridge surface was stripped already in Phase 2 — `rndrDualMode` Q_PROPERTY and its SettingsPanel entry are gone; only the `rndr_dual_mode` config field remains so existing `config.json` files on disk still parse.)
+- **Drop `Config::font_scale`.** Qt's DPI scaling replaces the ImGui-era font-scale hack; the field should go with the UI toggle (also already removed in Phase 2).
 - Update `THIRD_PARTY_NOTICES.txt` — add Qt 6 LGPL notice, remove ImGui/GLFW/GLAD/NFD.
 - Add `windeployqt` step to the pre-Inno-Setup build.
 - Update `installer/minrender_installer.iss` to include Qt DLLs + platform plugin + QML module binaries.
