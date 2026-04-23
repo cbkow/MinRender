@@ -1,10 +1,13 @@
 #pragma once
 
 #include "core/config.h"
+#include "ui/models/jobs_model.h"
 
 #include <QColor>
 #include <QObject>
 #include <QString>
+
+#include <memory>
 
 namespace MR {
 
@@ -22,6 +25,8 @@ class AppBridge : public QObject
     Q_PROPERTY(bool    farmRunning        READ farmRunning        NOTIFY farmRunningChanged)
     Q_PROPERTY(QColor  accentColor        READ accentColor        NOTIFY accentColorChanged)
 
+    Q_PROPERTY(MR::JobsModel* jobsModel READ jobsModel CONSTANT)
+
     Q_PROPERTY(QString syncRoot           READ syncRoot           WRITE setSyncRoot           NOTIFY syncRootChanged)
     Q_PROPERTY(QString tagsCsv            READ tagsCsv            WRITE setTagsCsv            NOTIFY tagsCsvChanged)
     Q_PROPERTY(int     httpPort           READ httpPort           WRITE setHttpPort           NOTIFY httpPortChanged)
@@ -33,9 +38,12 @@ class AppBridge : public QObject
 
 public:
     explicit AppBridge(MonitorApp* monitor, QObject* parent = nullptr);
+    ~AppBridge() override;
 
     bool farmRunning() const;
     QColor accentColor() const { return m_accentColor; }
+
+    JobsModel* jobsModel() const { return m_jobsModel.get(); }
 
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
@@ -94,6 +102,7 @@ private:
     MonitorApp* m_monitor;
     QColor m_accentColor;
     Config m_snapshot;
+    std::unique_ptr<JobsModel> m_jobsModel;
     bool m_lastFarmRunning = false;
 };
 

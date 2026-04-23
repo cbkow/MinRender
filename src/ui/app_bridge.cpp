@@ -2,6 +2,7 @@
 
 #include "core/config.h"
 #include "monitor/monitor_app.h"
+#include "ui/models/jobs_model.h"
 #include "ui/platform/accent_color.h"
 
 #include <QStringList>
@@ -32,10 +33,15 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     : QObject(parent)
     , m_monitor(monitor)
     , m_accentColor(systemAccentColor())
+    , m_jobsModel(std::make_unique<JobsModel>())
     , m_lastFarmRunning(monitor ? monitor->isFarmRunning() : false)
 {
     takeSnapshot();
+    if (m_monitor)
+        m_jobsModel->setJobs(m_monitor->cachedJobs());
 }
+
+AppBridge::~AppBridge() = default;
 
 void AppBridge::takeSnapshot()
 {
@@ -193,6 +199,11 @@ void AppBridge::refresh()
         m_lastFarmRunning = running;
         emit farmRunningChanged();
     }
+
+    // MonitorApp::refreshCachedJobs runs on the same thread (the 50 ms
+    // QTimer that calls this method), so direct push is safe. The model
+    // diffs internally and only emits dataChanged for changed rows.
+    m_jobsModel->setJobs(m_monitor->cachedJobs());
 }
 
 void AppBridge::revertSettings()
