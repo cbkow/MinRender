@@ -1,6 +1,6 @@
 # MinRender Qt 6 Quick Port Plan
 
-Status: **Phase 1 shell complete (MinGW/Qt 6.11) — awaiting runtime smoke test before Phase 2** · Owner: Chris · Last updated: 2026-04-23
+Status: **Phase 2 Settings end-to-end (MinGW/Qt 6.11) — awaiting runtime smoke test before Phase 3** · Owner: Chris · Last updated: 2026-04-23
 
 ## Current state (read this first if you are a fresh agent)
 
@@ -263,17 +263,18 @@ Outstanding:
 - `onStopResume` in main_qt.cpp is still a log stub — lands in Phase 2 when AppBridge ties to `MonitorApp::setNodeState`.
 - **Milestone:** launch, minimize to tray, restore from tray, exit cleanly. Panels are still empty.
 
-### Phase 2 — AppBridge + Settings · 3–4 days
+### Phase 2 — AppBridge + Settings · 3–4 days · **code complete, runtime smoke test pending**
 
-- `src/ui/app_bridge.{h,cpp}` — `QObject` holding a `MonitorApp*`.
-- First batch of bindings, only what Settings needs:
-  - `Q_PROPERTY(bool farmRunning READ ...  NOTIFY farmRunningChanged)`
-  - `Q_PROPERTY(QString syncRoot READ ... WRITE ... NOTIFY ...)`
-  - `Q_PROPERTY(QString tagsCsv ...)`, `httpPort`, `ipOverride`, `udpEnabled`, `udpPort`, `showNotifications`, `stagingEnabled`, `rndrDualMode`, `fontScale`, `accentColor`.
-  - `Q_INVOKABLE void saveSettings()`, `Q_INVOKABLE void requestRestart()`.
-- `SettingsPanel.qml` — `ColumnLayout` of `TextField` / `CheckBox` / `ComboBox` / `SpinBox` bound to bridge properties. Folder picker via `QtQuick.Dialogs`' `FolderDialog`.
-- Two-way sync: QML edits → bridge setters → `MonitorApp::config()` → `saveSettings()` on explicit save (no auto-save).
-- **Milestone:** Settings functional end-to-end, config round-trips to `%LOCALAPPDATA%/MinRender/config.json`.
+Commits (chronological):
+- `5fc9981` Step 3a — `MonitorApp` instantiated after `SingleInstance`, `init()` runs before the QML engine loads, a 50 ms `QTimer` drives `update()` and syncs tray state. Tray `onStopResume` now toggles `setNodeState` (previously a log stub); `onExit` calls `requestExit()` for a clean shutdown sequence.
+- `c65b073` Step 3b — `src/ui/app_bridge.{h,cpp}` Q_PROPERTY set: `farmRunning`, `accentColor` (both read-only), plus the full settings surface (`syncRoot`, `tagsCsv`, `httpPort`, `ipOverride`, `udpEnabled`, `udpPort`, `showNotifications`, `stagingEnabled`, `rndrDualMode`, `fontScale`). `Q_INVOKABLE saveSettings` / `revertSettings` / `requestRestart`. Snapshot-based revert (copy of `Config` refreshed at construction and after each save). `src/ui/platform/accent_color.{h,cpp}` wraps `DwmGetColorizationColor` (force opaque) with a `QPalette::Highlight` fallback. Exposed to QML via `setContextProperty("appBridge")`.
+- `0b5e06e` Step 3c — `src/ui/qml/panels/SettingsPanel.qml` bound to the bridge. Groups: Sync root (TextField + FolderDialog Browse), Tags, Networking (HTTP port, IP override, UDP enable + port), Rendering (staging, RNDR dual), UI (notifications, font scale with decimal-formatted SpinBox).
+- `e8b4212` Step 3d — File → Settings opens a modal `Dialog` containing a `Loader`-wrapped `SettingsPanel` that re-instantiates on each open (fresh bindings). `closePolicy: NoAutoClose` forces Save/Cancel; Cancel calls `revertSettings()` before close so no in-memory edits leak past the panel.
+
+Not yet in Phase 2 scope, deferred to the relevant later phase:
+- Live-updating accent color on WM_SETTINGCHANGE (Phase 6 theme).
+- `MonitorApp::reloadConfig()` — current revert copies the snapshot back in-memory, which is correct for this phase's scope (user-edit-then-cancel) but can't recover if an external process rewrites `config.json` mid-session. No known use case needs that today.
+- **Milestone:** Settings functional end-to-end, config round-trips to `%LOCALAPPDATA%/MinRender/config.json` on Save, reverts cleanly on Cancel.
 
 ### Phase 3 — Models · 4–6 days
 
