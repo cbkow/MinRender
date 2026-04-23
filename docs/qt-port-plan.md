@@ -1,6 +1,6 @@
 # MinRender Qt 6 Quick Port Plan
 
-Status: **Phase 2 Settings end-to-end (MinGW/Qt 6.11) — awaiting runtime smoke test before Phase 3** · Owner: Chris · Last updated: 2026-04-23
+Status: **Phase 3 models live — awaiting runtime smoke test before Phase 4** · Owner: Chris · Last updated: 2026-04-23
 
 ## Current state (read this first if you are a fresh agent)
 
@@ -276,16 +276,20 @@ Not yet in Phase 2 scope, deferred to the relevant later phase:
 - `MonitorApp::reloadConfig()` — current revert copies the snapshot back in-memory, which is correct for this phase's scope (user-edit-then-cancel) but can't recover if an external process rewrites `config.json` mid-session. No known use case needs that today.
 - **Milestone:** Settings functional end-to-end, config round-trips to `%LOCALAPPDATA%/MinRender/config.json` on Save, reverts cleanly on Cancel.
 
-### Phase 3 — Models · 4–6 days
+### Phase 3 — Models · 4–6 days · **code complete, runtime smoke test pending**
 
-Models live in `src/ui/models/`. All mutations go through `QMetaObject::invokeMethod(model, ..., Qt::QueuedConnection)` to the UI thread — the rule is strict.
+All five models live under `src/ui/models/`. AppBridge owns them as `unique_ptr`s and exposes each as a CONSTANT `Q_PROPERTY` (`appBridge.jobsModel`, `nodesModel`, `logModel`, `chunksModel`, `templatesModel`). Every write happens on the UI thread — either direct from `AppBridge::refresh()` (same thread as the 50 ms QTimer) or marshalled via `QMetaObject::invokeMethod(Qt::QueuedConnection)` for `MonitorLog`'s worker-thread callback.
 
-- `JobsModel` — wraps `m_cachedJobs`. Roles: `name`, `slug`, `state`, `progress`, `totalChunks`, `doneChunks`, `createdAt`, `jobId`. Hooks into `refreshCachedJobs()`.
-- `NodesModel` — wraps `PeerManager` peer list. Roles: `nodeId`, `hostname`, `isLeader`, `isActive`, `agentHealth`, `tags`, `lastSeen`, `isThisNode`. Updated from UDP heartbeat + HTTP status polls.
-- `ChunksModel` — per-job, lazy-loaded when a job is selected. Roles: `chunkId`, `frameStart`, `frameEnd`, `state`, `assignedNode`, `progress`. Refresh on 3s cadence for active jobs, matching current behavior.
-- `LogModel` — capped ring buffer (say 5000 entries). Roles: `timestamp`, `level`, `category`, `message`. Hooks into `MonitorLog::setCallback`.
-- `TemplatesModel` — job templates, loaded once at farm start, refreshed on `SubmissionWatcher` events. Roles: `name`, `dcc`, `path`, `flagCount`.
-- Expose each to QML via `qmlRegisterType` + `AppBridge::jobsModel()` etc.
+Commits (chronological):
+- `f639903` Step 4a — `JobsModel`. Roles: `jobId`, `name`, `slug`, `state`, `progress`, `totalChunks`, `doneChunks`, `failedChunks`, `renderingChunks`, `createdAt`, `priority`. `name` and `slug` both return `manifest.job_id` until Phase 4 decides if synthesizing a friendlier name is worth it. Fast-path `dataChanged` when IDs + order match; full reset otherwise.
+- `5eb136f` Step 4b — `NodesModel` via `PeerManager::getPeerSnapshot()` (mutex-guarded inside PeerManager). Roles: `nodeId`, `hostname`, `isLeader`, `isActive`, `isAlive`, `agentHealth`, `alertReason`, `tags`, `priority`, `lastSeen`, `isThisNode`, `endpoint`, `renderState`, `activeJob`. Snapshot excludes the local node — NodePanel will read "this node" from separate AppBridge properties (Phase 4).
+- `3263e13` Step 4c — `LogModel`. Takes over `MonitorLog::setCallback` (overwriting MonitorApp's old UI-IPC push — that subsystem is scheduled for Phase 7 deletion anyway). Ring buffer sized at 5000 entries. Callback fires from arbitrary threads; every entry routes through `QMetaObject::invokeMethod(this, "appendOnUiThread", Qt::QueuedConnection, …)`. Roles: `timestamp`, `level`, `category`, `message`. `~LogModel` clears the callback first so pending queued events can't race teardown.
+- `1540730` Step 4d — `ChunksModel`. AppBridge gains `currentJobId` (R/W/NOTIFY) + a 3 s `QTimer` that calls `MonitorApp::getChunksForJob` while a job is selected. Roles: `chunkId`, `frameStart`, `frameEnd`, `state`, `assignedNode`, `progress`, `assignedAt`, `completedAt`, `retryCount`. **Caveat:** on worker nodes `getChunksForJob` blocks for ~500 ms–1.5 s (sync HTTP to leader). Phase 5's frame grid may need to promote it to `postToLeaderAsync`.
+- `b2daea3` Step 4e — `TemplatesModel` over `MonitorApp::cachedTemplates()`. Roles: `templateId`, `name`, `dcc` (= templateId today), `path` (OS-specific `cmd` exe path), `flagCount`, `isValid`, `validationError`, `isExample`. Rarely changes, so a structural equivalence short-circuit saves churn; otherwise full reset.
+
+Not in Phase 3 scope:
+- `MonitorLog::addCallback`/`removeCallback` — we sidestepped by overwriting the single existing slot. If a second subsystem ever needs log entries before the UI-IPC subsystem dies in Phase 7, this becomes a real refactor.
+- Surgical insert/remove diff on `JobsModel`/`NodesModel`/`ChunksModel`. Current slow path is `beginResetModel`, which rebuilds delegates and drops ListView selection. Acceptable for Phase 3 milestone; Phase 4 panels may justify the proper LCS-style diff.
 - **Milestone:** bind a bare `ListView` to each model and see rows appear/update/disappear when backend state changes.
 
 ### Phase 4 — Remaining panels (no JobDetail) · 2 weeks
