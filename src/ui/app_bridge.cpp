@@ -20,7 +20,9 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <nlohmann/json.hpp>
 
 namespace MR {
@@ -76,10 +78,11 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
                      this, &AppBridge::refreshChunks);
 
     // Remote log refresh — same 3 s cadence, only runs while the log
-    // viewer is pointed at a peer (logSourceId non-empty).
+    // viewer is pointed at a peer or at task output (logSourceId
+    // non-empty). refreshLogSource routes to the right handler.
     m_remoteLogTimer.setInterval(3000);
     QObject::connect(&m_remoteLogTimer, &QTimer::timeout,
-                     this, &AppBridge::refreshRemoteLog);
+                     this, &AppBridge::refreshLogSource);
 
     // Seed the log-source dropdown so the ComboBox renders "Monitor Log"
     // on first paint even before the first peer poll.
@@ -262,6 +265,20 @@ void AppBridge::setCurrentJobId(const QString& jobId)
         refreshChunks();
         m_chunksTimer.start();
     }
+
+    // If the log viewer is in Task Output mode, refresh its chunks
+    // against the new job. Clears selection via refreshTaskOutput's
+    // structural-change branch when the file set changes.
+    if (m_logSourceId == QStringLiteral("__task__"))
+    {
+        m_taskOutputChunks.clear();
+        emit taskOutputChunksChanged();
+        m_selectedTaskChunkIndex = -1;
+        emit selectedTaskChunkIndexChanged();
+        m_taskOutputLines.clear();
+        emit taskOutputLinesChanged();
+        refreshTaskOutput();
+    }
 }
 
 void AppBridge::setSubmissionMode(bool on)
@@ -321,20 +338,48 @@ void AppBridge::setLogSourceId(const QString& id)
     m_logSourceId = id;
     emit logSourceIdChanged();
 
+    // Clear buffers from the previous mode so the panel doesn't flash
+    // stale content at the new mode's empty state.
+    if (!m_remoteLogLines.isEmpty())
+    {
+        m_remoteLogLines.clear();
+        emit remoteLogLinesChanged();
+    }
+    if (!m_taskOutputChunks.isEmpty())
+    {
+        m_taskOutputChunks.clear();
+        emit taskOutputChunksChanged();
+    }
+    if (m_selectedTaskChunkIndex != -1)
+    {
+        m_selectedTaskChunkIndex = -1;
+        emit selectedTaskChunkIndexChanged();
+    }
+    if (!m_taskOutputLines.isEmpty())
+    {
+        m_taskOutputLines.clear();
+        emit taskOutputLinesChanged();
+    }
+
     if (m_logSourceId.isEmpty())
     {
         m_remoteLogTimer.stop();
-        if (!m_remoteLogLines.isEmpty())
-        {
-            m_remoteLogLines.clear();
-            emit remoteLogLinesChanged();
-        }
     }
     else
     {
-        refreshRemoteLog();    // immediate; timer fires every 3 s after
+        refreshLogSource();   // immediate; timer fires every 3 s after
         m_remoteLogTimer.start();
     }
+}
+
+void AppBridge::refreshLogSource()
+{
+    if (m_logSourceId.isEmpty())
+        return;
+    if (m_logSourceId == QStringLiteral("__task__"))
+        refreshTaskOutput();
+    else
+        refreshRemoteLog();
 }
 
 void AppBridge::refreshRemoteLog()
@@ -356,6 +401,165 @@ void AppBridge::refreshRemoteLog()
     emit remoteLogLinesChanged();
 }
 
+void AppBridge::refreshTaskOutput()
+{
+    if (!m_monitor || m_currentJobId.isEmpty() || !m_monitor->isFarmRunning())
+        return;
+
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path stdoutDir = m_monitor->farmPath()
+        / "jobs" / m_currentJobId.toStdString() / "stdout";
+
+    if (!fs::is_directory(stdoutDir, ec))
+    {
+        if (!m_taskOutputChunks.isEmpty())
+        {
+            m_taskOutputChunks.clear();
+            emit taskOutputChunksChanged();
+        }
+        return;
+    }
+
+    QVariantList chunks;
+    for (const auto& nodeEntry : fs::directory_iterator(stdoutDir, ec))
+    {
+        if (!nodeEntry.is_directory()) continue;
+        const std::string nodeId = nodeEntry.path().filename().string();
+
+        for (const auto& fileEntry : fs::directory_iterator(nodeEntry.path(), ec))
+        {
+            if (!fileEntry.is_regular_file()) continue;
+            const std::string fname = fileEntry.path().filename().string();
+            if (fname.size() < 5 || fname.substr(fname.size() - 4) != ".log")
+                continue;
+
+            // Format: {rangeStr}_{timestamp_ms}.log
+            const std::string stem = fname.substr(0, fname.size() - 4);
+            const auto underPos = stem.rfind('_');
+            if (underPos == std::string::npos) continue;
+
+            qint64 ts = 0;
+            try { ts = std::stoll(stem.substr(underPos + 1)); }
+            catch (...) { continue; }
+
+            const std::string rangeStr = stem.substr(0, underPos);
+
+            // Display: "f{range}  HH:MM:SS" on {hostname}. No host here
+            // (we only have nodeId); LogPanel can decorate further.
+            char timeBuf[16] = {0};
+            time_t t = static_cast<time_t>(ts / 1000);
+            struct tm tmBuf;
+#ifdef _WIN32
+            localtime_s(&tmBuf, &t);
+#else
+            localtime_r(&t, &tmBuf);
+#endif
+            std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tmBuf);
+
+            QVariantMap entry;
+            entry["nodeId"]       = QString::fromStdString(nodeId);
+            entry["rangeStr"]     = QString::fromStdString(rangeStr);
+            entry["timestampMs"]  = ts;
+            entry["path"]         = QString::fromStdString(fileEntry.path().string());
+            entry["displayLabel"] = QString("f%1  %2")
+                .arg(QString::fromStdString(rangeStr))
+                .arg(QString::fromLatin1(timeBuf));
+            chunks.push_back(std::move(entry));
+        }
+    }
+
+    // Sort by range, then timestamp (older renders first).
+    std::sort(chunks.begin(), chunks.end(),
+        [](const QVariant& a, const QVariant& b) {
+            const auto am = a.toMap();
+            const auto bm = b.toMap();
+            const QString ra = am.value("rangeStr").toString();
+            const QString rb = bm.value("rangeStr").toString();
+            if (ra != rb) return ra < rb;
+            return am.value("timestampMs").toLongLong()
+                 < bm.value("timestampMs").toLongLong();
+        });
+
+    // Compute path of previously-selected chunk so we can preserve
+    // selection across refreshes even if the list re-orders.
+    QString prevPath;
+    if (m_selectedTaskChunkIndex >= 0
+        && m_selectedTaskChunkIndex < m_taskOutputChunks.size())
+    {
+        prevPath = m_taskOutputChunks[m_selectedTaskChunkIndex]
+                    .toMap().value("path").toString();
+    }
+
+    const bool structurallyChanged = (chunks != m_taskOutputChunks);
+    if (structurallyChanged)
+    {
+        m_taskOutputChunks = std::move(chunks);
+        emit taskOutputChunksChanged();
+
+        int newIndex = -1;
+        if (!prevPath.isEmpty())
+        {
+            for (int i = 0; i < m_taskOutputChunks.size(); ++i)
+            {
+                if (m_taskOutputChunks[i].toMap().value("path").toString() == prevPath)
+                {
+                    newIndex = i;
+                    break;
+                }
+            }
+        }
+        if (newIndex != m_selectedTaskChunkIndex)
+        {
+            m_selectedTaskChunkIndex = newIndex;
+            emit selectedTaskChunkIndexChanged();
+        }
+    }
+
+    // Keep the selected file's contents fresh — the chunk is still
+    // rendering, so the .log grows over time.
+    if (m_selectedTaskChunkIndex >= 0)
+        reloadSelectedTaskChunk();
+}
+
+void AppBridge::setSelectedTaskChunkIndex(int i)
+{
+    if (m_selectedTaskChunkIndex == i) return;
+    m_selectedTaskChunkIndex = i;
+    emit selectedTaskChunkIndexChanged();
+    reloadSelectedTaskChunk();
+}
+
+void AppBridge::reloadSelectedTaskChunk()
+{
+    if (m_selectedTaskChunkIndex < 0
+        || m_selectedTaskChunkIndex >= m_taskOutputChunks.size())
+    {
+        if (!m_taskOutputLines.isEmpty())
+        {
+            m_taskOutputLines.clear();
+            emit taskOutputLinesChanged();
+        }
+        return;
+    }
+
+    const QString path = m_taskOutputChunks[m_selectedTaskChunkIndex]
+        .toMap().value("path").toString();
+    if (path.isEmpty())
+        return;
+
+    QStringList next;
+    std::ifstream ifs(path.toStdString());
+    std::string line;
+    while (std::getline(ifs, line))
+        next.push_back(QString::fromStdString(line));
+
+    if (next == m_taskOutputLines)
+        return;
+    m_taskOutputLines = std::move(next);
+    emit taskOutputLinesChanged();
+}
+
 void AppBridge::rebuildLogSources()
 {
     QVariantList next;
@@ -367,6 +571,12 @@ void AppBridge::rebuildLogSources()
     local["id"]    = QString();
     local["label"] = tr("Monitor Log");
     next.push_back(local);
+
+    // Task Output — per-chunk stdout for the selected job. Sentinel id.
+    QVariantMap task;
+    task["id"]    = QStringLiteral("__task__");
+    task["label"] = tr("Task Output");
+    next.push_back(task);
 
     if (m_monitor)
     {

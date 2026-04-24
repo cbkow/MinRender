@@ -61,15 +61,29 @@ class AppBridge : public QObject
     // re-bind without manual model lookups.
     Q_PROPERTY(QVariantMap currentJob READ currentJob NOTIFY currentJobChanged)
 
-    // Log viewer source selection. Empty string = local MonitorLog
-    // ring buffer (default). Set to a peer's node_id to read that peer's
-    // log file from the shared farm (refreshed on a 3 s timer).
-    Q_PROPERTY(QString      logSourceId  READ logSourceId  WRITE setLogSourceId  NOTIFY logSourceIdChanged)
-    Q_PROPERTY(QStringList  remoteLogLines READ remoteLogLines NOTIFY remoteLogLinesChanged)
-    // Dropdown model for the log viewer: [{id:"", label:"Monitor Log"},
-    // {id:"<peerId>", label:"<hostname>"}, …]. Only alive peers are
-    // included; rebuilt in refresh() when the peer set changes.
-    Q_PROPERTY(QVariantList logSources   READ logSources  NOTIFY logSourcesChanged)
+    // Log viewer source selection. Values:
+    //   ""           — local MonitorLog ring buffer (default)
+    //   "__task__"   — per-chunk stdout for the selected job
+    //   <nodeId>     — that peer's log file on the shared farm
+    // Refreshed on a 3 s timer while non-empty.
+    Q_PROPERTY(QString      logSourceId     READ logSourceId     WRITE setLogSourceId NOTIFY logSourceIdChanged)
+    Q_PROPERTY(QStringList  remoteLogLines  READ remoteLogLines  NOTIFY remoteLogLinesChanged)
+    // Dropdown model for the log viewer. Shape:
+    //   [{id:"",         label:"Monitor Log"},
+    //    {id:"__task__", label:"Task Output"},
+    //    {id:<selfId>,   label:"<host> (this node)"},
+    //    {id:<peerId>,   label:"<hostname>"}, …]
+    // Rebuilt in refresh() when the peer set changes.
+    Q_PROPERTY(QVariantList logSources      READ logSources      NOTIFY logSourcesChanged)
+
+    // Task Output state — only meaningful when logSourceId == "__task__"
+    // and currentJobId is set. taskOutputChunks is a list of chunk log
+    // file descriptors (one entry per {nodeId, chunk-range, timestamp});
+    // selecting one via selectedTaskChunkIndex populates taskOutputLines
+    // with the file's contents.
+    Q_PROPERTY(QVariantList taskOutputChunks       READ taskOutputChunks       NOTIFY taskOutputChunksChanged)
+    Q_PROPERTY(int          selectedTaskChunkIndex READ selectedTaskChunkIndex WRITE setSelectedTaskChunkIndex NOTIFY selectedTaskChunkIndexChanged)
+    Q_PROPERTY(QStringList  taskOutputLines        READ taskOutputLines        NOTIFY taskOutputLinesChanged)
 
     // "This Node" descriptors — stable for the life of the process except
     // for isLeader and nodeState, which flip with leadership / tray toggles.
@@ -126,6 +140,11 @@ public:
     void        setLogSourceId(const QString& id);
     QStringList remoteLogLines() const { return m_remoteLogLines; }
     QVariantList logSources()   const { return m_logSources; }
+
+    QVariantList taskOutputChunks()        const { return m_taskOutputChunks; }
+    int          selectedTaskChunkIndex()  const { return m_selectedTaskChunkIndex; }
+    void         setSelectedTaskChunkIndex(int i);
+    QStringList  taskOutputLines()         const { return m_taskOutputLines; }
 
     QString thisNodeId() const;
     QString thisNodeHostname() const;
@@ -250,6 +269,9 @@ signals:
     void logSourceIdChanged();
     void remoteLogLinesChanged();
     void logSourcesChanged();
+    void taskOutputChunksChanged();
+    void selectedTaskChunkIndexChanged();
+    void taskOutputLinesChanged();
 
     void submissionSucceeded(const QString& jobId);
     void submissionFailed(const QString& reason);
@@ -269,8 +291,13 @@ private:
     Config m_snapshot;
     // Drives the 3 s ChunksModel refresh while m_currentJobId is set.
     void refreshChunks();
-    // Drives the 3 s remote-log refresh while m_logSourceId names a peer.
+    // Drives the 3 s log refresh while m_logSourceId is non-empty.
+    // Dispatches to refreshRemoteLog or refreshTaskOutput based on the
+    // sentinel value of logSourceId.
+    void refreshLogSource();
     void refreshRemoteLog();
+    void refreshTaskOutput();
+    void reloadSelectedTaskChunk();
     // Rebuild m_logSources from MonitorApp's peer snapshot. Called in
     // refresh(); no-op when the snapshot's peer-id/hostname list hasn't
     // changed since the last build.
@@ -284,11 +311,14 @@ private:
     QTimer                          m_chunksTimer;
     QString                         m_currentJobId;
 
-    // Log viewer source + remote fetch state
-    QTimer                          m_remoteLogTimer;
-    QString                         m_logSourceId;   // "" = local
-    QStringList                     m_remoteLogLines;
-    QVariantList                    m_logSources;
+    // Log viewer source + fetch state
+    QTimer                          m_remoteLogTimer;   // ticks at 3 s while logSourceId non-empty
+    QString                         m_logSourceId;      // "" = local, "__task__" = job logs, else peer id
+    QStringList                     m_remoteLogLines;   // remote-peer mode buffer
+    QVariantList                    m_logSources;       // ComboBox model
+    QVariantList                    m_taskOutputChunks; // task mode chunk list
+    int                             m_selectedTaskChunkIndex = -1;
+    QStringList                     m_taskOutputLines;  // task mode selected chunk contents
 
     bool m_submissionMode   = false;
     bool m_lastFarmRunning  = false;

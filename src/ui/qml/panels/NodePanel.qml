@@ -255,6 +255,14 @@ Item {
                     text: qsTr("Unsuspend")
                     onTriggered: appBridge.unsuspendNode(livePeerMenu.targetNodeId)
                 }
+                MenuSeparator {}
+                // Also available on live peers so a duplicate that's still
+                // pinging (via UDP heartbeat, say) can be reset. The reaper
+                // will re-add it if the real peer is actually there.
+                MenuItem {
+                    text: qsTr("Forget peer (remove endpoint.json)")
+                    onTriggered: appBridge.forgetPeer(livePeerMenu.targetNodeId)
+                }
             }
 
             Menu {

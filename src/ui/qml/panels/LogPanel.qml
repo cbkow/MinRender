@@ -13,7 +13,9 @@ Item {
     property bool showError: true
     property bool autoscroll: true
 
-    readonly property bool remoteMode: appBridge.logSourceId.length > 0
+    readonly property bool taskMode:   appBridge.logSourceId === "__task__"
+    readonly property bool peerMode:   appBridge.logSourceId.length > 0 && !taskMode
+    readonly property bool remoteMode: peerMode || taskMode   // "anything but local"
 
     function levelColor(level) {
         switch (level) {
@@ -121,9 +123,11 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 Label {
-                    text: root.remoteMode
-                        ? qsTr("%1 lines").arg(remoteList.count)
-                        : qsTr("%1 entries").arg(logList.count)
+                    text: root.taskMode
+                        ? qsTr("%1 chunks").arg(taskChunkList.count)
+                        : (root.peerMode
+                           ? qsTr("%1 lines").arg(remoteList.count)
+                           : qsTr("%1 entries").arg(logList.count))
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSizeSmall
                 }
@@ -222,9 +226,9 @@ Item {
         // --- Remote node log (plain text, refreshed every 3 s) ---
         ListView {
             id: remoteList
-            visible: root.remoteMode
+            visible: root.peerMode
             Layout.fillWidth: true
-            Layout.fillHeight: root.remoteMode
+            Layout.fillHeight: root.peerMode
             clip: true
             model: appBridge.remoteLogLines
             boundsBehavior: Flickable.StopAtBounds
@@ -275,6 +279,144 @@ Item {
                     : qsTr("Farm not running")
                 color: Theme.textMuted
                 font.pixelSize: Theme.fontSizeBase
+            }
+        }
+
+        // --- Task Output (per-chunk stdout of the selected job) ---
+        // Two panes: left = chunk list for the selected job, right =
+        // file contents for the selected chunk. Both refresh every 3 s
+        // while the mode is active.
+        Item {
+            visible: root.taskMode
+            Layout.fillWidth: true
+            Layout.fillHeight: root.taskMode
+
+            // No job selected → empty state.
+            Label {
+                anchors.centerIn: parent
+                visible: appBridge.currentJobId.length === 0
+                text: qsTr("Select a job in the Jobs list to view its task output.")
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeBase
+                wrapMode: Text.WordWrap
+                width: parent.width - 40
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            SplitView {
+                anchors.fill: parent
+                visible: appBridge.currentJobId.length > 0
+                orientation: Qt.Horizontal
+
+                // Left pane: chunk list.
+                ListView {
+                    id: taskChunkList
+                    SplitView.preferredWidth: 220
+                    SplitView.minimumWidth: 140
+                    clip: true
+                    model: appBridge.taskOutputChunks
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    currentIndex: appBridge.selectedTaskChunkIndex
+
+                    delegate: Rectangle {
+                        required property var    modelData
+                        required property int    index
+
+                        width: taskChunkList.width
+                        height: 24
+                        color: index === appBridge.selectedTaskChunkIndex
+                               ? Theme.selection
+                               : (index % 2 === 0 ? Theme.bg : Theme.bgAlt)
+
+                        Label {
+                            anchors.fill: parent
+                            anchors.leftMargin: 8
+                            anchors.rightMargin: 8
+                            verticalAlignment: Text.AlignVCenter
+                            text: modelData.displayLabel
+                            color: Theme.textPrimary
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.fontSizeSmall
+                            elide: Text.ElideRight
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: appBridge.selectedTaskChunkIndex = index
+                        }
+
+                        ToolTip {
+                            visible: chunkHover.containsMouse
+                            delay: 400
+                            text: modelData.nodeId + " — " + modelData.rangeStr
+                        }
+                        HoverHandler { id: chunkHover }
+                    }
+
+                    Label {
+                        anchors.centerIn: parent
+                        visible: taskChunkList.count === 0
+                        text: qsTr("No chunk output yet")
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fontSizeSmall
+                    }
+                }
+
+                // Right pane: selected chunk contents.
+                ListView {
+                    id: taskContentList
+                    SplitView.fillWidth: true
+                    clip: true
+                    model: appBridge.taskOutputLines
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                    property bool atBottom: true
+                    onContentYChanged: {
+                        atBottom = (contentHeight - (contentY + height)) < 40
+                    }
+                    onCountChanged: {
+                        if (root.autoscroll && atBottom)
+                            positionViewAtEnd()
+                    }
+
+                    delegate: Rectangle {
+                        required property string modelData
+                        required property int    index
+
+                        width: taskContentList.width
+                        height: Math.max(18, contentText.implicitHeight + 2)
+                        color: index % 2 === 0 ? Theme.bg : Theme.bgAlt
+
+                        Text {
+                            id: contentText
+                            anchors {
+                                left: parent.left
+                                right: parent.right
+                                verticalCenter: parent.verticalCenter
+                                leftMargin: 8
+                                rightMargin: 8
+                            }
+                            text: modelData
+                            color: root.lineColor(modelData)
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.fontSizeSmall
+                            wrapMode: Text.Wrap
+                        }
+                    }
+
+                    Label {
+                        anchors.centerIn: parent
+                        visible: taskContentList.count === 0
+                        text: appBridge.selectedTaskChunkIndex < 0
+                            ? qsTr("Select a chunk on the left")
+                            : qsTr("(Empty)")
+                        color: Theme.textMuted
+                        font.pixelSize: Theme.fontSizeSmall
+                    }
+                }
             }
         }
     }
