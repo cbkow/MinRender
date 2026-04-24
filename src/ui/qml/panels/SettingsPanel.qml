@@ -15,8 +15,11 @@ Item {
     FolderDialog {
         id: folderPicker
         title: qsTr("Select sync root")
+        // QUrl::toLocalFile in the bridge handles UNC (\\server\share),
+        // Windows drive letters, and percent-encoded characters. Doing
+        // this by string surgery in QML drops the leading \\ on UNC.
         onAccepted: {
-            const path = selectedFolder.toString().replace(/^file:\/{2,3}/, "")
+            const path = appBridge.urlToLocalPath(selectedFolder)
             appBridge.syncRoot = path
             syncRootField.text = path
         }
@@ -33,7 +36,25 @@ Item {
         spacing: 14
 
         // --- Sync root ---
-        Label { text: qsTr("Sync root"); font.bold: true }
+        RowLayout {
+            Layout.fillWidth: true
+            Label { text: qsTr("Sync root"); font.bold: true }
+            Item { Layout.fillWidth: true }
+            Label {
+                // Signal-driven: syncRootChanged refreshes the binding
+                // when the user edits via the TextField or picker; this
+                // evaluates syncRootIsValid each time.
+                property bool ok: {
+                    appBridge.syncRoot
+                    return appBridge.syncRootIsValid()
+                }
+                visible: appBridge.syncRoot.length > 0
+                text: ok ? qsTr("✓ path OK")
+                         : qsTr("⚠ path not reachable")
+                color: ok ? "#9ece6a" : "#e0af68"
+                font.pixelSize: 11
+            }
+        }
         RowLayout {
             Layout.fillWidth: true
             TextField {
@@ -41,15 +62,11 @@ Item {
                 Layout.fillWidth: true
                 text: appBridge.syncRoot
                 onEditingFinished: appBridge.syncRoot = text
-                placeholderText: qsTr("e.g. //server/share/MinRender")
+                placeholderText: qsTr("e.g. \\\\server\\share\\MinRender")
             }
             Button {
                 text: qsTr("Browse…")
-                onClicked: {
-                    if (syncRootField.text.length > 0)
-                        folderPicker.currentFolder = "file:///" + syncRootField.text
-                    folderPicker.open()
-                }
+                onClicked: folderPicker.open()
             }
         }
 

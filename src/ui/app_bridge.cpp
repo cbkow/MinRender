@@ -14,10 +14,12 @@
 #include "ui/platform/accent_color.h"
 
 #include <QStringList>
+#include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
 
 #include <algorithm>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 
 namespace MR {
@@ -308,8 +310,24 @@ void AppBridge::revertSettings()
 void AppBridge::saveSettings()
 {
     if (!m_monitor) return;
+
+    // Mirror the /api/config handler: fields that affect the farm's
+    // shared state or listening ports trigger a deferred farm restart
+    // on the next update() tick. Without this, changing sync_root or
+    // an HTTP/UDP port through the Settings dialog wouldn't take
+    // effect until the user relaunched.
+    const Config& now = m_monitor->config();
+    const bool needsRestart =
+           now.sync_root   != m_snapshot.sync_root
+        || now.http_port   != m_snapshot.http_port
+        || now.udp_enabled != m_snapshot.udp_enabled
+        || now.udp_port    != m_snapshot.udp_port;
+
     m_monitor->saveConfig();
     takeSnapshot();
+
+    if (needsRestart)
+        m_monitor->requestFarmRestart();
 }
 
 QString AppBridge::thisNodeId() const
@@ -555,6 +573,20 @@ void AppBridge::requestRestart()
 {
     if (!m_monitor) return;
     m_monitor->launchRestartSidecar();
+}
+
+QString AppBridge::urlToLocalPath(const QUrl& url) const
+{
+    return url.toLocalFile();
+}
+
+bool AppBridge::syncRootIsValid() const
+{
+    if (!m_monitor) return false;
+    const std::string& p = m_monitor->config().sync_root;
+    if (p.empty()) return false;
+    std::error_code ec;
+    return std::filesystem::is_directory(p, ec);
 }
 
 } // namespace MR

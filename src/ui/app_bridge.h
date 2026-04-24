@@ -11,6 +11,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QUrl>
 
 #include <memory>
 
@@ -148,6 +149,18 @@ public:
 
     Q_INVOKABLE void saveSettings();
     Q_INVOKABLE void requestRestart();
+
+    // Convert a file:// QUrl (as produced by FolderDialog / FileDialog) to
+    // the platform-native path. QUrl::toLocalFile() handles UNC shares
+    // (file://server/share/path → \\server\share\path), Windows drive
+    // letters, and percent-encoded characters — all things naive string
+    // stripping in QML gets wrong.
+    Q_INVOKABLE QString urlToLocalPath(const QUrl& url) const;
+
+    // Whether the current config.sync_root resolves to an existing
+    // directory. Lets the Settings panel tell the user their path is
+    // broken before they hit Save.
+    Q_INVOKABLE bool syncRootIsValid() const;
 
 signals:
     void farmRunningChanged();
