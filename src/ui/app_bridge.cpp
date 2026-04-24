@@ -229,6 +229,7 @@ void AppBridge::setCurrentJobId(const QString& jobId)
         return;
     m_currentJobId = jobId;
     emit currentJobIdChanged();
+    emit currentJobChanged();
 
     // Picking a real job cancels submission mode — user moved on.
     if (!jobId.isEmpty() && m_submissionMode)
@@ -258,6 +259,37 @@ void AppBridge::setSubmissionMode(bool on)
         return;
     m_submissionMode = on;
     emit submissionModeChanged();
+}
+
+QVariantMap AppBridge::currentJob() const
+{
+    if (!m_monitor || m_currentJobId.isEmpty())
+        return {};
+    const std::string id = m_currentJobId.toStdString();
+    const auto& jobs = m_monitor->cachedJobs();
+    auto it = std::find_if(jobs.begin(), jobs.end(),
+        [&](const JobInfo& j) { return j.manifest.job_id == id; });
+    if (it == jobs.end())
+        return {};
+
+    const JobInfo& j = *it;
+    QVariantMap m;
+    m["jobId"]           = QString::fromStdString(j.manifest.job_id);
+    m["name"]            = QString::fromStdString(j.manifest.job_id);
+    m["state"]           = QString::fromStdString(j.current_state);
+    m["priority"]        = j.current_priority;
+    m["totalChunks"]     = j.total_chunks;
+    m["doneChunks"]      = j.completed_chunks;
+    m["failedChunks"]    = j.failed_chunks;
+    m["renderingChunks"] = j.rendering_chunks;
+    m["progress"]        = j.total_chunks > 0
+                           ? static_cast<double>(j.completed_chunks)
+                             / static_cast<double>(j.total_chunks)
+                           : 0.0;
+    m["createdAt"]       = static_cast<qint64>(j.manifest.submitted_at_ms);
+    m["frameStart"]      = j.manifest.frame_start;
+    m["frameEnd"]        = j.manifest.frame_end;
+    return m;
 }
 
 void AppBridge::refreshChunks()
@@ -301,6 +333,13 @@ void AppBridge::refresh()
     // QTimer that calls this method), so direct push is safe. The model
     // diffs internally and only emits dataChanged for changed rows.
     m_jobsModel->setJobs(m_monitor->cachedJobs());
+
+    // The selected job's field values (progress, failed count, etc.)
+    // may have moved even when its row didn't reorder; let JobDetail
+    // rebind on every refresh. The map copy is small and the update
+    // rate is 20 Hz.
+    if (!m_currentJobId.isEmpty())
+        emit currentJobChanged();
 
     // PeerManager::getPeerSnapshot takes a mutex under the hood so it's
     // safe from any thread; we call it from the UI thread anyway.

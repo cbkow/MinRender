@@ -46,6 +46,14 @@ class AppBridge : public QObject
     Q_PROPERTY(bool submissionMode READ submissionMode WRITE setSubmissionMode
                NOTIFY submissionModeChanged)
 
+    // Full snapshot of the currently-selected job as a QVariantMap:
+    // {jobId, name, state, progress, totalChunks, doneChunks,
+    //  failedChunks, renderingChunks, priority, createdAt}. Empty map
+    // when nothing is selected or the jobId no longer exists in the
+    // cache. Emits on every jobs refresh so the JobDetailPanel can
+    // re-bind without manual model lookups.
+    Q_PROPERTY(QVariantMap currentJob READ currentJob NOTIFY currentJobChanged)
+
     // "This Node" descriptors — stable for the life of the process except
     // for isLeader and nodeState, which flip with leadership / tray toggles.
     Q_PROPERTY(QString thisNodeId       READ thisNodeId       CONSTANT)
@@ -83,6 +91,8 @@ public:
 
     bool submissionMode() const { return m_submissionMode; }
     void setSubmissionMode(bool on);
+
+    QVariantMap currentJob() const;
 
     QString thisNodeId() const;
     QString thisNodeHostname() const;
@@ -184,6 +194,7 @@ signals:
     void stagingEnabledChanged();
     void currentJobIdChanged();
     void submissionModeChanged();
+    void currentJobChanged();
     void thisNodeIsLeaderChanged();
     void thisNodeActiveChanged();
 
