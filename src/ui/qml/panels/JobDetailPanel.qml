@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MinRenderUi 1.0   // for FrameGrid (C++ QQuickPaintedItem)
 
 // Three-state panel: Empty (nothing selected), Submission (user is
 // creating a new job), Detail (a real job is selected). submissionMode
@@ -233,16 +234,151 @@ Item {
                     }
                 }
 
-                // --- Content area (frame grid + chunks — Step 6d) ---
-                Rectangle {
+                // --- Content area (frame grid + chunk list) ---
+                SplitView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    color: "#141414"
-                    Label {
-                        anchors.centerIn: parent
-                        text: qsTr("Frame grid lands in Step 6d")
-                        color: "#555"
-                        font.pixelSize: 11
+                    orientation: Qt.Vertical
+
+                    // Frame grid — one cell per frame, coloured by state.
+                    Rectangle {
+                        color: "#0d0d0d"
+                        SplitView.preferredHeight: 200
+                        SplitView.minimumHeight: 60
+
+                        FrameGrid {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            model: appBridge.chunksModel
+                            frameStart: job.frameStart || 0
+                            frameEnd:   job.frameEnd   || 0
+                            cellSize:   10
+                        }
+                    }
+
+                    // Chunk list — scrollable, read-only for now.
+                    // Step 6e adds the right-click context menu.
+                    ColumnLayout {
+                        SplitView.fillHeight: true
+                        spacing: 0
+
+                        // Column header row
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 22
+                            color: "#222222"
+                            Row {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 8
+
+                                Label {
+                                    text: qsTr("State")
+                                    color: "#888"; font.pixelSize: 11
+                                    width: 80; anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Label {
+                                    text: qsTr("Frames")
+                                    color: "#888"; font.pixelSize: 11
+                                    width: 120; anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Label {
+                                    text: qsTr("Node")
+                                    color: "#888"; font.pixelSize: 11
+                                    width: 160; anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Label {
+                                    text: qsTr("Progress")
+                                    color: "#888"; font.pixelSize: 11
+                                    width: 120; anchors.verticalCenter: parent.verticalCenter
+                                }
+                                Label {
+                                    text: qsTr("Retries")
+                                    color: "#888"; font.pixelSize: 11
+                                    width: 60; anchors.verticalCenter: parent.verticalCenter
+                                }
+                            }
+                        }
+
+                        ListView {
+                            id: chunksList
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            model: appBridge.chunksModel
+                            boundsBehavior: Flickable.StopAtBounds
+                            ScrollBar.vertical: ScrollBar {
+                                policy: ScrollBar.AsNeeded
+                            }
+
+                            delegate: Rectangle {
+                                required property var    chunkId
+                                required property int    frameStart
+                                required property int    frameEnd
+                                required property string state
+                                required property string assignedNode
+                                required property double progress
+                                required property int    retryCount
+                                required property int    index
+
+                                width: chunksList.width
+                                height: 24
+                                color: index % 2 === 0 ? "#141414" : "#181818"
+
+                                Row {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 8
+
+                                    Label {
+                                        text: state
+                                        color: stateColor(state)
+                                        font.pixelSize: 10
+                                        font.bold: true
+                                        width: 80
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Label {
+                                        text: frameStart === frameEnd
+                                              ? "" + frameStart
+                                              : frameStart + "-" + frameEnd
+                                        color: "#ccc"
+                                        font.family: "monospace"
+                                        font.pixelSize: 11
+                                        width: 120
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Label {
+                                        text: assignedNode.length > 0 ? assignedNode : "—"
+                                        color: "#aaa"
+                                        font.family: "monospace"
+                                        font.pixelSize: 11
+                                        width: 160
+                                        elide: Text.ElideMiddle
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Item {
+                                        width: 120
+                                        height: parent.height
+                                        ProgressBar {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width - 6
+                                            value: progress
+                                            from: 0; to: 1
+                                        }
+                                    }
+                                    Label {
+                                        text: retryCount
+                                        color: retryCount > 0 ? "#e0af68" : "#666"
+                                        font.pixelSize: 11
+                                        width: 60
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
