@@ -53,15 +53,31 @@ Item {
         function onSubmissionFailed(reason)   { root.failed(reason); errorBanner.text = reason }
     }
 
-    ColumnLayout {
-        id: column
+    // Content lives in a ScrollView so templates with many flag fields,
+    // long descriptions, or small panel heights don't push the Save /
+    // Cancel footer off-screen. The footer is anchored to the panel
+    // bottom so it stays pinned while the form scrolls.
+    ScrollView {
+        id: scrollArea
         anchors {
             left: parent.left
             right: parent.right
             top: parent.top
-            margins: 16
+            bottom: footer.top
+            leftMargin: 16
+            rightMargin: 16
+            topMargin: 16
+            bottomMargin: 8
         }
-        spacing: 12
+        clip: true
+        contentWidth: availableWidth
+        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+        ColumnLayout {
+            id: column
+            width: scrollArea.availableWidth
+            spacing: 12
 
         // --- Template picker ---
         SectionHeader { text: qsTr("Template") }
@@ -162,51 +178,60 @@ Item {
             }
         }
 
-        // --- Error banner (filled on submissionFailed) ---
-        Rectangle {
-            Layout.fillWidth: true
-            visible: errorBanner.text.length > 0
-            color: Qt.darker(Theme.error, 3.0)
-            radius: 3
-            implicitHeight: errorBanner.implicitHeight + 12
+            // --- Error banner (filled on submissionFailed) ---
+            Rectangle {
+                Layout.fillWidth: true
+                visible: errorBanner.text.length > 0
+                color: Qt.darker(Theme.error, 3.0)
+                radius: Theme.radiusBase
+                implicitHeight: errorBanner.implicitHeight + 12
 
-            Label {
-                id: errorBanner
-                anchors.fill: parent
-                anchors.margins: 6
-                color: Theme.error
-                wrapMode: Text.WordWrap
-                font.pixelSize: 11
+                Label {
+                    id: errorBanner
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    color: Theme.error
+                    wrapMode: Text.WordWrap
+                    font.pixelSize: Theme.fontSizeBase
+                }
             }
         }
+    }
 
-        // --- Submit / Cancel ---
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 8
+    // --- Submit / Cancel (pinned footer) ---
+    RowLayout {
+        id: footer
+        anchors {
+            left: parent.left
+            right: parent.right
+            bottom: parent.bottom
+            leftMargin: 16
+            rightMargin: 16
+            bottomMargin: 16
+        }
+        spacing: 8
 
-            Item { Layout.fillWidth: true }
+        Item { Layout.fillWidth: true }
 
-            Button {
-                text: qsTr("Cancel")
-                onClicked: root.cancelled()
-            }
+        Button {
+            text: qsTr("Cancel")
+            onClicked: root.cancelled()
+        }
 
-            Button {
-                text: qsTr("Submit")
-                highlighted: true
-                enabled: jobNameField.text.length > 0 && currentTemplate !== null
-                onClicked: {
-                    errorBanner.text = ""
-                    appBridge.submitJob(
-                        currentTemplateId,
-                        jobNameField.text,
-                        currentFlagValues,
-                        frameStartField.value,
-                        frameEndField.value,
-                        chunkSizeField.value,
-                        priorityField.value)
-                }
+        Button {
+            text: qsTr("Submit")
+            highlighted: true
+            enabled: jobNameField.text.length > 0 && currentTemplate !== null
+            onClicked: {
+                errorBanner.text = ""
+                appBridge.submitJob(
+                    currentTemplateId,
+                    jobNameField.text,
+                    currentFlagValues,
+                    frameStartField.value,
+                    frameEndField.value,
+                    chunkSizeField.value,
+                    priorityField.value)
             }
         }
     }
