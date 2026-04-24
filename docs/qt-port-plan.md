@@ -6,38 +6,39 @@ Status: **Phase 4 panels complete — JobDetail (Phase 5) is next** · Owner: Ch
 
 Phase 0 edits are in place and both `minrender` (Qt GUI) and `minrender-headless` compile and link cleanly on Chris's machine. The commit is **not** yet made — awaiting Chris's review of the toolchain change (see below) before the single Phase 0 commit goes in.
 
-### Toolchain change vs original plan
+### Toolchain
 
-The plan originally locked **MSVC + Qt 6.8 msvc2022_64**. Chris's machine had only **Qt 6.11.0 mingw_64** installed, so Phase 0 was brought up on that instead:
+Per the plan's locked decision: MSVC + Qt msvc2022_64 + Ninja.
 
-- Compiler: MinGW-w64 GCC 13.1.0 (bundled at `C:/Qt/Tools/mingw1310_64`)
-- Qt: 6.11.0 (mingw_64) at `C:/Qt/6.11.0/mingw_64`
+- Compiler: MSVC 14.50 (VS 2026 / VS 18 Community) at `C:\Program Files\Microsoft Visual Studio\18\Community`
+- Qt: 6.11.0 (msvc2022_64) at `C:/Qt/6.11.0/msvc2022_64` — 6.11 satisfies the `find_package(Qt6 6.8 …)` minimum pinned in CMakeLists.txt
 - Generator: Ninja (bundled at `C:/Qt/Tools/Ninja`)
 - CMake: 3.30.5 (bundled at `C:/Qt/Tools/CMake_64`)
 
-Configure command used:
+Configure / build go through `scripts\build_msvc.bat`, which loads `vcvarsall.bat x64` and forwards args to `cmake`:
 ```
-cmake -B build -S . -G Ninja \
-  -DCMAKE_PREFIX_PATH="C:/Qt/6.11.0/mingw_64" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_C_COMPILER="C:/Qt/Tools/mingw1310_64/bin/gcc.exe" \
-  -DCMAKE_CXX_COMPILER="C:/Qt/Tools/mingw1310_64/bin/g++.exe"
+scripts\build_msvc.bat -B build -S . -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+    -DCMAKE_PREFIX_PATH=C:/Qt/6.11.0/msvc2022_64 ^
+    -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
+
+scripts\build_msvc.bat --build build --target minrender --config Release
+scripts\build_msvc.bat --build build --target minrender-headless --config Release
 ```
-PATH augmented with `C:/Qt/Tools/mingw1310_64/bin:C:/Qt/Tools/Ninja` for the build invocation.
 
-The "Decisions (locked)" section still lists MSVC + 6.8 as historical context. The live toolchain is MinGW + 6.11. If Chris later installs Qt 6.x msvc2022_64 and wants to switch back, the changes that would need to revert are: the MinGW `_com_util::ConvertStringToBSTR` shim in `src/core/platform.cpp`, and possibly `WIN32_EXECUTABLE TRUE` moved out of the `if(MSVC)` block (harmless either way on MSVC).
+Runtime needs `C:/Qt/6.11.0/msvc2022_64/bin` on PATH.
 
-### MinGW-specific fixups made during Phase 0 build-up
+### Toolchain history (for git archaeologists)
 
-These were required to get the existing MSVC-era C++ building under MinGW GCC 13:
+Phase 0 through Phase 4 built under MinGW 13.1.0 + Qt 6.11 mingw_64 because that was what happened to be installed. Phase 4 smoke-testing turned up that MinGW's libstdc++ `std::filesystem::is_directory` returns false for valid UNC paths (`\\server\share\…`), which broke the auto-start-farm flow on network-share sync roots — the app's primary configuration. Qt msvc2022_64 + VS 2026 were installed and the build retrofitted back to MSVC. MinGW-only scaffolding that was removed at the switch:
 
-- `src/monitor/main_qt.cpp` and `src/monitor/main_headless.cpp` — CRT hooks (`_set_invalid_parameter_handler`, `_CrtSetReportMode`, `<crtdbg.h>`) guarded with `#ifdef _MSC_VER` instead of `_WIN32`, since MinGW's CRT doesn't expose them.
-- `src/core/platform.cpp` — added a local `_com_util::ConvertStringToBSTR` implementation under `#if defined(_WIN32) && !defined(_MSC_VER)`. MSVC's `comsuppw.lib` provides this; MinGW doesn't ship an equivalent. `_bstr_t(const char*)` in `comdef.h` calls it.
-- `CMakeLists.txt`:
-  - `PLATFORM_LIBS` now includes `dxgi bcrypt` (MinGW ignores the `#pragma comment(lib, …)` directives in `node_identity.cpp` / `farm_init.cpp`).
-  - `WIN32_EXECUTABLE TRUE` moved out of the `if(MSVC)` block so MinGW-built `minrender.exe` is also a windowed-subsystem app.
-  - `minrender-headless` gets `AUTOMOC/AUTOUIC/AUTORCC OFF` explicitly — it has zero Qt dependency, and AUTOUIC was otherwise misreading `core/ui_ipc_server.h` as a UIC-generated header (filename starts with `ui_`).
-  - `minrender` gets `AUTOUIC OFF` for the same reason — the UI is QML-only, no `.ui` forms will ever exist.
+- `_com_util::ConvertStringToBSTR` shim in `src/core/platform.cpp` (MSVC ships it via `comsuppw`).
+- `target_compile_options(... PRIVATE -Wall -Wextra)` fallback blocks in `CMakeLists.txt` for the `Clang|GNU` case.
+
+Scaffolding that stayed because it's compiler-agnostic or useful regardless:
+- CRT hooks (`_set_invalid_parameter_handler`, `_CrtSetReportMode`) in main_qt / main_headless guarded by `#ifdef _MSC_VER` — they only activate on MSVC anyway.
+- `dxgi` / `bcrypt` in `PLATFORM_LIBS` — duplicates of `#pragma comment(lib, …)` in the sources, but harmless.
+- `WIN32_EXECUTABLE TRUE` outside any `if(MSVC)` guard — needed on any Windows compiler.
+- `AUTOUIC OFF` on `minrender`, `AUTOMOC/AUTOUIC/AUTORCC OFF` on `minrender-headless` — CMake/Qt autogen filename heuristic misreads `core/ui_ipc_server.h`, compiler-independent.
 
 ### What's in place
 

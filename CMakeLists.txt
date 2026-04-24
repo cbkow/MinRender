@@ -178,14 +178,11 @@ add_custom_command(TARGET minrender POST_BUILD
     COMMENT "Copying resources to build output"
 )
 
-# Windowed-subsystem app on Windows (MSVC or MinGW).
 if(WIN32)
     set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 if(MSVC)
     target_compile_options(minrender PRIVATE /W4)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(minrender PRIVATE -Wall -Wextra)
 endif()
 
 # ===========================================================================
@@ -236,8 +233,6 @@ add_custom_command(TARGET minrender-headless POST_BUILD
 
 if(MSVC)
     target_compile_options(minrender-headless PRIVATE /W4)
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(minrender-headless PRIVATE -Wall -Wextra)
 endif()
 
 # ===========================================================================
