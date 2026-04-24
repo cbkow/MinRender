@@ -3,6 +3,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <algorithm>
+
 namespace MR {
 
 namespace {
@@ -107,15 +109,42 @@ QHash<int, QByteArray> NodesModel::roleNames() const
     };
 }
 
+namespace {
+// Match the old ImGui node panel's ordering: alive first, then
+// rendering > active > stopped, ties broken by hostname. Keeps stale
+// offline entries at the bottom so a duplicated node_id (stale
+// endpoint.json left on the shared farm) doesn't clutter the top.
+int stateOrder(const PeerInfo& p)
+{
+    if (!p.is_alive)              return 3;
+    if (p.render_state == "rendering") return 0;
+    if (p.node_state == "active") return 1;
+    return 2; // stopped
+}
+
+void sortPeers(std::vector<PeerInfo>& v)
+{
+    std::sort(v.begin(), v.end(), [](const PeerInfo& a, const PeerInfo& b) {
+        const int oa = stateOrder(a), ob = stateOrder(b);
+        if (oa != ob) return oa < ob;
+        if (a.hostname != b.hostname) return a.hostname < b.hostname;
+        return a.node_id < b.node_id;
+    });
+}
+} // namespace
+
 void NodesModel::setPeers(const std::vector<PeerInfo>& incoming)
 {
-    if (sameIdAndOrder(m_peers, incoming))
+    std::vector<PeerInfo> sorted = incoming;
+    sortPeers(sorted);
+
+    if (sameIdAndOrder(m_peers, sorted))
     {
         for (size_t i = 0; i < m_peers.size(); ++i)
         {
-            if (!peerSameFields(m_peers[i], incoming[i]))
+            if (!peerSameFields(m_peers[i], sorted[i]))
             {
-                m_peers[i] = incoming[i];
+                m_peers[i] = sorted[i];
                 const QModelIndex idx = index(static_cast<int>(i));
                 emit dataChanged(idx, idx);
             }
@@ -124,7 +153,7 @@ void NodesModel::setPeers(const std::vector<PeerInfo>& incoming)
     }
 
     beginResetModel();
-    m_peers = incoming;
+    m_peers = std::move(sorted);
     endResetModel();
 }
 

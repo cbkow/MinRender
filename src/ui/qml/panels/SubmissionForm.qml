@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import MinRenderUi 1.0
 
@@ -53,6 +54,27 @@ Item {
         function onSubmissionFailed(reason)   { root.failed(reason); errorBanner.text = reason }
     }
 
+    // Shared file picker for type=file flag rows. Each row sets the
+    // pending-index + filter before opening; onAccepted writes back
+    // to that row's flag value.
+    FileDialog {
+        id: flagFilePicker
+        property int targetIndex: -1
+
+        onAccepted: {
+            if (targetIndex < 0) return
+            const local = appBridge.urlToLocalPath(selectedFile)
+            if (root.currentFlagValues && local.length > 0)
+                root.currentFlagValues[targetIndex] = local
+            // Force repeater rows to re-read their text property from
+            // currentFlagValues. Reassigning the array triggers the
+            // Repeater's model binding.
+            const copy = root.currentFlagValues.slice()
+            root.currentFlagValues = copy
+            targetIndex = -1
+        }
+    }
+
     // Content lives in a ScrollView so templates with many flag fields,
     // long descriptions, or small panel heights don't push the Save /
     // Cancel footer off-screen. The footer is anchored to the panel
@@ -65,13 +87,16 @@ Item {
             top: parent.top
             bottom: footer.top
             leftMargin: 16
-            rightMargin: 16
+            // Extra right margin reserves space for the vertical scrollbar
+            // so it doesn't overlay the TextFields when content is tall
+            // enough to scroll. Matches the AlwaysOn policy below.
+            rightMargin: 24
             topMargin: 16
             bottomMargin: 8
         }
         clip: true
         contentWidth: availableWidth
-        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+        ScrollBar.vertical.policy: ScrollBar.AlwaysOn
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
         ColumnLayout {
@@ -162,6 +187,31 @@ Item {
                             {
                                 root.currentFlagValues[index] = text
                             }
+                        }
+                    }
+
+                    // File picker for flags the template marks as type=file
+                    // (e.g. Scene File in the C4D template). filter is
+                    // turned into a Qt name-filter string: "Filter (*.ext)".
+                    Button {
+                        visible: modelData.type === "file"
+                        text: qsTr("Browse…")
+                        onClicked: {
+                            flagFilePicker.targetIndex = index
+                            flagFilePicker.nameFilters = modelData.filter
+                                && modelData.filter.length > 0
+                                ? [modelData.filter + " (*." + modelData.filter + ")",
+                                   "All files (*)"]
+                                : ["All files (*)"]
+                            // Seed the picker near the current value's folder
+                            // if one is set.
+                            const cur = flagInput.text
+                            if (cur && cur.length > 0) {
+                                // Convert Windows paths to file URL for QML.
+                                flagFilePicker.currentFile =
+                                    "file:///" + cur.replace(/\\/g, "/")
+                            }
+                            flagFilePicker.open()
                         }
                     }
                 }
