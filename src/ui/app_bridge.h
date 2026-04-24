@@ -31,6 +31,13 @@ class AppBridge : public QObject
     Q_PROPERTY(bool    farmRunning        READ farmRunning        NOTIFY farmRunningChanged)
     Q_PROPERTY(QColor  accentColor        READ accentColor        NOTIFY accentColorChanged)
 
+    // Font family names resolved after QFontDatabase::addApplicationFont
+    // registers the bundled .ttfs. Set once at startup, constant for the
+    // life of the app.
+    Q_PROPERTY(QString interFamily   READ interFamily   CONSTANT)
+    Q_PROPERTY(QString monoFamily    READ monoFamily    CONSTANT)
+    Q_PROPERTY(QString symbolsFamily READ symbolsFamily CONSTANT)
+
     Q_PROPERTY(MR::JobsModel*      jobsModel      READ jobsModel      CONSTANT)
     Q_PROPERTY(MR::NodesModel*     nodesModel     READ nodesModel     CONSTANT)
     Q_PROPERTY(MR::LogModel*       logModel       READ logModel       CONSTANT)
@@ -79,6 +86,17 @@ public:
 
     bool farmRunning() const;
     QColor accentColor() const { return m_accentColor; }
+
+    QString interFamily()   const { return m_interFamily; }
+    QString monoFamily()    const { return m_monoFamily; }
+    QString symbolsFamily() const { return m_symbolsFamily; }
+
+    // main_qt.cpp calls these after QFontDatabase::addApplicationFont so
+    // the resolved family names (which may differ slightly from the file
+    // name — e.g. "Inter" vs "Inter_18pt") are pinned at a single place.
+    void setInterFamily(const QString& v)   { m_interFamily   = v; }
+    void setMonoFamily(const QString& v)    { m_monoFamily    = v; }
+    void setSymbolsFamily(const QString& v) { m_symbolsFamily = v; }
 
     JobsModel*      jobsModel()      const { return m_jobsModel.get(); }
     NodesModel*     nodesModel()     const { return m_nodesModel.get(); }
@@ -220,6 +238,9 @@ private:
 
     MonitorApp* m_monitor;
     QColor m_accentColor;
+    QString m_interFamily   = QStringLiteral("sans-serif");
+    QString m_monoFamily    = QStringLiteral("monospace");
+    QString m_symbolsFamily = QStringLiteral("Segoe UI Symbol");
     Config m_snapshot;
     // Drives the 3 s ChunksModel refresh while m_currentJobId is set.
     void refreshChunks();

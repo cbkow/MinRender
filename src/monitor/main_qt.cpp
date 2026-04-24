@@ -17,8 +17,11 @@
 #include <QtQml/qqml.h>
 
 #include <QApplication>
+#include <QDir>
+#include <QFontDatabase>
 #include <QIcon>
 #include <QLoggingCategory>
+#include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQmlError>
@@ -80,6 +83,56 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle("Fusion");
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/minrender.ico")));
 
+    // Dark palette for any QtWidgets surfaces (native dialogs etc.). QML
+    // rendering picks up colours from Theme.qml instead, but this keeps
+    // QMessageBox / menubar chrome / etc. from flashing white.
+    {
+        QPalette p;
+        p.setColor(QPalette::Window,          QColor(0x16, 0x16, 0x16));
+        p.setColor(QPalette::WindowText,      QColor(0xcc, 0xcc, 0xcc));
+        p.setColor(QPalette::Base,            QColor(0x1a, 0x1a, 0x1a));
+        p.setColor(QPalette::AlternateBase,   QColor(0x1e, 0x1e, 0x1e));
+        p.setColor(QPalette::Text,            QColor(0xcc, 0xcc, 0xcc));
+        p.setColor(QPalette::Button,          QColor(0x22, 0x22, 0x22));
+        p.setColor(QPalette::ButtonText,      QColor(0xcc, 0xcc, 0xcc));
+        p.setColor(QPalette::Highlight,       QColor(0x7a, 0xa2, 0xf7));
+        p.setColor(QPalette::HighlightedText, QColor(0x0f, 0x0f, 0x0f));
+        p.setColor(QPalette::ToolTipBase,     QColor(0x22, 0x22, 0x22));
+        p.setColor(QPalette::ToolTipText,     QColor(0xcc, 0xcc, 0xcc));
+        p.setColor(QPalette::Disabled, QPalette::WindowText, QColor(0x66, 0x66, 0x66));
+        p.setColor(QPalette::Disabled, QPalette::Text,       QColor(0x66, 0x66, 0x66));
+        p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(0x66, 0x66, 0x66));
+        QApplication::setPalette(p);
+    }
+
+    // Load bundled fonts. Family names come back from Qt's own
+    // enumeration — we capture them on AppBridge so Theme.qml doesn't
+    // have to guess what Inter_18pt-Regular.ttf actually registers as.
+    auto loadFamily = [](const QString& path) -> QString {
+        const int id = QFontDatabase::addApplicationFont(path);
+        if (id < 0)
+        {
+            qWarning() << "Failed to load font:" << path;
+            return {};
+        }
+        const QStringList families = QFontDatabase::applicationFontFamilies(id);
+        return families.isEmpty() ? QString() : families.first();
+    };
+
+    const QString fontDir = QCoreApplication::applicationDirPath()
+                          + QStringLiteral("/resources/fonts/");
+
+    const QString interName = loadFamily(fontDir + "Inter_18pt-Regular.ttf");
+    loadFamily(fontDir + "Inter_18pt-Bold.ttf");
+    loadFamily(fontDir + "Inter_18pt-Italic.ttf");
+    const QString monoName    = loadFamily(fontDir + "JetBrainsMono-Regular.ttf");
+    const QString symbolsName = loadFamily(fontDir + "MaterialSymbolsSharp-Regular.ttf");
+
+    // Default app font → Inter (falls through to Qt's default if Inter
+    // failed to load). Tweaks to sizes happen in QML via Theme.
+    if (!interName.isEmpty())
+        QApplication::setFont(QFont(interName, 10));
+
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,
@@ -100,6 +153,9 @@ int main(int argc, char* argv[])
     // Expose AppBridge to QML before loading the module so Main.qml's
     // context has `appBridge` available at first bind.
     MR::AppBridge bridge(&monitor);
+    if (!interName.isEmpty())    bridge.setInterFamily(interName);
+    if (!monoName.isEmpty())     bridge.setMonoFamily(monoName);
+    if (!symbolsName.isEmpty())  bridge.setSymbolsFamily(symbolsName);
     engine.rootContext()->setContextProperty(
         QStringLiteral("appBridge"), &bridge);
 
