@@ -38,3 +38,4 @@ mr-agent/target/
 
 # Internal planning notes
 notes/
+.claude/settings.local.json
