@@ -112,6 +112,7 @@ qt_add_executable(minrender
     src/ui/models/log_model.cpp
     src/ui/models/nodes_model.cpp
     src/ui/models/templates_model.cpp
+    src/ui/painters/frame_grid.cpp
     src/ui/platform/accent_color.cpp
     src/ui/platform/title_bar.cpp
     src/ui/platform/tray.cpp

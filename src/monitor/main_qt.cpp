@@ -10,8 +10,11 @@
 #include "core/single_instance.h"
 #include "monitor/monitor_app.h"
 #include "ui/app_bridge.h"
+#include "ui/painters/frame_grid.h"
 #include "ui/platform/title_bar.h"
 #include "ui/platform/tray.h"
+
+#include <QtQml/qqml.h>
 
 #include <QApplication>
 #include <QIcon>
@@ -52,6 +55,11 @@ int main(int argc, char* argv[])
     QApplication::setOrganizationName("MinRender");
     QApplication::setApplicationName("MinRender");
     QApplication::setApplicationVersion(APP_VERSION);
+
+    // Register C++-backed QML types. FrameGrid is a QQuickPaintedItem
+    // subclass and has to be registered before the QML engine loads
+    // any module that references it.
+    qmlRegisterType<MR::FrameGrid>("MinRenderUi", 1, 0, "FrameGrid");
 
     MR::SingleInstance singleInstance("MinRenderMonitor");
     if (!singleInstance.isFirst())

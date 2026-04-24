@@ -1,6 +1,7 @@
 #include "ui/models/chunks_model.h"
 
 #include <QString>
+#include <QVariantList>
 
 namespace MR {
 
@@ -68,6 +69,14 @@ QVariant ChunksModel::data(const QModelIndex& index, int role) const
     case AssignedAtRole:   return static_cast<qint64>(c.assigned_at_ms);
     case CompletedAtRole:  return static_cast<qint64>(c.completed_at_ms);
     case RetryCountRole:   return c.retry_count;
+    case CompletedFramesRole:
+    {
+        QVariantList frames;
+        frames.reserve(static_cast<int>(c.completed_frames.size()));
+        for (int f : c.completed_frames)
+            frames.push_back(f);
+        return frames;
+    }
     }
     return {};
 }
@@ -81,9 +90,10 @@ QHash<int, QByteArray> ChunksModel::roleNames() const
         { StateRole,        "state" },
         { AssignedNodeRole, "assignedNode" },
         { ProgressRole,     "progress" },
-        { AssignedAtRole,   "assignedAt" },
-        { CompletedAtRole,  "completedAt" },
-        { RetryCountRole,   "retryCount" },
+        { AssignedAtRole,      "assignedAt" },
+        { CompletedAtRole,     "completedAt" },
+        { RetryCountRole,      "retryCount" },
+        { CompletedFramesRole, "completedFrames" },
     };
 }
 

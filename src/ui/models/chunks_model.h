@@ -23,12 +23,13 @@ public:
         ChunkIdRole = Qt::UserRole + 1,
         FrameStartRole,
         FrameEndRole,
-        StateRole,          // "pending" | "assigned" | "completed" | "failed"
+        StateRole,              // "pending" | "assigned" | "completed" | "failed"
         AssignedNodeRole,
-        ProgressRole,       // double in [0, 1] — completed_frames / total in chunk
-        AssignedAtRole,     // qint64 ms since epoch
-        CompletedAtRole,    // qint64 ms since epoch
+        ProgressRole,           // double in [0, 1] — completed_frames / total in chunk
+        AssignedAtRole,         // qint64 ms since epoch
+        CompletedAtRole,        // qint64 ms since epoch
         RetryCountRole,
+        CompletedFramesRole,    // QVariantList<int> — individual frames done inside the chunk
     };
 
     explicit ChunksModel(QObject* parent = nullptr);
