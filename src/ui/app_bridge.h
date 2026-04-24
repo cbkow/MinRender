@@ -61,6 +61,16 @@ class AppBridge : public QObject
     // re-bind without manual model lookups.
     Q_PROPERTY(QVariantMap currentJob READ currentJob NOTIFY currentJobChanged)
 
+    // Log viewer source selection. Empty string = local MonitorLog
+    // ring buffer (default). Set to a peer's node_id to read that peer's
+    // log file from the shared farm (refreshed on a 3 s timer).
+    Q_PROPERTY(QString      logSourceId  READ logSourceId  WRITE setLogSourceId  NOTIFY logSourceIdChanged)
+    Q_PROPERTY(QStringList  remoteLogLines READ remoteLogLines NOTIFY remoteLogLinesChanged)
+    // Dropdown model for the log viewer: [{id:"", label:"Monitor Log"},
+    // {id:"<peerId>", label:"<hostname>"}, …]. Only alive peers are
+    // included; rebuilt in refresh() when the peer set changes.
+    Q_PROPERTY(QVariantList logSources   READ logSources  NOTIFY logSourcesChanged)
+
     // "This Node" descriptors — stable for the life of the process except
     // for isLeader and nodeState, which flip with leadership / tray toggles.
     Q_PROPERTY(QString thisNodeId       READ thisNodeId       CONSTANT)
@@ -111,6 +121,11 @@ public:
     void setSubmissionMode(bool on);
 
     QVariantMap currentJob() const;
+
+    QString     logSourceId()   const { return m_logSourceId; }
+    void        setLogSourceId(const QString& id);
+    QStringList remoteLogLines() const { return m_remoteLogLines; }
+    QVariantList logSources()   const { return m_logSources; }
 
     QString thisNodeId() const;
     QString thisNodeHostname() const;
@@ -232,6 +247,9 @@ signals:
     void currentJobChanged();
     void thisNodeIsLeaderChanged();
     void thisNodeActiveChanged();
+    void logSourceIdChanged();
+    void remoteLogLinesChanged();
+    void logSourcesChanged();
 
     void submissionSucceeded(const QString& jobId);
     void submissionFailed(const QString& reason);
@@ -251,6 +269,12 @@ private:
     Config m_snapshot;
     // Drives the 3 s ChunksModel refresh while m_currentJobId is set.
     void refreshChunks();
+    // Drives the 3 s remote-log refresh while m_logSourceId names a peer.
+    void refreshRemoteLog();
+    // Rebuild m_logSources from MonitorApp's peer snapshot. Called in
+    // refresh(); no-op when the snapshot's peer-id/hostname list hasn't
+    // changed since the last build.
+    void rebuildLogSources();
 
     std::unique_ptr<JobsModel>      m_jobsModel;
     std::unique_ptr<NodesModel>     m_nodesModel;
@@ -259,6 +283,13 @@ private:
     std::unique_ptr<TemplatesModel> m_templatesModel;
     QTimer                          m_chunksTimer;
     QString                         m_currentJobId;
+
+    // Log viewer source + remote fetch state
+    QTimer                          m_remoteLogTimer;
+    QString                         m_logSourceId;   // "" = local
+    QStringList                     m_remoteLogLines;
+    QVariantList                    m_logSources;
+
     bool m_submissionMode   = false;
     bool m_lastFarmRunning  = false;
     bool m_lastIsLeader     = false;

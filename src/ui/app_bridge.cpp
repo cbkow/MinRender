@@ -1,6 +1,7 @@
 #include "ui/app_bridge.h"
 
 #include "core/config.h"
+#include "core/monitor_log.h"
 #include "core/platform.h"
 #include "monitor/dispatch_manager.h"
 #include "monitor/monitor_app.h"
@@ -73,6 +74,16 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     m_chunksTimer.setInterval(3000);
     QObject::connect(&m_chunksTimer, &QTimer::timeout,
                      this, &AppBridge::refreshChunks);
+
+    // Remote log refresh — same 3 s cadence, only runs while the log
+    // viewer is pointed at a peer (logSourceId non-empty).
+    m_remoteLogTimer.setInterval(3000);
+    QObject::connect(&m_remoteLogTimer, &QTimer::timeout,
+                     this, &AppBridge::refreshRemoteLog);
+
+    // Seed the log-source dropdown so the ComboBox renders "Monitor Log"
+    // on first paint even before the first peer poll.
+    rebuildLogSources();
 }
 
 AppBridge::~AppBridge() = default;
@@ -303,6 +314,91 @@ void AppBridge::refreshChunks()
         m_monitor->getChunksForJob(m_currentJobId.toStdString()));
 }
 
+void AppBridge::setLogSourceId(const QString& id)
+{
+    if (m_logSourceId == id)
+        return;
+    m_logSourceId = id;
+    emit logSourceIdChanged();
+
+    if (m_logSourceId.isEmpty())
+    {
+        m_remoteLogTimer.stop();
+        if (!m_remoteLogLines.isEmpty())
+        {
+            m_remoteLogLines.clear();
+            emit remoteLogLinesChanged();
+        }
+    }
+    else
+    {
+        refreshRemoteLog();    // immediate; timer fires every 3 s after
+        m_remoteLogTimer.start();
+    }
+}
+
+void AppBridge::refreshRemoteLog()
+{
+    if (!m_monitor || m_logSourceId.isEmpty() || !m_monitor->isFarmRunning())
+        return;
+
+    const auto lines = MonitorLog::readNodeLog(
+        m_monitor->farmPath(), m_logSourceId.toStdString(), 500);
+
+    QStringList next;
+    next.reserve(static_cast<int>(lines.size()));
+    for (const auto& l : lines)
+        next.push_back(QString::fromStdString(l));
+
+    if (next == m_remoteLogLines)
+        return;   // skip a churn-inducing emit when the file hasn't grown
+    m_remoteLogLines = std::move(next);
+    emit remoteLogLinesChanged();
+}
+
+void AppBridge::rebuildLogSources()
+{
+    QVariantList next;
+    next.reserve(16);
+
+    // Head entry — always present, always selectable. Empty id signals
+    // "show the local MonitorLog ring buffer" to the panel.
+    QVariantMap local;
+    local["id"]    = QString();
+    local["label"] = tr("Monitor Log");
+    next.push_back(local);
+
+    if (m_monitor)
+    {
+        // Local node as a peer-style entry so the user can view their
+        // own on-disk log file (useful for history before the process
+        // started).
+        QVariantMap self;
+        self["id"]    = QString::fromStdString(m_monitor->identity().nodeId());
+        QString selfLabel = QString::fromStdString(
+            m_monitor->identity().systemInfo().hostname);
+        if (selfLabel.isEmpty())
+            selfLabel = self["id"].toString();
+        self["label"] = tr("%1 (this node)").arg(selfLabel);
+        next.push_back(self);
+
+        for (const auto& p : m_monitor->peerManager().getPeerSnapshot())
+        {
+            if (!p.is_alive) continue;
+            QVariantMap e;
+            e["id"]    = QString::fromStdString(p.node_id);
+            e["label"] = QString::fromStdString(
+                p.hostname.empty() ? p.node_id : p.hostname);
+            next.push_back(e);
+        }
+    }
+
+    if (next == m_logSources)
+        return;   // short-circuit when peer list hasn't changed
+    m_logSources = std::move(next);
+    emit logSourcesChanged();
+}
+
 void AppBridge::refresh()
 {
     if (!m_monitor) return;
@@ -349,6 +445,10 @@ void AppBridge::refresh()
     // MonitorApp::update). TemplatesModel short-circuits when the set
     // is equivalent, so polling here at 20 Hz is essentially free.
     m_templatesModel->setTemplates(m_monitor->cachedTemplates());
+
+    // Keep the log-source dropdown in sync with the peer list. The
+    // rebuild short-circuits when nothing changed, so this is cheap.
+    rebuildLogSources();
 }
 
 void AppBridge::revertSettings()

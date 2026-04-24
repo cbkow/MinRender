@@ -6,12 +6,14 @@ import MinRenderUi 1.0
 Item {
     id: root
 
-    // Filter chips. Level strings match MonitorLog::Entry::level values
-    // ("INFO", "WARN", "ERROR"). Anything else falls through unfiltered.
+    // Filter chips apply to Monitor Log (local, structured entries).
+    // Remote logs are plain text so filter chips don't route through them.
     property bool showInfo: true
     property bool showWarn: true
     property bool showError: true
     property bool autoscroll: true
+
+    readonly property bool remoteMode: appBridge.logSourceId.length > 0
 
     function levelColor(level) {
         switch (level) {
@@ -35,6 +37,15 @@ Item {
         return Qt.formatDateTime(new Date(ms), "HH:mm:ss.zzz")
     }
 
+    // Match old ImGui keyword-based coloring for remote log lines: we
+    // can't parse level out of a plain text line reliably, so match on
+    // "[WARN]" / "[ERROR]" substrings.
+    function lineColor(line) {
+        if (line.indexOf("[ERROR]") !== -1) return Theme.error
+        if (line.indexOf("[WARN]")  !== -1) return Theme.warn
+        return Theme.textSecondary
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -51,20 +62,49 @@ Item {
                 anchors.rightMargin: 6
                 spacing: 4
 
+                // Source picker — "Monitor Log" + each alive peer. Model
+                // comes from AppBridge so peer list stays in sync with
+                // the discovery pass.
+                ComboBox {
+                    id: sourcePicker
+                    Layout.preferredWidth: 220
+                    model: appBridge.logSources
+                    textRole: "label"
+                    valueRole: "id"
+                    onActivated: appBridge.logSourceId = currentValue
+                    // Keep UI in sync if logSourceId changes from elsewhere
+                    // (not currently; future-proofing).
+                    Component.onCompleted: {
+                        for (let i = 0; i < count; ++i) {
+                            if (model[i].id === appBridge.logSourceId) {
+                                currentIndex = i
+                                return
+                            }
+                        }
+                        currentIndex = 0
+                    }
+                }
+
+                ToolSeparator { Layout.fillHeight: true }
+
+                // Level filter chips — only meaningful for Monitor Log.
                 ToolButton {
                     text: qsTr("Info")
+                    enabled: !root.remoteMode
                     checkable: true
                     checked: root.showInfo
                     onToggled: root.showInfo = checked
                 }
                 ToolButton {
                     text: qsTr("Warn")
+                    enabled: !root.remoteMode
                     checkable: true
                     checked: root.showWarn
                     onToggled: root.showWarn = checked
                 }
                 ToolButton {
                     text: qsTr("Error")
+                    enabled: !root.remoteMode
                     checkable: true
                     checked: root.showError
                     onToggled: root.showError = checked
@@ -81,9 +121,9 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 Label {
-                    // logList.count is signal-driven; appBridge.logModel
-                    // doesn't expose a QML property that changes on insert.
-                    text: qsTr("%1 entries").arg(logList.count)
+                    text: root.remoteMode
+                        ? qsTr("%1 lines").arg(remoteList.count)
+                        : qsTr("%1 entries").arg(logList.count)
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSizeSmall
                 }
@@ -93,26 +133,24 @@ Item {
                 Button {
                     text: qsTr("Clear")
                     flat: true
+                    enabled: !root.remoteMode
                     onClicked: appBridge.logModel.clear()
                 }
             }
         }
 
-        // --- Log list ---
+        // --- Monitor Log (local, structured) ---
         ListView {
             id: logList
+            visible: !root.remoteMode
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.fillHeight: !root.remoteMode
             clip: true
             model: appBridge.logModel
             boundsBehavior: Flickable.StopAtBounds
             reuseItems: true
             cacheBuffer: 400
 
-            // Autoscroll when new entries arrive, but only if the user
-            // hasn't scrolled away from the bottom. contentY==0 means the
-            // list is at the end (positionViewAtEnd puts it there), and
-            // we interpret "near the end" generously.
             property bool atBottom: true
             onContentYChanged: {
                 atBottom = (contentHeight - (contentY + height)) < 40
@@ -132,8 +170,6 @@ Item {
                 required property int index
 
                 width: logList.width
-                // Filter by setting height to 0; cheap enough for 5 k rows.
-                // Proper QSortFilterProxyModel is a later optimization.
                 visible: root.levelVisible(level)
                 height: visible ? Math.max(20, msgText.implicitHeight + 4) : 0
 
@@ -176,12 +212,69 @@ Item {
                         color: Theme.textPrimary
                         font.family: Theme.monoFamily
                         font.pixelSize: Theme.fontSizeSmall
-                        // Fill the remainder after the three fixed columns
-                        // (84 + 48 + 120 + 3*8 spacing = 276).
                         width: parent.width - 276
                         wrapMode: Text.Wrap
                     }
                 }
+            }
+        }
+
+        // --- Remote node log (plain text, refreshed every 3 s) ---
+        ListView {
+            id: remoteList
+            visible: root.remoteMode
+            Layout.fillWidth: true
+            Layout.fillHeight: root.remoteMode
+            clip: true
+            model: appBridge.remoteLogLines
+            boundsBehavior: Flickable.StopAtBounds
+            reuseItems: true
+
+            property bool atBottom: true
+            onContentYChanged: {
+                atBottom = (contentHeight - (contentY + height)) < 40
+            }
+            onCountChanged: {
+                if (root.autoscroll && atBottom)
+                    positionViewAtEnd()
+            }
+
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            delegate: Rectangle {
+                required property string modelData
+                required property int    index
+
+                width: remoteList.width
+                height: Math.max(18, lineText.implicitHeight + 2)
+                color: index % 2 === 0 ? Theme.bg : Theme.bgAlt
+
+                Text {
+                    id: lineText
+                    anchors {
+                        left: parent.left
+                        right: parent.right
+                        verticalCenter: parent.verticalCenter
+                        leftMargin: 8
+                        rightMargin: 8
+                    }
+                    text: modelData
+                    color: root.lineColor(modelData)
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.fontSizeSmall
+                    wrapMode: Text.Wrap
+                }
+            }
+
+            // Empty-state hint
+            Label {
+                anchors.centerIn: parent
+                visible: remoteList.count === 0
+                text: appBridge.farmRunning
+                    ? qsTr("No log data for this node yet")
+                    : qsTr("Farm not running")
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeBase
             }
         }
     }
