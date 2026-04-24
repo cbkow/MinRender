@@ -157,19 +157,9 @@ Item {
                                 elide: Text.ElideMiddle
                                 Layout.fillWidth: true
                             }
-                            Rectangle {
-                                color: stateColor(job.state || "")
-                                radius: Theme.radiusBase
-                                implicitWidth: stateLabel.implicitWidth + 10
-                                implicitHeight: 18
-                                Label {
-                                    id: stateLabel
-                                    anchors.centerIn: parent
-                                    text: (job.state || "—").toUpperCase()
-                                    color: Theme.bg
-                                    font.pixelSize: Theme.fontSizeSmall
-                                    font.bold: true
-                                }
+                            StatusBadge {
+                                text: job.state || "—"
+                                fillColor: stateColor(job.state || "")
                             }
                         }
 

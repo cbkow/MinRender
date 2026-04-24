@@ -64,7 +64,7 @@ Item {
         spacing: 12
 
         // --- Template picker ---
-        Label { text: qsTr("Template"); font.bold: true }
+        SectionHeader { text: qsTr("Template") }
         ComboBox {
             id: templatePicker
             Layout.fillWidth: true
@@ -76,7 +76,7 @@ Item {
         }
 
         // --- Job name ---
-        Label { text: qsTr("Job name"); font.bold: true }
+        SectionHeader { text: qsTr("Job name") }
         TextField {
             id: jobNameField
             Layout.fillWidth: true
@@ -84,7 +84,7 @@ Item {
         }
 
         // --- Frame range / chunk / priority ---
-        Label { text: qsTr("Range"); font.bold: true }
+        SectionHeader { text: qsTr("Range") }
         GridLayout {
             Layout.fillWidth: true
             columns: 4
@@ -103,9 +103,8 @@ Item {
         }
 
         // --- Flags (dynamic) ---
-        Label {
+        SectionHeader {
             text: qsTr("Flags")
-            font.bold: true
             visible: currentTemplate && currentTemplate.flags && currentTemplate.flags.length > 0
         }
 

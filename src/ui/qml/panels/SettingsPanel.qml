@@ -39,7 +39,7 @@ Item {
         // --- Sync root ---
         RowLayout {
             Layout.fillWidth: true
-            Label { text: qsTr("Sync root"); font.bold: true }
+            SectionHeader { text: qsTr("Sync root") }
             Item { Layout.fillWidth: true }
             Label {
                 // Signal-driven: syncRootChanged refreshes the binding
@@ -72,7 +72,7 @@ Item {
         }
 
         // --- Tags ---
-        Label { text: qsTr("Tags (comma-separated)"); font.bold: true }
+        SectionHeader { text: qsTr("Tags (comma-separated)") }
         TextField {
             id: tagsField
             Layout.fillWidth: true
@@ -82,7 +82,7 @@ Item {
         }
 
         // --- Networking ---
-        Label { text: qsTr("Networking"); font.bold: true }
+        SectionHeader { text: qsTr("Networking") }
         GridLayout {
             Layout.fillWidth: true
             columns: 2
@@ -132,7 +132,7 @@ Item {
         }
 
         // --- Render ---
-        Label { text: qsTr("Rendering"); font.bold: true }
+        SectionHeader { text: qsTr("Rendering") }
         CheckBox {
             text: qsTr("Enable staging")
             checked: appBridge.stagingEnabled
@@ -140,7 +140,7 @@ Item {
         }
 
         // --- UI ---
-        Label { text: qsTr("User interface"); font.bold: true }
+        SectionHeader { text: qsTr("User interface") }
         CheckBox {
             text: qsTr("Show notifications")
             checked: appBridge.showNotifications

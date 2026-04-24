@@ -49,20 +49,9 @@ Item {
                         color: Theme.textPrimary
                     }
                     Item { Layout.fillWidth: true }
-                    Rectangle {
+                    StatusBadge {
                         visible: appBridge.thisNodeIsLeader
-                        color: Theme.accent
-                        radius: Theme.radiusBase
-                        implicitWidth: leaderLabel.implicitWidth + 10
-                        implicitHeight: 16
-                        Label {
-                            id: leaderLabel
-                            anchors.centerIn: parent
-                            text: qsTr("LEADER")
-                            font.pixelSize: Theme.fontSizeSmall
-                            font.bold: true
-                            color: Theme.bg
-                        }
+                        text: qsTr("LEADER")
                     }
                 }
 
@@ -139,27 +128,10 @@ Item {
         }
 
         // --- Peers header ---
-        Rectangle {
+        PanelHeader {
             Layout.fillWidth: true
-            Layout.preferredHeight: 24
-            color: Theme.bg
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                Label {
-                    text: qsTr("Peers")
-                    color: Theme.textSecondary
-                    font.pixelSize: Theme.fontSizeBase
-                    font.bold: true
-                }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: qsTr("%1 online").arg(peerList.count)
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSizeBase
-                }
-            }
+            title: qsTr("Peers")
+            subtitle: qsTr("%1 online").arg(peerList.count)
         }
 
         // --- Peers ListView ---

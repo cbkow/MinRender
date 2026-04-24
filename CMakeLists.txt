@@ -145,6 +145,9 @@ qt_add_qml_module(minrender
     QML_FILES
         src/ui/qml/Main.qml
         src/ui/qml/Theme.qml
+        src/ui/qml/components/PanelHeader.qml
+        src/ui/qml/components/SectionHeader.qml
+        src/ui/qml/components/StatusBadge.qml
         src/ui/qml/panels/FarmCleanupDialog.qml
         src/ui/qml/panels/JobDetailPanel.qml
         src/ui/qml/panels/JobListPanel.qml

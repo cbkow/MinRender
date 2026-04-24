@@ -62,43 +62,19 @@ Item {
         spacing: 0
 
         // --- Toolbar ---
-        Rectangle {
+        PanelHeader {
             Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            color: Theme.surface
+            title: qsTr("Jobs")
+            subtitle: {
+                let s = "· " + jobList.count
+                if (root.checkedCount() > 0)
+                    s += " · " + root.checkedCount() + " " + qsTr("selected")
+                return s
+            }
 
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 6
-                anchors.rightMargin: 6
-                spacing: 6
-
-                Label {
-                    text: qsTr("Jobs")
-                    color: Theme.textPrimary
-                    font.bold: true
-                    font.pixelSize: 12
-                }
-
-                Label {
-                    text: qsTr("· %1").arg(jobList.count)
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSizeBase
-                }
-
-                Label {
-                    visible: root.checkedCount() > 0
-                    text: qsTr("· %1 selected").arg(root.checkedCount())
-                    color: Theme.accent
-                    font.pixelSize: 11
-                }
-
-                Item { Layout.fillWidth: true }
-
-                Button {
-                    text: qsTr("New Job…")
-                    onClicked: root.newJobRequested()
-                }
+            Button {
+                text: qsTr("New Job…")
+                onClicked: root.newJobRequested()
             }
         }
 
