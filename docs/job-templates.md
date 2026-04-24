@@ -1,6 +1,6 @@
 # Job Templates
 
-A job template is a JSON file that tells MidRender how to launch a DCC's command-line renderer. It defines the executable, the argument structure, how to parse progress from stdout, and sensible defaults for the submission form.
+A job template is a JSON file that tells MinRender how to launch a DCC's command-line renderer. It defines the executable, the argument structure, how to parse progress from stdout, and sensible defaults for the submission form.
 
 Templates live in `{farm}/templates/`. Example templates ship in `{farm}/templates/examples/` and are overridden by user templates with the same `template_id`.
 
@@ -98,7 +98,7 @@ At least one OS path must be non-empty. Leave unsupported platforms as `""`.
 
 ## `flags[]` — Command-Line Arguments
 
-The flags array is the core of the template. It's an ordered list that defines every argument passed to the DCC. MidRender reads it top to bottom and builds the command line in order.
+The flags array is the core of the template. It's an ordered list that defines every argument passed to the DCC. MinRender reads it top to bottom and builds the command line in order.
 
 ### How flags map to arguments
 
@@ -194,7 +194,7 @@ Pre-fills the submission form. Users can override all of these.
 
 ## `progress` — Stdout Parsing
 
-Tells MidRender how to extract progress information from the DCC's stdout output.
+Tells MinRender how to extract progress information from the DCC's stdout output.
 
 ```json
 "progress": {
@@ -242,7 +242,7 @@ When matched, the chunk is marked as failed immediately. Each entry has `regex` 
 
 ## `output_detection` — Rendered File Detection
 
-How MidRender finds the path of rendered output files. Used for validation (checking that the file exists and is non-zero after rendering).
+How MinRender finds the path of rendered output files. Used for validation (checking that the file exists and is non-zero after rendering).
 
 ```json
 "output_detection": {

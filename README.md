@@ -15,7 +15,7 @@ A lightweight render farm coordinator for small VFX teams and freelancers.
 - **Resilient** — each node keeps a SQLite snapshot of the leader's state. If the leader drops, a new one picks up where it left off. Worst case: frames rendered in the last 30 seconds get re-rendered.
 - **Windows-first** — macOS and Linux support planned.
 
-Built with C++, Rust, and [Dear ImGui](https://github.com/ocornut/imgui).
+Built with C++ (Qt 6 Quick / QML) and Rust.
 
 ---
 
@@ -53,7 +53,7 @@ Tags control which DCCs each node can render and influence leader election. Set 
 
 ## Local Staging Area
 
-If you render to a synced folder setup (LucidLink, Dropbox, etc.), you'll want this option checked in the settings panel. Instead of rendering directly to the synced folder, it will create a temp staging area in `%localappdata%\MidRender`, render there, then move files to your final render folder. By staging renders like this, you avoid classic file contention issues on synced file services. 
+If you render to a synced folder setup (LucidLink, Dropbox, etc.), you'll want this option checked in the settings panel. Instead of rendering directly to the synced folder, it will create a temp staging area in `%localappdata%\MinRender`, render there, then move files to your final render folder. By staging renders like this, you avoid classic file contention issues on synced file services. 
 
 ![MinRender Tags](docs/images/midrender_bu9J9djzIL.png)
 
@@ -116,7 +116,7 @@ When a job is submitted, click it in the Jobs panel to monitor its progress. Pro
 |---|---|
 | `grey` | Unassigned frames. |
 | `blue` | Assigned frames. |
-| `dark green` | If you have the local staging area enabled in settings, dark green signifies rendered frames, but not yet copied over to your render directory. MidRender copies them only when the entire chunk is complete. |
+| `dark green` | If you have the local staging area enabled in settings, dark green signifies rendered frames, but not yet copied over to your render directory. MinRender copies them only when the entire chunk is complete. |
 | `bright green` | Finished frames. If the local staging area is enabled, these are finished frames copied over to your render folder. |
 
 ## Minimize to Tray
@@ -129,6 +129,6 @@ When you close the app, it minimizes to the system tray. Running MinRender minim
 
 ## Job Templates
 
-Job templates are JSON files that tell MidRender how to launch a DCC's command-line renderer. They define the executable, argument structure, stdout parsing for progress, and submission defaults.
+Job templates are JSON files that tell MinRender how to launch a DCC's command-line renderer. They define the executable, argument structure, stdout parsing for progress, and submission defaults.
 
 See the full reference: [Job Template Documentation](docs/job-templates.md)
