@@ -1,6 +1,6 @@
 # MinRender Qt 6 Quick Port Plan
 
-Status: **Phase 5 JobDetail + FrameGrid landed — Phase 6 theme next** · Owner: Chris · Last updated: 2026-04-24
+Status: **Phase 6 theme pass complete — Phase 7 decommission + installer next** · Owner: Chris · Last updated: 2026-04-24
 
 ## Current state (read this first if you are a fresh agent)
 
@@ -315,19 +315,16 @@ Not yet done:
 - Node-picker submenu on the Reassign action (right now it hands "" to let dispatcher choose — good default, but users with a specific target node in mind have to work around it).
 - **Milestone:** full JobDetail functional, frame grid benchmarked.
 
-### Phase 6 — Theme, fonts, QML components · 3–5 days
+### Phase 6 — Theme, fonts, QML components · 3–5 days · **complete**
 
-- `Theme.qml` singleton: every color from current `style.cpp` as properties (`Theme.bg`, `Theme.border`, `Theme.accent`, etc.).
-- `QQuickStyle::setStyle("Fusion")` in `main_qt.cpp`. Fusion is the most customizable built-in style; dark theme applies cleanly.
-- `QPalette` set on `QApplication` for dark look across any QtWidgets surfaces (dialogs, file picker on some platforms).
-- Load Inter / JetBrains Mono / Material Symbols via `QFontDatabase::addApplicationFont` at startup. Expose family names via `AppBridge` (or hardcode as constants).
-- Build reusable components:
-  - `OutlineButton.qml` — replaces `PushOutlineButtonStyle`.
-  - `PanelHeader.qml` — replaces `panelHeader()` in `style.cpp`.
-  - `StatusBadge.qml` — replaces `drawStatusBadge`.
-  - `IconText.qml` — Material Symbols glyph + label.
-  - `SectionHeader.qml` — replaces `CollapsingHeaderWithIcon`.
-- Windows accent color pulled from `ui/platform/accent_color.*` at startup, pushed into `Theme.accent`.
+Commits:
+- `fe1f1b8` Step 7a — `src/ui/qml/Theme.qml` singleton (surfaces, text tones, semantic colours, FrameGrid cell palette, font families, pixelSize tokens, radii). Dark `QPalette` applied to `QApplication` in `main_qt.cpp` so QtWidgets surfaces match. `QFontDatabase::addApplicationFont` loads Inter (regular/bold/italic), JetBrains Mono, Material Symbols Sharp; resolved family names pinned on AppBridge (`interFamily` / `monoFamily` / `symbolsFamily`). `QApplication::setFont(Inter 10pt)` as the default.
+- `80638ca` Step 7b — every panel migrated from hardcoded colour literals / "monospace" strings / magic pixelSize ints to `Theme.*`. `FrameGrid` C++ class gained five `Q_PROPERTY`s for its cell colours; `JobDetailPanel` binds them from `Theme.frameBg`/`frameUnclaimed`/`frameAssigned`/`frameCompleted`/`frameFailed`. **CMake quirk resolved:** Qt 6.11's auto-detection of `pragma Singleton` didn't write `singleton Theme …` into the generated qmldir — explicit `set_source_files_properties(... QT_QML_SINGLETON_TYPE TRUE)` forces it.
+- `ed781af` Step 7c — `src/ui/qml/components/{StatusBadge, PanelHeader, SectionHeader}.qml`. Adopted by JobDetailPanel (state badge), NodePanel (LEADER + Peers header), JobListPanel (header toolbar), SettingsPanel (five section titles), SubmissionForm (four section titles).
+
+Deferred from the plan (create-when-adopted):
+- `OutlineButton.qml` — no panel currently uses an outline-style button; would just be dead code. Add when a design calls for one.
+- `IconText.qml` — Material Symbols Sharp is loaded and its family name is on AppBridge, but no panel renders glyphs yet. The component ships alongside its first real use.
 - **Milestone:** side-by-side visual diff vs ImGui acceptable. Any nits get filed as follow-up, not blocking.
 
 ### Phase 7 — Decommission, installer · 1 week
