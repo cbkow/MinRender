@@ -1149,6 +1149,100 @@ void MonitorApp::unsuspendNode(const std::string& nodeId)
     }
 }
 
+namespace {
+// Look up a peer's endpoint by nodeId without PeerManager gaining a
+// dedicated accessor (the snapshot is cheap — it's a copy of a map).
+std::string peerEndpointFor(const std::vector<PeerInfo>& peers,
+                            const std::string& nodeId)
+{
+    for (const auto& p : peers)
+        if (p.node_id == nodeId) return p.endpoint;
+    return {};
+}
+} // namespace
+
+void MonitorApp::setPeerNodeActive(const std::string& nodeId, bool active)
+{
+    const std::string ep = peerEndpointFor(m_peerManager.getPeerSnapshot(), nodeId);
+    if (ep.empty())
+    {
+        MonitorLog::instance().warn("peer",
+            "setPeerNodeActive: unknown or endpointless peer " + nodeId);
+        return;
+    }
+
+    auto [host, port] = parseEndpoint(ep);
+    if (host.empty())
+        return;
+
+    // Optimistic local update — peer's next status poll confirms or
+    // reverts this.
+    m_peerManager.setPeerNodeState(nodeId, active ? "active" : "stopped");
+
+    HttpRequest req;
+    req.host     = host;
+    req.port     = port;
+    req.method   = "POST";
+    req.endpoint = active ? "/api/node/start" : "/api/node/stop";
+    {
+        std::lock_guard<std::mutex> lock(m_httpQueueMutex);
+        m_httpQueue.push(std::move(req));
+    }
+}
+
+void MonitorApp::restartPeerApp(const std::string& nodeId)
+{
+    const std::string ep = peerEndpointFor(m_peerManager.getPeerSnapshot(), nodeId);
+    if (ep.empty())
+    {
+        MonitorLog::instance().warn("peer",
+            "restartPeerApp: unknown or endpointless peer " + nodeId);
+        return;
+    }
+
+    auto [host, port] = parseEndpoint(ep);
+    if (host.empty())
+        return;
+
+    HttpRequest req;
+    req.host     = host;
+    req.port     = port;
+    req.method   = "POST";
+    req.endpoint = "/api/node/restart";
+    {
+        std::lock_guard<std::mutex> lock(m_httpQueueMutex);
+        m_httpQueue.push(std::move(req));
+    }
+}
+
+bool MonitorApp::writePeerRestartSignal(const std::string& nodeId)
+{
+    if (!m_farmRunning || nodeId.empty())
+        return false;
+
+    std::error_code ec;
+    auto nodeDir = m_farmPath / "nodes" / nodeId;
+    if (!std::filesystem::is_directory(nodeDir, ec))
+    {
+        MonitorLog::instance().warn("peer",
+            "writePeerRestartSignal: node directory missing for " + nodeId);
+        return false;
+    }
+
+    auto signalPath = nodeDir / "restart";
+    std::ofstream ofs(signalPath);
+    if (!ofs.is_open())
+    {
+        MonitorLog::instance().warn("peer",
+            "writePeerRestartSignal: failed to write " + signalPath.string());
+        return false;
+    }
+    // Empty file — presence is the signal.
+    MonitorLog::instance().info("peer",
+        "Wrote restart signal for " + nodeId);
+    return true;
+}
+
 // --- Node state ---
 
 void MonitorApp::setNodeState(NodeState state)

@@ -77,6 +77,21 @@ public:
     std::string resubmitIncomplete(const std::string& jobId);
     void unsuspendNode(const std::string& nodeId);
 
+    // Peer remote-control actions. Each looks up the peer's endpoint
+    // from PeerManager and queues an HTTP POST on the shared worker
+    // thread (no blocking from callers). No-op if the peer is unknown
+    // or has no endpoint. setPeerNodeActive also applies the new state
+    // locally on PeerManager so the UI reflects the change before the
+    // peer's status poll confirms it.
+    void setPeerNodeActive(const std::string& nodeId, bool active);
+    void restartPeerApp(const std::string& nodeId);
+
+    // Dead-peer fallback: write an empty file at
+    // {farmPath}/nodes/{nodeId}/restart so the peer's own filesystem
+    // watcher triggers a local restart next time it comes back. Returns
+    // false if the farm isn't running or the write failed.
+    bool writePeerRestartSignal(const std::string& nodeId);
+
     // Node state controls
     void setNodeState(NodeState state);
     NodeState nodeState() const { return m_nodeState; }

@@ -219,8 +219,9 @@ Item {
                     anchors.fill: parent
                     acceptedButtons: Qt.RightButton
                     onClicked: (mouse) => {
-                        peerMenu.targetNodeId = nodeId
-                        peerMenu.targetIsAlive = isAlive
+                        peerMenu.targetNodeId    = nodeId
+                        peerMenu.targetIsAlive   = isAlive
+                        peerMenu.targetIsActive  = isActive
                         peerMenu.popup()
                     }
                 }
@@ -228,13 +229,40 @@ Item {
 
             Menu {
                 id: peerMenu
-                property string targetNodeId: ""
-                property bool   targetIsAlive: false
+                property string targetNodeId:    ""
+                property bool   targetIsAlive:   false
+                property bool   targetIsActive:  false
 
+                // --- Live peer actions ---
+                MenuItem {
+                    text: qsTr("Stop")
+                    visible: peerMenu.targetIsAlive && peerMenu.targetIsActive
+                    onTriggered: appBridge.setPeerNodeActive(peerMenu.targetNodeId, false)
+                }
+                MenuItem {
+                    text: qsTr("Start")
+                    visible: peerMenu.targetIsAlive && !peerMenu.targetIsActive
+                    onTriggered: appBridge.setPeerNodeActive(peerMenu.targetNodeId, true)
+                }
+                MenuItem {
+                    text: qsTr("Restart App")
+                    visible: peerMenu.targetIsAlive
+                    onTriggered: appBridge.restartPeerApp(peerMenu.targetNodeId)
+                }
                 MenuItem {
                     text: qsTr("Unsuspend")
-                    enabled: peerMenu.targetNodeId.length > 0
+                    visible: peerMenu.targetIsAlive
                     onTriggered: appBridge.unsuspendNode(peerMenu.targetNodeId)
+                }
+
+                // --- Dead peer actions ---
+                // Writes an empty `restart` file under {farmPath}/nodes/{id}/
+                // so the peer's filesystem watcher triggers a local restart
+                // next time it comes back online.
+                MenuItem {
+                    text: qsTr("Write restart signal (filesystem)")
+                    visible: !peerMenu.targetIsAlive
+                    onTriggered: appBridge.writePeerRestartSignal(peerMenu.targetNodeId)
                 }
             }
         }

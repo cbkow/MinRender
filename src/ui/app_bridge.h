@@ -123,6 +123,12 @@ public:
     Q_INVOKABLE void toggleNodeActive();
     Q_INVOKABLE void unsuspendNode(const QString& nodeId);
 
+    // Peer remote-control actions — forwarded to MonitorApp which
+    // queues HTTP to the peer's endpoint (no blocking).
+    Q_INVOKABLE void setPeerNodeActive(const QString& nodeId, bool active);
+    Q_INVOKABLE void restartPeerApp(const QString& nodeId);
+    Q_INVOKABLE void writePeerRestartSignal(const QString& nodeId);
+
     // Job controls — forwarded to MonitorApp. Each takes the slug /
     // job_id exposed by JobsModel. No-op when jobId is empty.
     Q_INVOKABLE void pauseJob(const QString& jobId);

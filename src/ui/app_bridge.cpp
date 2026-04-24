@@ -441,6 +441,24 @@ void AppBridge::unsuspendNode(const QString& nodeId)
     m_monitor->unsuspendNode(nodeId.toStdString());
 }
 
+void AppBridge::setPeerNodeActive(const QString& nodeId, bool active)
+{
+    if (!m_monitor || nodeId.isEmpty()) return;
+    m_monitor->setPeerNodeActive(nodeId.toStdString(), active);
+}
+
+void AppBridge::restartPeerApp(const QString& nodeId)
+{
+    if (!m_monitor || nodeId.isEmpty()) return;
+    m_monitor->restartPeerApp(nodeId.toStdString());
+}
+
+void AppBridge::writePeerRestartSignal(const QString& nodeId)
+{
+    if (!m_monitor || nodeId.isEmpty()) return;
+    m_monitor->writePeerRestartSignal(nodeId.toStdString());
+}
+
 void AppBridge::pauseJob(const QString& jobId)
 {
     if (!m_monitor || jobId.isEmpty()) return;
