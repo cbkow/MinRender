@@ -255,14 +255,6 @@ Item {
                     text: qsTr("Unsuspend")
                     onTriggered: appBridge.unsuspendNode(livePeerMenu.targetNodeId)
                 }
-                MenuSeparator {}
-                // Also available on live peers so a duplicate that's still
-                // pinging (via UDP heartbeat, say) can be reset. The reaper
-                // will re-add it if the real peer is actually there.
-                MenuItem {
-                    text: qsTr("Forget peer (remove endpoint.json)")
-                    onTriggered: appBridge.forgetPeer(livePeerMenu.targetNodeId)
-                }
             }
 
             Menu {
@@ -275,15 +267,6 @@ Item {
                 MenuItem {
                     text: qsTr("Write restart signal (filesystem)")
                     onTriggered: appBridge.writePeerRestartSignal(deadPeerMenu.targetNodeId)
-                }
-
-                // Deletes the peer's endpoint.json on the shared farm.
-                // PeerManager's next discovery pass drops the cached
-                // record once the file is gone and the peer is offline.
-                // Used to clean up a duplicate/stale node row.
-                MenuItem {
-                    text: qsTr("Forget peer (remove endpoint.json)")
-                    onTriggered: appBridge.forgetPeer(deadPeerMenu.targetNodeId)
                 }
             }
         }
