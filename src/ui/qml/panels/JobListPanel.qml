@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MinRenderUi 1.0
 
 Item {
     id: root
@@ -37,11 +38,11 @@ Item {
 
     function stateColor(state) {
         switch (state) {
-        case "active":    return "#9ece6a"
-        case "paused":    return "#e0af68"
-        case "cancelled": return "#f7768e"
-        case "completed": return "#7aa2f7"
-        default:          return "#888"
+        case "active":    return Theme.success
+        case "paused":    return Theme.warn
+        case "cancelled": return Theme.error
+        case "completed": return Theme.info
+        default:          return Theme.textSecondary
         }
     }
 
@@ -64,7 +65,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 32
-            color: "#1a1a1a"
+            color: Theme.surface
 
             RowLayout {
                 anchors.fill: parent
@@ -74,21 +75,21 @@ Item {
 
                 Label {
                     text: qsTr("Jobs")
-                    color: "#cccccc"
+                    color: Theme.textPrimary
                     font.bold: true
                     font.pixelSize: 12
                 }
 
                 Label {
                     text: qsTr("· %1").arg(jobList.count)
-                    color: "#666"
-                    font.pixelSize: 11
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontSizeBase
                 }
 
                 Label {
                     visible: root.checkedCount() > 0
                     text: qsTr("· %1 selected").arg(root.checkedCount())
-                    color: "#7aa2f7"
+                    color: Theme.accent
                     font.pixelSize: 11
                 }
 
@@ -105,7 +106,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 22
-            color: "#222222"
+            color: Theme.border
 
             Row {
                 anchors.fill: parent
@@ -149,7 +150,7 @@ Item {
 
                 Label {
                     text: qsTr("Name")
-                    color: "#888"
+                    color: Theme.textSecondary
                     font.pixelSize: 11
                     width: parent.width - root.colCheck - root.colState
                            - root.colProgress - root.colCreated - 4 * 8
@@ -158,21 +159,21 @@ Item {
                 }
                 Label {
                     text: qsTr("State")
-                    color: "#888"
+                    color: Theme.textSecondary
                     font.pixelSize: 11
                     width: root.colState
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label {
                     text: qsTr("Progress")
-                    color: "#888"
+                    color: Theme.textSecondary
                     font.pixelSize: 11
                     width: root.colProgress
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Label {
                     text: qsTr("Created")
-                    color: "#888"
+                    color: Theme.textSecondary
                     font.pixelSize: 11
                     width: root.colCreated
                     anchors.verticalCenter: parent.verticalCenter
@@ -204,8 +205,8 @@ Item {
                 width: jobList.width
                 height: 32
                 color: {
-                    if (appBridge.currentJobId === jobId) return "#2a3b5c"
-                    return index % 2 === 0 ? "#181818" : "#1c1c1c"
+                    if (appBridge.currentJobId === jobId) return Theme.selection
+                    return index % 2 === 0 ? Theme.bgAlt : Theme.surface
                 }
 
                 Row {
@@ -223,9 +224,9 @@ Item {
 
                     Label {
                         text: name
-                        color: "#cccccc"
-                        font.pixelSize: 12
-                        font.family: "monospace"
+                        color: Theme.textPrimary
+                        font.pixelSize: Theme.fontSizeBase
+                        font.family: Theme.monoFamily
                         width: parent.width - root.colCheck - root.colState
                                - root.colProgress - root.colCreated - 4 * 8
                         anchors.verticalCenter: parent.verticalCenter
@@ -254,14 +255,14 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("%1/%2").arg(doneChunks).arg(totalChunks)
-                            color: "#888"
+                            color: Theme.textSecondary
                             font.pixelSize: 10
                         }
                     }
 
                     Label {
                         text: root.formatTs(createdAt)
-                        color: "#888"
+                        color: Theme.textSecondary
                         font.pixelSize: 11
                         width: root.colCreated
                         anchors.verticalCenter: parent.verticalCenter

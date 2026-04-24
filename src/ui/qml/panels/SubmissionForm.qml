@@ -1,10 +1,10 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MinRenderUi 1.0
 
-// Standalone submission form. Phase 5 mounts this inside JobDetailPanel's
-// Empty/Submission branch via Loader; for now it lives inside a Dialog
-// opened by the New Job menu / button. The submitted/cancelled signals
+// Standalone submission form, Loader-mounted inside JobDetailPanel's
+// Submission branch (Phase 5). submitted/cancelled/failed signals
 // give the wrapper a clean lifecycle hook.
 Item {
     id: root
@@ -130,7 +130,7 @@ Item {
                         text: (modelData.info && modelData.info.length > 0)
                               ? modelData.info
                               : (modelData.flag.length > 0 ? modelData.flag : qsTr("(positional)"))
-                        color: modelData.required ? "#e0af68" : "#bbb"
+                        color: modelData.required ? Theme.warn : Theme.textSecondary
                         font.pixelSize: 11
                         Layout.preferredWidth: 140
                     }
@@ -155,7 +155,7 @@ Item {
                     visible: modelData.help && modelData.help.length > 0
                     Layout.fillWidth: true
                     text: modelData.help
-                    color: "#666"
+                    color: Theme.textMuted
                     font.pixelSize: 10
                     wrapMode: Text.WordWrap
                     leftPadding: 148
@@ -167,7 +167,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             visible: errorBanner.text.length > 0
-            color: "#3a1f1f"
+            color: Qt.darker(Theme.error, 3.0)
             radius: 3
             implicitHeight: errorBanner.implicitHeight + 12
 
@@ -175,7 +175,7 @@ Item {
                 id: errorBanner
                 anchors.fill: parent
                 anchors.margins: 6
-                color: "#f7768e"
+                color: Theme.error
                 wrapMode: Text.WordWrap
                 font.pixelSize: 11
             }

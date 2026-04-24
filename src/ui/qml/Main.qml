@@ -2,6 +2,7 @@ import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MinRenderUi 1.0
 
 ApplicationWindow {
     id: window

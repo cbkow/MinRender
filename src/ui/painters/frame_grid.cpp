@@ -8,16 +8,6 @@
 
 namespace MR {
 
-// Frame state colour table. Phase 6 will pull these from Theme.qml so a
-// user-tunable palette can apply without a C++ rebuild.
-namespace {
-const QColor kBgColor        (0x10, 0x10, 0x10);
-const QColor kUnclaimedColor (0x30, 0x30, 0x30);
-const QColor kAssignedColor  (0x7a, 0xa2, 0xf7);   // blue
-const QColor kCompletedColor (0x9e, 0xce, 0x6a);   // green
-const QColor kFailedColor    (0xf7, 0x76, 0x8e);   // red
-}  // namespace
-
 FrameGrid::FrameGrid(QQuickItem* parent)
     : QQuickPaintedItem(parent)
 {
@@ -90,10 +80,36 @@ void FrameGrid::setCellSize(int s)
     update();
 }
 
+void FrameGrid::setBgColor(const QColor& c)
+{
+    if (m_bg == c) return;
+    m_bg = c; emit bgColorChanged(); update();
+}
+void FrameGrid::setUnclaimedColor(const QColor& c)
+{
+    if (m_unclaimed == c) return;
+    m_unclaimed = c; emit unclaimedColorChanged(); update();
+}
+void FrameGrid::setAssignedColor(const QColor& c)
+{
+    if (m_assigned == c) return;
+    m_assigned = c; emit assignedColorChanged(); update();
+}
+void FrameGrid::setCompletedColor(const QColor& c)
+{
+    if (m_completed == c) return;
+    m_completed = c; emit completedColorChanged(); update();
+}
+void FrameGrid::setFailedColor(const QColor& c)
+{
+    if (m_failed == c) return;
+    m_failed = c; emit failedColorChanged(); update();
+}
+
 void FrameGrid::paint(QPainter* painter)
 {
     const QRectF area = boundingRect();
-    painter->fillRect(area, kBgColor);
+    painter->fillRect(area, m_bg);
 
     if (!m_model || m_frameEnd < m_frameStart || m_cellSize <= 0)
         return;
@@ -120,7 +136,7 @@ void FrameGrid::paint(QPainter* painter)
     // It also ensures gaps (frames not covered by any chunk) are
     // visibly distinct from the background.
     for (int i = 0; i < totalFrames; ++i)
-        painter->fillRect(cellRect(i), kUnclaimedColor);
+        painter->fillRect(cellRect(i), m_unclaimed);
 
     // Pass 2: for each chunk, paint its frame range in the chunk's
     // colour, then overpaint completed_frames in green so partial
@@ -134,17 +150,17 @@ void FrameGrid::paint(QPainter* painter)
         const QString state =
             m_model->data(idx, ChunksModel::StateRole).toString();
 
-        QColor chunkColor = kUnclaimedColor;
+        QColor chunkColor = m_unclaimed;
         if (state == QStringLiteral("completed"))
-            chunkColor = kCompletedColor;
+            chunkColor = m_completed;
         else if (state == QStringLiteral("failed"))
-            chunkColor = kFailedColor;
+            chunkColor = m_failed;
         else if (state == QStringLiteral("assigned")
               || state == QStringLiteral("rendering"))
-            chunkColor = kAssignedColor;
+            chunkColor = m_assigned;
         // "pending" stays unclaimed (already painted in pass 1).
 
-        if (chunkColor != kUnclaimedColor)
+        if (chunkColor != m_unclaimed)
         {
             const int firstIdx = std::max(0, fs - m_frameStart);
             const int lastIdx  = std::min(totalFrames - 1, fe - m_frameStart);
@@ -162,7 +178,7 @@ void FrameGrid::paint(QPainter* painter)
             const int i = f - m_frameStart;
             if (i < 0 || i >= totalFrames)
                 continue;
-            painter->fillRect(cellRect(i), kCompletedColor);
+            painter->fillRect(cellRect(i), m_completed);
         }
     }
 }

@@ -132,6 +132,12 @@ target_compile_definitions(minrender PRIVATE
     CPPHTTPLIB_THREAD_POOL_COUNT=4
 )
 
+# Mark Theme.qml as a QML singleton explicitly — Qt 6.11's auto-detection
+# of `pragma Singleton` doesn't always produce the right qmldir entry,
+# which leaves Theme resolving to undefined inside delegates.
+set_source_files_properties(src/ui/qml/Theme.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE)
+
 # QML module — compiled ahead-of-time into the binary via qmlsc.
 qt_add_qml_module(minrender
     URI MinRenderUi

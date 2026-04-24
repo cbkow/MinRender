@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import MinRenderUi 1.0
 
 Item {
     id: root
@@ -51,7 +52,7 @@ Item {
                 visible: appBridge.syncRoot.length > 0
                 text: ok ? qsTr("✓ path OK")
                          : qsTr("⚠ path not reachable")
-                color: ok ? "#9ece6a" : "#e0af68"
+                color: ok ? Theme.success : Theme.warn
                 font.pixelSize: 11
             }
         }

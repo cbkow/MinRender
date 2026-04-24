@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MinRenderUi 1.0
 
 Item {
     id: root
@@ -14,10 +15,10 @@ Item {
 
     function levelColor(level) {
         switch (level) {
-        case "INFO":  return "#7aa2f7"
-        case "WARN":  return "#e0af68"
-        case "ERROR": return "#f7768e"
-        default:      return "#bbbbbb"
+        case "INFO":  return Theme.info
+        case "WARN":  return Theme.warn
+        case "ERROR": return Theme.error
+        default:      return Theme.textSecondary
         }
     }
 
@@ -42,7 +43,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 32
-            color: "#1a1a1a"
+            color: Theme.surface
 
             RowLayout {
                 anchors.fill: parent
@@ -83,8 +84,8 @@ Item {
                     // logList.count is signal-driven; appBridge.logModel
                     // doesn't expose a QML property that changes on insert.
                     text: qsTr("%1 entries").arg(logList.count)
-                    color: "#666"
-                    font.pixelSize: 11
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontSizeSmall
                 }
 
                 ToolSeparator { Layout.fillHeight: true }
@@ -136,7 +137,7 @@ Item {
                 visible: root.levelVisible(level)
                 height: visible ? Math.max(20, msgText.implicitHeight + 4) : 0
 
-                color: index % 2 === 0 ? "#161616" : "#191919"
+                color: index % 2 === 0 ? Theme.bg : Theme.bgAlt
 
                 Row {
                     anchors.left: parent.left
@@ -148,33 +149,33 @@ Item {
 
                     Text {
                         text: root.formatTs(timestamp)
-                        color: "#666"
-                        font.family: "monospace"
-                        font.pixelSize: 11
+                        color: Theme.textMuted
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.fontSizeSmall
                         width: 84
                     }
                     Text {
                         text: level
                         color: root.levelColor(level)
-                        font.family: "monospace"
-                        font.pixelSize: 11
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.fontSizeSmall
                         font.bold: true
                         width: 48
                     }
                     Text {
                         text: category
-                        color: "#888"
-                        font.family: "monospace"
-                        font.pixelSize: 11
+                        color: Theme.textSecondary
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.fontSizeSmall
                         width: 120
                         elide: Text.ElideRight
                     }
                     Text {
                         id: msgText
                         text: message
-                        color: "#cccccc"
-                        font.family: "monospace"
-                        font.pixelSize: 11
+                        color: Theme.textPrimary
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.fontSizeSmall
                         // Fill the remainder after the three fixed columns
                         // (84 + 48 + 120 + 3*8 spacing = 276).
                         width: parent.width - 276

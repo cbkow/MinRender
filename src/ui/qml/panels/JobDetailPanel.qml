@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import MinRenderUi 1.0   // for FrameGrid (C++ QQuickPaintedItem)
+import MinRenderUi 1.0   // FrameGrid (C++ QQuickPaintedItem) + Theme singleton
 
 // Three-state panel: Empty (nothing selected), Submission (user is
 // creating a new job), Detail (a real job is selected). submissionMode
@@ -37,21 +37,21 @@ Item {
     Component {
         id: emptyComponent
         Rectangle {
-            color: "#1a1a1a"
+            color: Theme.surface
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 10
                 Label {
                     Layout.alignment: Qt.AlignHCenter
                     text: qsTr("No job selected")
-                    color: "#888"
-                    font.pixelSize: 14
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeLarge
                 }
                 Label {
                     Layout.alignment: Qt.AlignHCenter
                     text: qsTr("Pick one in the Jobs list, or click New Job.")
-                    color: "#666"
-                    font.pixelSize: 11
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontSizeBase
                 }
                 Button {
                     Layout.alignment: Qt.AlignHCenter
@@ -65,7 +65,7 @@ Item {
     Component {
         id: submissionComponent
         Rectangle {
-            color: "#141414"
+            color: Theme.bg
             SubmissionForm {
                 anchors.fill: parent
                 onSubmitted: (jobId) => {
@@ -83,7 +83,7 @@ Item {
         id: detailComponent
         Rectangle {
             id: detailRoot
-            color: "#141414"
+            color: Theme.bg
 
             readonly property var job: appBridge.currentJob
 
@@ -116,11 +116,11 @@ Item {
 
             function stateColor(s) {
                 switch (s) {
-                case "active":    return "#9ece6a"
-                case "paused":    return "#e0af68"
-                case "cancelled": return "#f7768e"
-                case "completed": return "#7aa2f7"
-                default:          return "#888"
+                case "active":    return Theme.success
+                case "paused":    return Theme.warn
+                case "cancelled": return Theme.error
+                case "completed": return Theme.info
+                default:          return Theme.textSecondary
                 }
             }
 
@@ -132,7 +132,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: headerColumn.implicitHeight + 16
-                    color: "#1a1a1a"
+                    color: Theme.surface
 
                     ColumnLayout {
                         id: headerColumn
@@ -150,24 +150,24 @@ Item {
 
                             Label {
                                 text: job.name || appBridge.currentJobId
-                                color: "#e0e0e0"
-                                font.pixelSize: 14
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeLarge
                                 font.bold: true
-                                font.family: "monospace"
+                                font.family: Theme.monoFamily
                                 elide: Text.ElideMiddle
                                 Layout.fillWidth: true
                             }
                             Rectangle {
                                 color: stateColor(job.state || "")
-                                radius: 3
+                                radius: Theme.radiusBase
                                 implicitWidth: stateLabel.implicitWidth + 10
                                 implicitHeight: 18
                                 Label {
                                     id: stateLabel
                                     anchors.centerIn: parent
                                     text: (job.state || "—").toUpperCase()
-                                    color: "#0f0f0f"
-                                    font.pixelSize: 10
+                                    color: Theme.bg
+                                    font.pixelSize: Theme.fontSizeSmall
                                     font.bold: true
                                 }
                             }
@@ -187,9 +187,9 @@ Item {
                                 text: qsTr("%1 / %2")
                                     .arg(job.doneChunks || 0)
                                     .arg(job.totalChunks || 0)
-                                color: "#aaa"
-                                font.pixelSize: 11
-                                font.family: "monospace"
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontSizeBase
+                                font.family: Theme.monoFamily
                             }
                         }
 
@@ -201,26 +201,26 @@ Item {
                             Label {
                                 visible: (job.renderingChunks || 0) > 0
                                 text: qsTr("● %1 rendering").arg(job.renderingChunks || 0)
-                                color: "#7aa2f7"
-                                font.pixelSize: 10
+                                color: Theme.info
+                                font.pixelSize: Theme.fontSizeSmall
                             }
                             Label {
                                 visible: (job.failedChunks || 0) > 0
                                 text: qsTr("● %1 failed").arg(job.failedChunks || 0)
-                                color: "#f7768e"
-                                font.pixelSize: 10
+                                color: Theme.error
+                                font.pixelSize: Theme.fontSizeSmall
                             }
                             Label {
                                 text: qsTr("priority %1").arg(job.priority || 0)
-                                color: "#888"
-                                font.pixelSize: 10
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontSizeSmall
                             }
                             Item { Layout.fillWidth: true }
                             Label {
                                 visible: (job.createdAt || 0) > 0
                                 text: Qt.formatDateTime(new Date(job.createdAt), "yyyy-MM-dd HH:mm")
-                                color: "#666"
-                                font.pixelSize: 10
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontSizeSmall
                             }
                         }
 
@@ -270,7 +270,7 @@ Item {
 
                     // Frame grid — one cell per frame, coloured by state.
                     Rectangle {
-                        color: "#0d0d0d"
+                        color: Theme.frameBg
                         SplitView.preferredHeight: 200
                         SplitView.minimumHeight: 60
 
@@ -281,6 +281,11 @@ Item {
                             frameStart: job.frameStart || 0
                             frameEnd:   job.frameEnd   || 0
                             cellSize:   10
+                            bgColor:        Theme.frameBg
+                            unclaimedColor: Theme.frameUnclaimed
+                            assignedColor:  Theme.frameAssigned
+                            completedColor: Theme.frameCompleted
+                            failedColor:    Theme.frameFailed
                         }
                     }
 
@@ -294,7 +299,7 @@ Item {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 22
-                            color: "#222222"
+                            color: Theme.border
                             Row {
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
@@ -303,27 +308,27 @@ Item {
 
                                 Label {
                                     text: qsTr("State")
-                                    color: "#888"; font.pixelSize: 11
+                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
                                     width: 80; anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Label {
                                     text: qsTr("Frames")
-                                    color: "#888"; font.pixelSize: 11
+                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
                                     width: 120; anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Label {
                                     text: qsTr("Node")
-                                    color: "#888"; font.pixelSize: 11
+                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
                                     width: 160; anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Label {
                                     text: qsTr("Progress")
-                                    color: "#888"; font.pixelSize: 11
+                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
                                     width: 120; anchors.verticalCenter: parent.verticalCenter
                                 }
                                 Label {
                                     text: qsTr("Retries")
-                                    color: "#888"; font.pixelSize: 11
+                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
                                     width: 60; anchors.verticalCenter: parent.verticalCenter
                                 }
                             }
@@ -352,7 +357,7 @@ Item {
 
                                 width: chunksList.width
                                 height: 24
-                                color: index % 2 === 0 ? "#141414" : "#181818"
+                                color: index % 2 === 0 ? Theme.bg : Theme.bgAlt
 
                                 MouseArea {
                                     anchors.fill: parent
@@ -374,7 +379,7 @@ Item {
                                     Label {
                                         text: state
                                         color: stateColor(state)
-                                        font.pixelSize: 10
+                                        font.pixelSize: Theme.fontSizeSmall
                                         font.bold: true
                                         width: 80
                                         anchors.verticalCenter: parent.verticalCenter
@@ -383,17 +388,17 @@ Item {
                                         text: frameStart === frameEnd
                                               ? "" + frameStart
                                               : frameStart + "-" + frameEnd
-                                        color: "#ccc"
-                                        font.family: "monospace"
-                                        font.pixelSize: 11
+                                        color: Theme.textPrimary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.fontSizeBase
                                         width: 120
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Label {
                                         text: assignedNode.length > 0 ? assignedNode : "—"
-                                        color: "#aaa"
-                                        font.family: "monospace"
-                                        font.pixelSize: 11
+                                        color: Theme.textPrimary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.fontSizeBase
                                         width: 160
                                         elide: Text.ElideMiddle
                                         anchors.verticalCenter: parent.verticalCenter
@@ -410,8 +415,8 @@ Item {
                                     }
                                     Label {
                                         text: retryCount
-                                        color: retryCount > 0 ? "#e0af68" : "#666"
-                                        font.pixelSize: 11
+                                        color: retryCount > 0 ? Theme.warn : Theme.textMuted
+                                        font.pixelSize: Theme.fontSizeBase
                                         width: 60
                                         anchors.verticalCenter: parent.verticalCenter
                                     }

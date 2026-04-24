@@ -1,16 +1,17 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import MinRenderUi 1.0
 
 Item {
     id: root
 
     function agentHealthColor(h) {
         switch (h) {
-        case "ok":               return "#9ece6a"
-        case "reconnecting":     return "#e0af68"
-        case "needs_attention":  return "#f7768e"
-        default:                 return "#888"
+        case "ok":               return Theme.success
+        case "reconnecting":     return Theme.warn
+        case "needs_attention":  return Theme.error
+        default:                 return Theme.textSecondary
         }
     }
 
@@ -28,7 +29,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: thisNodeColumn.implicitHeight + 16
-            color: "#1a1a1a"
+            color: Theme.surface
 
             ColumnLayout {
                 id: thisNodeColumn
@@ -45,22 +46,22 @@ Item {
                     Label {
                         text: qsTr("This Node")
                         font.bold: true
-                        color: "#cccccc"
+                        color: Theme.textPrimary
                     }
                     Item { Layout.fillWidth: true }
                     Rectangle {
                         visible: appBridge.thisNodeIsLeader
-                        color: "#3c5b8a"
-                        radius: 3
+                        color: Theme.accent
+                        radius: Theme.radiusBase
                         implicitWidth: leaderLabel.implicitWidth + 10
                         implicitHeight: 16
                         Label {
                             id: leaderLabel
                             anchors.centerIn: parent
                             text: qsTr("LEADER")
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.fontSizeSmall
                             font.bold: true
-                            color: "#e6e6e6"
+                            color: Theme.bg
                         }
                     }
                 }
@@ -71,46 +72,46 @@ Item {
                     columnSpacing: 8
                     rowSpacing: 2
 
-                    Label { text: qsTr("Host");     color: "#777"; font.pixelSize: 11 }
+                    Label { text: qsTr("Host");     color: Theme.textMuted; font.pixelSize: Theme.fontSizeBase }
                     Label {
                         text: appBridge.thisNodeHostname
-                        color: "#cccccc"; font.pixelSize: 11
+                        color: Theme.textPrimary; font.pixelSize: Theme.fontSizeBase
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
 
-                    Label { text: qsTr("Node ID");  color: "#777"; font.pixelSize: 11 }
+                    Label { text: qsTr("Node ID");  color: Theme.textMuted; font.pixelSize: Theme.fontSizeBase }
                     Label {
                         text: appBridge.thisNodeId
                         color: "#bbbbbb"; font.pixelSize: 11
-                        font.family: "monospace"
+                        font.family: Theme.monoFamily
                         elide: Text.ElideMiddle
                         Layout.fillWidth: true
                     }
 
-                    Label { text: qsTr("GPU");      color: "#777"; font.pixelSize: 11 }
+                    Label { text: qsTr("GPU");      color: Theme.textMuted; font.pixelSize: Theme.fontSizeBase }
                     Label {
                         text: appBridge.thisNodeGpu.length > 0
                               ? appBridge.thisNodeGpu : qsTr("—")
-                        color: "#cccccc"; font.pixelSize: 11
+                        color: Theme.textPrimary; font.pixelSize: Theme.fontSizeBase
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
 
-                    Label { text: qsTr("CPU / RAM");color: "#777"; font.pixelSize: 11 }
+                    Label { text: qsTr("CPU / RAM");color: Theme.textMuted; font.pixelSize: Theme.fontSizeBase }
                     Label {
                         text: qsTr("%1 cores · %2")
                               .arg(appBridge.thisNodeCpuCores)
                               .arg(root.ramString(appBridge.thisNodeRamMb))
-                        color: "#cccccc"; font.pixelSize: 11
+                        color: Theme.textPrimary; font.pixelSize: Theme.fontSizeBase
                         Layout.fillWidth: true
                     }
 
-                    Label { text: qsTr("Tags");     color: "#777"; font.pixelSize: 11 }
+                    Label { text: qsTr("Tags");     color: Theme.textMuted; font.pixelSize: Theme.fontSizeBase }
                     Label {
                         text: appBridge.tagsCsv.length > 0
                               ? appBridge.tagsCsv : qsTr("—")
-                        color: "#cccccc"; font.pixelSize: 11
+                        color: Theme.textPrimary; font.pixelSize: Theme.fontSizeBase
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
@@ -134,29 +135,29 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: "#2a2a2a"
+            color: Theme.border
         }
 
         // --- Peers header ---
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 24
-            color: "#161616"
+            color: Theme.bg
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 8
                 anchors.rightMargin: 8
                 Label {
                     text: qsTr("Peers")
-                    color: "#999"
-                    font.pixelSize: 11
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.fontSizeBase
                     font.bold: true
                 }
                 Item { Layout.fillWidth: true }
                 Label {
                     text: qsTr("%1 online").arg(peerList.count)
-                    color: "#666"
-                    font.pixelSize: 11
+                    color: Theme.textMuted
+                    font.pixelSize: Theme.fontSizeBase
                 }
             }
         }
@@ -186,7 +187,7 @@ Item {
 
                 width: peerList.width
                 height: 52
-                color: index % 2 === 0 ? "#181818" : "#1c1c1c"
+                color: index % 2 === 0 ? Theme.bgAlt : Theme.surface
 
                 RowLayout {
                     anchors.fill: parent
@@ -199,7 +200,7 @@ Item {
                         Layout.alignment: Qt.AlignVCenter
                         width: 10; height: 10; radius: 5
                         color: !isAlive
-                               ? "#555"
+                               ? Theme.textMuted
                                : root.agentHealthColor(agentHealth)
                     }
 
@@ -214,15 +215,15 @@ Item {
                             Label {
                                 text: hostname.length > 0
                                       ? hostname : nodeId
-                                color: isAlive ? "#cccccc" : "#777"
-                                font.pixelSize: 12
+                                color: isAlive ? Theme.textPrimary : Theme.textMuted
+                                font.pixelSize: Theme.fontSizeBase
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
                             Label {
                                 visible: isLeader
                                 text: qsTr("LEADER")
-                                color: "#7aa2f7"
+                                color: Theme.accent
                                 font.pixelSize: 9
                                 font.bold: true
                             }
@@ -234,8 +235,8 @@ Item {
                                   : (renderState === "rendering"
                                      ? qsTr("rendering · %1").arg(activeJob)
                                      : (isActive ? qsTr("idle") : qsTr("stopped")))
-                            color: "#888"
-                            font.pixelSize: 10
+                            color: Theme.textSecondary
+                            font.pixelSize: Theme.fontSizeSmall
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
