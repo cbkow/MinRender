@@ -1,8 +1,11 @@
 #include "ui/app_bridge.h"
 
 #include "core/config.h"
+#include "core/platform.h"
+#include "monitor/dispatch_manager.h"
 #include "monitor/monitor_app.h"
 #include "monitor/peer_manager.h"
+#include "monitor/template_manager.h"
 #include "ui/models/chunks_model.h"
 #include "ui/models/jobs_model.h"
 #include "ui/models/log_model.h"
@@ -11,8 +14,11 @@
 #include "ui/platform/accent_color.h"
 
 #include <QStringList>
+#include <QVariantList>
+#include <QVariantMap>
 
 #include <algorithm>
+#include <nlohmann/json.hpp>
 
 namespace MR {
 
@@ -412,6 +418,137 @@ void AppBridge::requestSubmissionMode()
 {
     if (!m_monitor) return;
     m_monitor->requestSubmissionMode();
+}
+
+QVariantMap AppBridge::templateById(const QString& templateId) const
+{
+    if (!m_monitor) return {};
+    const std::string id = templateId.toStdString();
+    const auto& tmpls = m_monitor->cachedTemplates();
+    auto it = std::find_if(tmpls.begin(), tmpls.end(),
+        [&](const JobTemplate& t) { return t.template_id == id; });
+    if (it == tmpls.end()) return {};
+
+    const JobTemplate& t = *it;
+
+    QVariantList flags;
+    flags.reserve(static_cast<int>(t.flags.size()));
+    for (const auto& f : t.flags)
+    {
+        QVariantMap fm;
+        fm["flag"]     = QString::fromStdString(f.flag);
+        fm["value"]    = f.value.has_value()
+                         ? QString::fromStdString(*f.value) : QString();
+        fm["info"]     = QString::fromStdString(f.info);
+        fm["help"]     = QString::fromStdString(f.help);
+        fm["editable"] = f.editable;
+        fm["required"] = f.required;
+        fm["type"]     = QString::fromStdString(f.type);
+        fm["filter"]   = QString::fromStdString(f.filter);
+        fm["id"]       = QString::fromStdString(f.id);
+        flags.push_back(fm);
+    }
+
+    QVariantMap m;
+    m["templateId"]   = QString::fromStdString(t.template_id);
+    m["name"]         = QString::fromStdString(t.name);
+    m["frameStart"]   = t.job_defaults.frame_start;
+    m["frameEnd"]     = t.job_defaults.frame_end;
+    m["chunkSize"]    = t.job_defaults.chunk_size;
+    m["priority"]     = t.job_defaults.priority;
+    m["maxRetries"]   = t.job_defaults.max_retries;
+    m["flags"]        = flags;
+    return m;
+}
+
+void AppBridge::submitJob(const QString& templateId,
+                          const QString& jobName,
+                          const QStringList& flagValues,
+                          int frameStart, int frameEnd,
+                          int chunkSize, int priority)
+{
+    if (!m_monitor)
+    {
+        emit submissionFailed(tr("Backend not ready"));
+        return;
+    }
+
+    const std::string tid = templateId.toStdString();
+    const auto& tmpls = m_monitor->cachedTemplates();
+    auto it = std::find_if(tmpls.begin(), tmpls.end(),
+        [&](const JobTemplate& t) { return t.template_id == tid; });
+    if (it == tmpls.end())
+    {
+        emit submissionFailed(tr("Unknown template: %1").arg(templateId));
+        return;
+    }
+    const JobTemplate& tmpl = *it;
+
+    std::vector<std::string> fvs;
+    fvs.reserve(static_cast<size_t>(flagValues.size()));
+    for (const auto& v : flagValues)
+        fvs.push_back(v.toStdString());
+
+    const std::string os  = MR::getOS();
+    const std::string cmd = MR::getCmdForOS(tmpl.cmd, os);
+
+    // Validate using existing TemplateManager helper — same checks the
+    // ImGui submission panel ran.
+    auto errs = TemplateManager::validateSubmission(
+        tmpl, fvs, cmd, jobName.toStdString(),
+        frameStart, frameEnd, chunkSize,
+        m_monitor->farmPath() / "jobs");
+    if (!errs.empty())
+    {
+        emit submissionFailed(QString::fromStdString(errs.front()));
+        return;
+    }
+
+    const std::string slug = TemplateManager::generateSlug(
+        jobName.toStdString(), m_monitor->farmPath() / "jobs");
+    if (slug.empty())
+    {
+        emit submissionFailed(tr("Failed to generate job slug"));
+        return;
+    }
+
+    JobManifest manifest = TemplateManager::bakeManifestStatic(
+        tmpl, fvs, cmd, slug,
+        frameStart, frameEnd, chunkSize,
+        tmpl.job_defaults.max_retries,
+        tmpl.job_defaults.timeout_seconds,
+        m_monitor->identity().nodeId(), os);
+
+    if (m_monitor->isLeader())
+    {
+        SubmitRequest sr;
+        sr.manifest = std::move(manifest);
+        sr.priority = priority;
+        m_monitor->dispatchManager().queueSubmission(std::move(sr));
+        emit submissionSucceeded(QString::fromStdString(slug));
+        return;
+    }
+
+    // Worker — POST to leader. Marshal the result back to the UI thread
+    // since postToLeaderAsync's callback runs on the http worker.
+    nlohmann::json body;
+    body["manifest"] = manifest;
+    body["priority"] = priority;
+
+    const QString slugQ = QString::fromStdString(slug);
+    m_monitor->postToLeaderAsync(
+        "/api/jobs", body.dump(),
+        [this, slugQ](bool ok, const std::string& response) {
+            const QString resp = QString::fromStdString(response);
+            QMetaObject::invokeMethod(
+                this,
+                [this, ok, slugQ, resp]() {
+                    if (ok) emit submissionSucceeded(slugQ);
+                    else    emit submissionFailed(
+                                resp.isEmpty() ? tr("Leader did not respond") : resp);
+                },
+                Qt::QueuedConnection);
+        });
 }
 
 void AppBridge::requestRestart()

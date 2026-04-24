@@ -5,6 +5,11 @@ import QtQuick.Layouts
 Item {
     id: root
 
+    // Fired by the New Job button. Main.qml hooks this to open the
+    // submission Dialog. (We don't reach into Main.qml's id directly to
+    // keep the panel reusable.)
+    signal newJobRequested
+
     // Multi-select state. Key = jobId, value = true. A plain JS object
     // so we can reassign root.checked = {...} to force QML reactivity.
     property var checked: ({})
@@ -91,7 +96,7 @@ Item {
 
                 Button {
                     text: qsTr("New Job…")
-                    onClicked: appBridge.requestSubmissionMode()
+                    onClicked: root.newJobRequested()
                 }
             }
         }

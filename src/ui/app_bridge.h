@@ -97,6 +97,23 @@ public:
 
     Q_INVOKABLE void requestSubmissionMode();
 
+    // Returns a QVariantMap describing a template by id: {name, templateId,
+    // dcc, path, frameStart, frameEnd, chunkSize, maxRetries, flags:[…]}
+    // where each flag is a map of {flag, value, info, help, editable,
+    // required, type, filter, id}. Empty map if not found. Used by the
+    // submission form to render per-template dynamic inputs.
+    Q_INVOKABLE QVariantMap templateById(const QString& templateId) const;
+
+    // Bake a manifest + submit. On leader the submission is queued
+    // directly on the DispatchManager; on workers it goes out via
+    // postToLeaderAsync. Either way, one of submissionSucceeded /
+    // submissionFailed eventually fires on the UI thread.
+    Q_INVOKABLE void submitJob(const QString& templateId,
+                               const QString& jobName,
+                               const QStringList& flagValues,
+                               int frameStart, int frameEnd,
+                               int chunkSize, int priority);
+
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
 
@@ -146,6 +163,9 @@ signals:
     void currentJobIdChanged();
     void thisNodeIsLeaderChanged();
     void thisNodeActiveChanged();
+
+    void submissionSucceeded(const QString& jobId);
+    void submissionFailed(const QString& reason);
 
 private:
     // Snapshot of MonitorApp::config() taken at construction and after each
