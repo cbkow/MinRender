@@ -2,7 +2,7 @@
 ; https://jrsoftware.org/isinfo.php
 
 #define MyAppName "MinRender"
-#define MyAppVersion "0.3.10"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "cbkow"
 #define MyAppURL "https://github.com/cbkow/minrender"
 #define MyAppExeName "minrender.exe"
@@ -77,24 +77,27 @@ Name: "cleanall"; Description: "Remove ALL user data (%LOCALAPPDATA%\MinRender\)
 Name: "launchafter"; Description: "Launch {#MyAppName} after installation"; GroupDescription: "Post-installation:"; Flags: checkedonce
 
 [Files]
-; Main executables
-Source: "..\build\Release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion; Components: core
-Source: "..\build\Release\{#MyAgentExeName}"; DestDir: "{app}"; Flags: ignoreversion; Components: core
+; All runtime files come from build\deploy, which scripts\package.bat
+; builds by copying executables + running windeployqt (which pulls Qt
+; DLLs, platform plugin, and QML modules alongside the binary) +
+; copying resources\. Single recursive glob for everything under
+; deploy\, plus per-component globs for the opt-in DCC plugins so the
+; Components filtering still works.
 
-; Resources — fonts
-Source: "..\build\Release\resources\fonts\*"; DestDir: "{app}\resources\fonts"; Flags: ignoreversion; Components: core
+; Core — everything under deploy\ except the DCC plugin subfolders
+; (those are handled by the plugins\* components below). The
+; ExcludePatterns strip the plugin trees; the core block installs
+; minrender.exe, minrender-headless.exe, mr-restart.exe, mr-agent.exe,
+; Qt DLLs, platforms\, styles\, qml\, resources\ (fonts, icons,
+; templates, etc.).
+Source: "..\build\deploy\*"; DestDir: "{app}"; \
+    Excludes: "resources\plugins\blender\*,resources\plugins\cinema4d\*,resources\plugins\afterEffects\*"; \
+    Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
 
-; Resources — icons (exclude source artwork)
-Source: "..\build\Release\resources\icons\minrender.ico"; DestDir: "{app}\resources\icons"; Flags: ignoreversion; Components: core
-
-; Resources — templates (top-level + plugins subfolder)
-Source: "..\build\Release\resources\templates\*.json"; DestDir: "{app}\resources\templates"; Flags: ignoreversion; Components: core
-Source: "..\build\Release\resources\templates\plugins\*"; DestDir: "{app}\resources\templates\plugins"; Flags: ignoreversion; Components: core
-
-; DCC plugins
-Source: "..\build\Release\resources\plugins\blender\*"; DestDir: "{app}\resources\plugins\blender"; Flags: ignoreversion; Components: plugins\blender
-Source: "..\build\Release\resources\plugins\cinema4d\*"; DestDir: "{app}\resources\plugins\cinema4d"; Flags: ignoreversion; Components: plugins\cinema4d
-Source: "..\build\Release\resources\plugins\afterEffects\*"; DestDir: "{app}\resources\plugins\afterEffects"; Flags: ignoreversion; Components: plugins\aftereffects
+; DCC plugins — per-component so the user can opt out
+Source: "..\build\deploy\resources\plugins\blender\*";      DestDir: "{app}\resources\plugins\blender";      Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins\blender
+Source: "..\build\deploy\resources\plugins\cinema4d\*";     DestDir: "{app}\resources\plugins\cinema4d";     Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins\cinema4d
+Source: "..\build\deploy\resources\plugins\afterEffects\*"; DestDir: "{app}\resources\plugins\afterEffects"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins\aftereffects
 
 ; Documentation
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion; Components: core
