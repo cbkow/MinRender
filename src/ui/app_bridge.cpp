@@ -14,6 +14,9 @@
 #include "ui/models/templates_model.h"
 #include "ui/platform/accent_color.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
 #include <QStringList>
 #include <QUrl>
 #include <QVariantList>
@@ -773,6 +776,31 @@ void AppBridge::forgetPeer(const QString& nodeId)
 {
     if (!m_monitor || nodeId.isEmpty()) return;
     m_monitor->forgetPeer(nodeId.toStdString());
+}
+
+QVariantMap AppBridge::scanFarmCleanup()
+{
+    if (!m_monitor) return {};
+    const auto j = m_monitor->scanFarmCleanup();
+    // nlohmann::json → QJsonDocument → QVariantMap gives us the same
+    // nested QVariantList-of-QVariantMap shape QML expects from the
+    // other Q_INVOKABLE methods on this class.
+    const QByteArray bytes = QByteArray::fromStdString(j.dump());
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
+    if (err.error != QJsonParseError::NoError || !doc.isObject())
+        return {};
+    return doc.object().toVariantMap();
+}
+
+int AppBridge::executeFarmCleanup(const QString& action,
+                                  const QStringList& ids)
+{
+    if (!m_monitor || action.isEmpty()) return 0;
+    std::vector<std::string> stdIds;
+    stdIds.reserve(ids.size());
+    for (const QString& s : ids) stdIds.push_back(s.toStdString());
+    return m_monitor->executeFarmCleanup(action.toStdString(), stdIds);
 }
 
 void AppBridge::pauseJob(const QString& jobId)

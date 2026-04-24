@@ -164,6 +164,15 @@ public:
     Q_INVOKABLE void writePeerRestartSignal(const QString& nodeId);
     Q_INVOKABLE void forgetPeer(const QString& nodeId);
 
+    // Farm cleanup. scanFarmCleanup returns a QVariantMap mirroring
+    // MonitorApp::scanFarmCleanup's JSON shape — six item lists that
+    // the dialog renders with checkboxes. executeFarmCleanup applies
+    // one of {archive, delete_jobs, delete_dirs, remove_peers} to the
+    // selected ids and returns the count processed.
+    Q_INVOKABLE QVariantMap scanFarmCleanup();
+    Q_INVOKABLE int         executeFarmCleanup(const QString& action,
+                                               const QStringList& ids);
+
     // Job controls — forwarded to MonitorApp. Each takes the slug /
     // job_id exposed by JobsModel. No-op when jobId is empty.
     Q_INVOKABLE void pauseJob(const QString& jobId);

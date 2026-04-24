@@ -98,6 +98,18 @@ public:
     // state, so callers shouldn't treat it as failure).
     bool forgetPeer(const std::string& nodeId);
 
+    // Farm cleanup — shared implementation used by both /api/farm/*
+    // endpoints and the Qt FarmCleanupDialog. scanFarmCleanup walks
+    // the shared filesystem + DB + peer list and returns six groups:
+    //   finished_jobs, archived_jobs, orphaned_dirs, stale_peers,
+    //   stale_staging_dirs, failed_staging_copies
+    // Each group item is {id, label, detail}. executeFarmCleanup
+    // applies one of the actions (archive / delete_jobs / delete_dirs /
+    // remove_peers) to the given ids and returns the count processed.
+    nlohmann::json scanFarmCleanup() const;
+    int executeFarmCleanup(const std::string& action,
+                           const std::vector<std::string>& ids);
+
     // Node state controls
     void setNodeState(NodeState state);
     NodeState nodeState() const { return m_nodeState; }

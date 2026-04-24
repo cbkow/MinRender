@@ -575,209 +575,26 @@ void HttpServer::setupRoutes()
         res.set_content(j.dump(), "application/json");
     });
 
-    // POST /api/farm/scan-cleanup -- scan for cleanup items
+    // POST /api/farm/scan-cleanup -- scan for cleanup items. Implementation
+    // is MonitorApp::scanFarmCleanup so the Qt FarmCleanupDialog can call
+    // the same code directly without a localhost round-trip.
     m_server.Post("/api/farm/scan-cleanup", [this](const httplib::Request&, httplib::Response& res)
     {
         if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
-
-        namespace fs = std::filesystem;
-        std::error_code ec;
-        nlohmann::json result;
-
-        // Sections 1 & 2: Finished/Archived jobs (leader only)
-        nlohmann::json finishedJobs = nlohmann::json::array();
-        nlohmann::json archivedJobs = nlohmann::json::array();
-        std::set<std::string> dbJobIds;
-
-        if (m_app->isLeader() && m_app->databaseManager().isOpen())
-        {
-            auto allJobs = m_app->databaseManager().getAllJobs();
-            for (const auto& s : allJobs)
-            {
-                dbJobIds.insert(s.job.job_id);
-                if (s.job.current_state == "completed" || s.job.current_state == "cancelled")
-                {
-                    finishedJobs.push_back({
-                        {"id", s.job.job_id},
-                        {"label", s.job.job_id},
-                        {"detail", s.job.current_state + " | " + std::to_string(s.progress.total) + " chunks"}
-                    });
-                }
-                else if (s.job.current_state == "archived")
-                {
-                    archivedJobs.push_back({
-                        {"id", s.job.job_id},
-                        {"label", s.job.job_id},
-                        {"detail", "archived"}
-                    });
-                }
-            }
-        }
-        result["finished_jobs"] = finishedJobs;
-        result["archived_jobs"] = archivedJobs;
-
-        // Section 3: Orphaned directories
-        nlohmann::json orphanedDirs = nlohmann::json::array();
-        {
-            auto jobsDir = m_app->farmPath() / "jobs";
-            if (fs::is_directory(jobsDir, ec))
-            {
-                // If not leader, use cached job IDs
-                if (dbJobIds.empty())
-                {
-                    for (const auto& j : m_app->cachedJobs())
-                        dbJobIds.insert(j.manifest.job_id);
-                }
-
-                for (const auto& entry : fs::directory_iterator(jobsDir, ec))
-                {
-                    if (!entry.is_directory()) continue;
-                    std::string dirName = entry.path().filename().string();
-                    if (dbJobIds.find(dirName) == dbJobIds.end())
-                    {
-                        orphanedDirs.push_back({
-                            {"id", entry.path().string()},
-                            {"label", dirName},
-                            {"detail", "no matching job"}
-                        });
-                    }
-                }
-            }
-        }
-        result["orphaned_dirs"] = orphanedDirs;
-
-        // Section 4: Stale peers
-        nlohmann::json stalePeers = nlohmann::json::array();
-        {
-            auto peers = m_app->peerManager().getPeerSnapshot();
-            for (const auto& p : peers)
-            {
-                if (!p.is_alive && !p.is_local)
-                {
-                    stalePeers.push_back({
-                        {"id", p.node_id},
-                        {"label", p.hostname + " (" + p.node_id.substr(0, 8) + ")"},
-                        {"detail", "last seen: " + std::to_string(p.last_seen_ms)}
-                    });
-                }
-            }
-        }
-        result["stale_peers"] = stalePeers;
-
-        // Sections 5 & 6: Staging directories
-        nlohmann::json staleStagingDirs = nlohmann::json::array();
-        nlohmann::json failedStagingCopies = nlohmann::json::array();
-        {
-            auto stagingRoot = getAppDataDir() / "staging";
-            if (fs::is_directory(stagingRoot, ec))
-            {
-                for (const auto& jobEntry : fs::directory_iterator(stagingRoot, ec))
-                {
-                    if (!jobEntry.is_directory(ec)) continue;
-                    std::string jobName = jobEntry.path().filename().string();
-
-                    int fileCount = 0;
-                    uintmax_t totalSize = 0;
-                    for (const auto& f : fs::recursive_directory_iterator(jobEntry.path(), ec))
-                    {
-                        if (f.is_regular_file(ec))
-                        {
-                            fileCount++;
-                            totalSize += f.file_size(ec);
-                        }
-                    }
-
-                    if (fileCount > 0)
-                    {
-                        std::string sizeStr;
-                        if (totalSize < 1024 * 1024)
-                            sizeStr = std::to_string(totalSize / 1024) + " KB";
-                        else if (totalSize < 1024ULL * 1024 * 1024)
-                            sizeStr = std::to_string(totalSize / (1024 * 1024)) + " MB";
-                        else
-                            sizeStr = std::to_string(totalSize / (1024ULL * 1024 * 1024)) + " GB";
-
-                        failedStagingCopies.push_back({
-                            {"id", jobEntry.path().string()},
-                            {"label", jobName},
-                            {"detail", std::to_string(fileCount) + " files (" + sizeStr + ")"}
-                        });
-                    }
-                    else
-                    {
-                        staleStagingDirs.push_back({
-                            {"id", jobEntry.path().string()},
-                            {"label", jobName},
-                            {"detail", "empty"}
-                        });
-                    }
-                }
-            }
-        }
-        result["stale_staging_dirs"] = staleStagingDirs;
-        result["failed_staging_copies"] = failedStagingCopies;
-        result["is_leader"] = m_app->isLeader();
-
-        res.set_content(result.dump(), "application/json");
+        res.set_content(m_app->scanFarmCleanup().dump(), "application/json");
     });
 
-    // POST /api/farm/cleanup -- execute cleanup actions on selected items
+    // POST /api/farm/cleanup -- execute cleanup actions on selected items.
+    // Delegates to MonitorApp::executeFarmCleanup for the same reason.
     m_server.Post("/api/farm/cleanup", [this](const httplib::Request& req, httplib::Response& res)
     {
         if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
-
-        namespace fs = std::filesystem;
-        std::error_code ec;
-
         try
         {
             auto body = nlohmann::json::parse(req.body);
             std::string action = body.at("action").get<std::string>();
             auto ids = body.at("ids").get<std::vector<std::string>>();
-            int count = 0;
-
-            if (action == "archive")
-            {
-                for (const auto& id : ids)
-                {
-                    m_app->archiveJob(id);
-                    count++;
-                }
-            }
-            else if (action == "delete_jobs")
-            {
-                for (const auto& id : ids)
-                {
-                    m_app->deleteJob(id);
-                    count++;
-                }
-            }
-            else if (action == "delete_dirs")
-            {
-                for (const auto& id : ids)
-                {
-                    fs::remove_all(fs::path(id), ec);
-                    if (!ec) count++;
-                    else MonitorLog::instance().warn("farm", "Cleanup: failed to remove " + id + ": " + ec.message());
-                }
-            }
-            else if (action == "remove_peers")
-            {
-                for (const auto& id : ids)
-                {
-                    auto nodeDir = m_app->farmPath() / "nodes" / id;
-                    fs::remove_all(nodeDir, ec);
-                    if (!ec) count++;
-                    else MonitorLog::instance().warn("farm", "Cleanup: failed to remove peer " + id + ": " + ec.message());
-                }
-            }
-            else
-            {
-                res.status = 400;
-                res.set_content(R"({"error":"unknown_action"})", "application/json");
-                return;
-            }
-
+            int count = m_app->executeFarmCleanup(action, ids);
             nlohmann::json resp = {{"status", "ok"}, {"count", count}};
             res.set_content(resp.dump(), "application/json");
         }

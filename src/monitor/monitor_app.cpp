@@ -9,6 +9,8 @@
 #include <fstream>
 #include <iostream>
 #include <chrono>
+#include <filesystem>
+#include <set>
 #include <unordered_map>
 
 #ifdef _WIN32
@@ -1117,6 +1119,200 @@ bool MonitorApp::writePeerRestartSignal(const std::string& nodeId)
     MonitorLog::instance().info("peer",
         "Wrote restart signal for " + nodeId);
     return true;
+}
+
+// --- Farm cleanup (shared by HTTP handler + Qt FarmCleanupDialog) ---
+
+nlohmann::json MonitorApp::scanFarmCleanup() const
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    nlohmann::json result;
+
+    // Sections 1 & 2: Finished / archived jobs (leader only — worker
+    // doesn't have DB access, so these come back empty).
+    nlohmann::json finishedJobs = nlohmann::json::array();
+    nlohmann::json archivedJobs = nlohmann::json::array();
+    std::set<std::string> dbJobIds;
+
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        auto allJobs = const_cast<DatabaseManager&>(m_databaseManager).getAllJobs();
+        for (const auto& s : allJobs)
+        {
+            dbJobIds.insert(s.job.job_id);
+            if (s.job.current_state == "completed"
+                || s.job.current_state == "cancelled")
+            {
+                finishedJobs.push_back({
+                    {"id",     s.job.job_id},
+                    {"label",  s.job.job_id},
+                    {"detail", s.job.current_state + " | "
+                               + std::to_string(s.progress.total) + " chunks"}
+                });
+            }
+            else if (s.job.current_state == "archived")
+            {
+                archivedJobs.push_back({
+                    {"id",     s.job.job_id},
+                    {"label",  s.job.job_id},
+                    {"detail", "archived"}
+                });
+            }
+        }
+    }
+    result["finished_jobs"] = finishedJobs;
+    result["archived_jobs"] = archivedJobs;
+
+    // Section 3: Orphaned jobs/ subdirs — directories under
+    // {farmPath}/jobs that don't match any known job_id.
+    nlohmann::json orphanedDirs = nlohmann::json::array();
+    {
+        auto jobsDir = m_farmPath / "jobs";
+        if (fs::is_directory(jobsDir, ec))
+        {
+            if (dbJobIds.empty())
+                for (const auto& j : m_cachedJobs)
+                    dbJobIds.insert(j.manifest.job_id);
+
+            for (const auto& entry : fs::directory_iterator(jobsDir, ec))
+            {
+                if (!entry.is_directory()) continue;
+                std::string dirName = entry.path().filename().string();
+                if (dbJobIds.find(dirName) == dbJobIds.end())
+                {
+                    orphanedDirs.push_back({
+                        {"id",     entry.path().string()},
+                        {"label",  dirName},
+                        {"detail", "no matching job"}
+                    });
+                }
+            }
+        }
+    }
+    result["orphaned_dirs"] = orphanedDirs;
+
+    // Section 4: Stale peers — offline peers.
+    nlohmann::json stalePeers = nlohmann::json::array();
+    {
+        auto peers = const_cast<PeerManager&>(m_peerManager).getPeerSnapshot();
+        for (const auto& p : peers)
+        {
+            if (!p.is_alive && !p.is_local)
+            {
+                stalePeers.push_back({
+                    {"id",     p.node_id},
+                    {"label",  p.hostname + " (" + p.node_id.substr(0, 8) + ")"},
+                    {"detail", "last seen: " + std::to_string(p.last_seen_ms)}
+                });
+            }
+        }
+    }
+    result["stale_peers"] = stalePeers;
+
+    // Sections 5 & 6: Staging directories under the LOCAL app-data
+    // (not the shared farm) — per-job staging copies that didn't
+    // clean up when the job finished.
+    nlohmann::json staleStagingDirs   = nlohmann::json::array();
+    nlohmann::json failedStagingCopies = nlohmann::json::array();
+    {
+        auto stagingRoot = getAppDataDir() / "staging";
+        if (fs::is_directory(stagingRoot, ec))
+        {
+            for (const auto& jobEntry : fs::directory_iterator(stagingRoot, ec))
+            {
+                if (!jobEntry.is_directory(ec)) continue;
+                std::string jobName = jobEntry.path().filename().string();
+
+                int fileCount = 0;
+                uintmax_t totalSize = 0;
+                for (const auto& f :
+                     fs::recursive_directory_iterator(jobEntry.path(), ec))
+                {
+                    if (f.is_regular_file(ec))
+                    {
+                        fileCount++;
+                        totalSize += f.file_size(ec);
+                    }
+                }
+
+                if (fileCount > 0)
+                {
+                    std::string sizeStr;
+                    if (totalSize < 1024 * 1024)
+                        sizeStr = std::to_string(totalSize / 1024) + " KB";
+                    else if (totalSize < 1024ULL * 1024 * 1024)
+                        sizeStr = std::to_string(totalSize / (1024 * 1024)) + " MB";
+                    else
+                        sizeStr = std::to_string(totalSize / (1024ULL * 1024 * 1024)) + " GB";
+
+                    failedStagingCopies.push_back({
+                        {"id",     jobEntry.path().string()},
+                        {"label",  jobName},
+                        {"detail", std::to_string(fileCount)
+                                   + " files (" + sizeStr + ")"}
+                    });
+                }
+                else
+                {
+                    staleStagingDirs.push_back({
+                        {"id",     jobEntry.path().string()},
+                        {"label",  jobName},
+                        {"detail", "empty"}
+                    });
+                }
+            }
+        }
+    }
+    result["stale_staging_dirs"]    = staleStagingDirs;
+    result["failed_staging_copies"] = failedStagingCopies;
+    result["is_leader"] = isLeader();
+
+    return result;
+}
+
+int MonitorApp::executeFarmCleanup(const std::string& action,
+                                   const std::vector<std::string>& ids)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    int count = 0;
+
+    if (action == "archive")
+    {
+        for (const auto& id : ids) { archiveJob(id); count++; }
+    }
+    else if (action == "delete_jobs")
+    {
+        for (const auto& id : ids) { deleteJob(id); count++; }
+    }
+    else if (action == "delete_dirs")
+    {
+        for (const auto& id : ids)
+        {
+            fs::remove_all(fs::path(id), ec);
+            if (!ec) count++;
+            else MonitorLog::instance().warn("farm",
+                "Cleanup: failed to remove " + id + ": " + ec.message());
+        }
+    }
+    else if (action == "remove_peers")
+    {
+        for (const auto& id : ids)
+        {
+            auto nodeDir = m_farmPath / "nodes" / id;
+            fs::remove_all(nodeDir, ec);
+            if (!ec) count++;
+            else MonitorLog::instance().warn("farm",
+                "Cleanup: failed to remove peer " + id + ": " + ec.message());
+        }
+    }
+    else
+    {
+        MonitorLog::instance().warn("farm",
+            "Cleanup: unknown action " + action);
+    }
+    return count;
 }
 
 // --- Node state ---
