@@ -82,9 +82,37 @@ Item {
     Component {
         id: detailComponent
         Rectangle {
+            id: detailRoot
             color: "#141414"
 
             readonly property var job: appBridge.currentJob
+
+            // Right-click menu on chunk rows. Lives at the panel level
+            // so popup() coordinates make sense and the menu doesn't
+            // get clipped by the ListView's clip:true.
+            Menu {
+                id: chunkMenu
+                property var targetChunkId: 0
+                property int targetFrameStart: 0
+                property int targetFrameEnd: 0
+
+                MenuItem {
+                    text: qsTr("Reassign to another node")
+                    onTriggered: appBridge.reassignChunk(chunkMenu.targetChunkId, "")
+                }
+                MenuItem {
+                    text: qsTr("Submit as separate job")
+                    onTriggered: {
+                        const newId = appBridge.resubmitChunkAsJob(
+                            appBridge.currentJobId,
+                            chunkMenu.targetFrameStart,
+                            chunkMenu.targetFrameEnd,
+                            chunkMenu.targetFrameEnd - chunkMenu.targetFrameStart + 1)
+                        if (newId.length > 0)
+                            appBridge.currentJobId = newId
+                    }
+                }
+            }
 
             function stateColor(s) {
                 switch (s) {
@@ -325,6 +353,17 @@ Item {
                                 width: chunksList.width
                                 height: 24
                                 color: index % 2 === 0 ? "#141414" : "#181818"
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    acceptedButtons: Qt.RightButton
+                                    onClicked: (mouse) => {
+                                        chunkMenu.targetChunkId = chunkId
+                                        chunkMenu.targetFrameStart = frameStart
+                                        chunkMenu.targetFrameEnd   = frameEnd
+                                        chunkMenu.popup()
+                                    }
+                                }
 
                                 Row {
                                     anchors.fill: parent

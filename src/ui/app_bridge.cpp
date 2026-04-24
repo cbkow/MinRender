@@ -491,6 +491,24 @@ void AppBridge::requestSubmissionMode()
     setSubmissionMode(true);
 }
 
+void AppBridge::reassignChunk(qint64 chunkId, const QString& targetNodeId)
+{
+    if (!m_monitor) return;
+    m_monitor->reassignChunk(static_cast<int64_t>(chunkId),
+                             targetNodeId.toStdString());
+}
+
+QString AppBridge::resubmitChunkAsJob(const QString& jobId,
+                                      int frameStart, int frameEnd,
+                                      int chunkSize)
+{
+    if (!m_monitor || jobId.isEmpty())
+        return {};
+    const std::string slug = m_monitor->resubmitChunkAsJob(
+        jobId.toStdString(), frameStart, frameEnd, chunkSize);
+    return QString::fromStdString(slug);
+}
+
 QVariantMap AppBridge::templateById(const QString& templateId) const
 {
     if (!m_monitor) return {};

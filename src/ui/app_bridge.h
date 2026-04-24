@@ -117,6 +117,16 @@ public:
 
     Q_INVOKABLE void requestSubmissionMode();
 
+    // Chunk-level actions on the currently-selected job.
+    // reassignChunk: targetNodeId="" lets the dispatcher pick.
+    // resubmitChunkAsJob: returns the new job's slug ("" on failure)
+    //   so the caller can switch the JobDetail to it.
+    Q_INVOKABLE void reassignChunk(qint64 chunkId,
+                                   const QString& targetNodeId = QString());
+    Q_INVOKABLE QString resubmitChunkAsJob(const QString& jobId,
+                                           int frameStart, int frameEnd,
+                                           int chunkSize);
+
     // Returns a QVariantMap describing a template by id: {name, templateId,
     // dcc, path, frameStart, frameEnd, chunkSize, maxRetries, flags:[…]}
     // where each flag is a map of {flag, value, info, help, editable,
