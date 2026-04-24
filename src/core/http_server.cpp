@@ -846,8 +846,6 @@ void HttpServer::setupRoutes()
                 cfg.tags = body["tags"].get<std::vector<std::string>>();
             if (body.contains("staging_enabled"))
                 cfg.staging_enabled = body["staging_enabled"].get<bool>();
-            if (body.contains("rndr_dual_mode"))
-                cfg.rndr_dual_mode = body["rndr_dual_mode"].get<bool>();
             if (body.contains("show_notifications"))
                 cfg.show_notifications = body["show_notifications"].get<bool>();
             if (body.contains("path_mappings"))

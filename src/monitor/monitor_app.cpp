@@ -34,9 +34,6 @@ bool MonitorApp::init()
         std::filesystem::remove(m_appDataDir / "restart.bat", ec);
     }
 
-    // Font scale is applied by the Qt UI layer via AppBridge (Phase 2+).
-    // The backend only stores the value in m_config.font_scale.
-
     // Restore persisted node state
     if (m_config.node_stopped)
         setNodeState(NodeState::Stopped);
@@ -46,9 +43,6 @@ bool MonitorApp::init()
 
     // Initialize agent supervisor
     m_agentSupervisor.start(m_identity.nodeId());
-
-    // Detect RNDR binary
-    m_rndrSupervisor.detectBinary();
 
     // Set up agent message handler
     m_agentSupervisor.setMessageHandler([this](const std::string& type, const nlohmann::json& msg)
@@ -169,9 +163,6 @@ void MonitorApp::update()
 
     // Note: completion/frame reports are flushed by the background HTTP worker thread.
 
-    // RNDR dual mode
-    m_rndrSupervisor.update(m_renderCoordinator.isRendering(), m_config.rndr_dual_mode);
-
     // Update render state on PeerManager
     if (m_renderCoordinator.isRendering())
     {
@@ -248,7 +239,6 @@ void MonitorApp::shutdown()
 
     m_renderCoordinator.abortCurrentRender("shutdown");
     m_agentSupervisor.stop();
-    m_rndrSupervisor.shutdown();
 
     saveConfig();
 }
@@ -301,12 +291,6 @@ void MonitorApp::pushStateSnapshot()
 
     // Node state
     j["node_state"] = (m_nodeState == NodeState::Active) ? "active" : "stopped";
-
-    // RNDR state
-    j["rndr_available"] = m_rndrSupervisor.isBinaryAvailable();
-    j["rndr_status"] = m_rndrSupervisor.statusText();
-    static const char* rndrStateNames[] = {"inactive", "running", "render_active", "cooldown"};
-    j["rndr_state"] = rndrStateNames[static_cast<int>(m_rndrSupervisor.state())];
 
     m_uiIpc.push(j.dump());
 }

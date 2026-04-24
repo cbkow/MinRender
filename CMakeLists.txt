@@ -73,7 +73,6 @@ set(MINRENDER_CORE_SOURCES
     src/monitor/peer_manager.cpp
     src/monitor/monitor_app.cpp
     src/monitor/agent_supervisor.cpp
-    src/monitor/rndr_supervisor.cpp
     src/monitor/template_manager.cpp
     src/monitor/render_coordinator.cpp
     src/monitor/database_manager.cpp

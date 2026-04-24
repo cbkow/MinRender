@@ -78,7 +78,7 @@ Item {
             Layout.fillWidth: true
             text: appBridge.tagsCsv
             onEditingFinished: appBridge.tagsCsv = text
-            placeholderText: qsTr("gpu, rndr, workstation")
+            placeholderText: qsTr("gpu, gpu-fast, workstation")
         }
 
         // --- Networking ---

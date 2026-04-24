@@ -57,13 +57,9 @@ struct Config
 
     // UI preferences
     bool show_notifications = true;
-    float font_scale = 1.0f;
 
     // Rendering
     bool staging_enabled = false;
-
-    // RNDR dual mode
-    bool rndr_dual_mode = false;
 
     // Persisted node state
     bool node_stopped = false;
@@ -85,9 +81,7 @@ inline void to_json(nlohmann::json& j, const Config& c)
         {"udp_enabled", c.udp_enabled},
         {"udp_port", c.udp_port},
         {"show_notifications", c.show_notifications},
-        {"font_scale", c.font_scale},
         {"staging_enabled", c.staging_enabled},
-        {"rndr_dual_mode", c.rndr_dual_mode},
         {"node_stopped", c.node_stopped},
         {"path_mappings", c.path_mappings},
     };
@@ -104,9 +98,7 @@ inline void from_json(const nlohmann::json& j, Config& c)
     if (j.contains("udp_enabled"))       j.at("udp_enabled").get_to(c.udp_enabled);
     if (j.contains("udp_port"))          c.udp_port = j.at("udp_port").get<uint16_t>();
     if (j.contains("show_notifications")) j.at("show_notifications").get_to(c.show_notifications);
-    if (j.contains("font_scale"))         j.at("font_scale").get_to(c.font_scale);
     if (j.contains("staging_enabled"))    j.at("staging_enabled").get_to(c.staging_enabled);
-    if (j.contains("rndr_dual_mode"))    j.at("rndr_dual_mode").get_to(c.rndr_dual_mode);
     if (j.contains("node_stopped"))       j.at("node_stopped").get_to(c.node_stopped);
     if (j.contains("path_mappings"))     j.at("path_mappings").get_to(c.path_mappings);
 }
