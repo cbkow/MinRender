@@ -281,6 +281,18 @@ void HttpServer::setupRoutes()
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
+    // POST /api/jobs/:id/requeue -- reset every chunk and flip the job
+    // back to active. The worker-side MonitorApp::requeueJob forwards
+    // here via postToLeaderAsync; the Qt JobDetailPanel Requeue button
+    // was a silent no-op on workers until this endpoint existed.
+    m_server.Post(R"(/api/jobs/([^/]+)/requeue)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+        std::string jobId = req.matches[1];
+        m_app->requeueJob(jobId);
+        res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
     // POST /api/jobs/:id/resubmit -- create new job from existing manifest
     // Optional JSON body with frame_start, frame_end, chunk_size for chunk resubmit
     m_server.Post(R"(/api/jobs/([^/]+)/resubmit)", [this](const httplib::Request& req, httplib::Response& res)

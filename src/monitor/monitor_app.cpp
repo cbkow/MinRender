@@ -979,6 +979,10 @@ void MonitorApp::requeueJob(const std::string& jobId)
         m_databaseManager.updateJobState(jobId, "active");
         MonitorLog::instance().info("job", "Requeued job: " + jobId);
     }
+    else
+    {
+        postToLeaderAsync("/api/jobs/" + jobId + "/requeue", "");
+    }
 }
 
 void MonitorApp::deleteJob(const std::string& jobId)
