@@ -357,10 +357,16 @@ Item {
 
                     Label {
                         anchors.centerIn: parent
+                        anchors.margins: 8
+                        width: taskChunkList.width - 16
                         visible: taskChunkList.count === 0
-                        text: qsTr("No chunk output yet")
+                        text: qsTr("This job hasn't written any chunk output yet. "
+                                 + "Output appears once a node starts rendering "
+                                 + "a chunk of this job.")
                         color: Theme.textMuted
                         font.pixelSize: Theme.fontSizeSmall
+                        wrapMode: Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
                     }
                 }
 

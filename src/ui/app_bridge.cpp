@@ -404,24 +404,15 @@ void AppBridge::refreshRemoteLog()
 void AppBridge::refreshTaskOutput()
 {
     if (!m_monitor || m_currentJobId.isEmpty() || !m_monitor->isFarmRunning())
-    {
-        qInfo("[taskOutput] skip: monitor=%p currentJobId='%s' farmRunning=%d",
-            (void*)m_monitor,
-            m_currentJobId.toStdString().c_str(),
-            m_monitor ? m_monitor->isFarmRunning() : 0);
         return;
-    }
 
     namespace fs = std::filesystem;
     std::error_code ec;
     const fs::path stdoutDir = m_monitor->farmPath()
         / "jobs" / m_currentJobId.toStdString() / "stdout";
 
-    qInfo("[taskOutput] scanning: %s", stdoutDir.string().c_str());
-
     if (!fs::is_directory(stdoutDir, ec))
     {
-        qInfo("[taskOutput] not a directory (ec=%s)", ec.message().c_str());
         if (!m_taskOutputChunks.isEmpty())
         {
             m_taskOutputChunks.clear();
@@ -477,8 +468,6 @@ void AppBridge::refreshTaskOutput()
             chunks.push_back(std::move(entry));
         }
     }
-
-    qInfo("[taskOutput] found %d chunk files", (int)chunks.size());
 
     // Sort by range, then timestamp (older renders first).
     std::sort(chunks.begin(), chunks.end(),
