@@ -44,7 +44,7 @@ ApplicationWindow {
         Menu {
             title: qsTr("&File")
             Action { text: qsTr("Settings…");     onTriggered: settingsDialog.open() }
-            Action { text: qsTr("Farm Cleanup…"); onTriggered: console.log("[Menu] File → Farm Cleanup (Phase 4)") }
+            Action { text: qsTr("Farm Cleanup…"); onTriggered: farmCleanupDialog.open() }
             MenuSeparator {}
             Action { text: qsTr("E&xit"); onTriggered: Qt.quit() }
         }
@@ -181,5 +181,10 @@ ApplicationWindow {
                 onRejected: settingsDialog.close()
             }
         }
+    }
+
+    // --- Farm Cleanup dialog (Phase 7 stub) ---
+    FarmCleanupDialog {
+        id: farmCleanupDialog
     }
 }
