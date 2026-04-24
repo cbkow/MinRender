@@ -1,6 +1,6 @@
 # MinRender Qt 6 Quick Port Plan
 
-Status: **Phase 4 panels complete — JobDetail (Phase 5) is next** · Owner: Chris · Last updated: 2026-04-23
+Status: **Phase 5 JobDetail + FrameGrid landed — Phase 6 theme next** · Owner: Chris · Last updated: 2026-04-24
 
 ## Current state (read this first if you are a fresh agent)
 
@@ -301,18 +301,18 @@ Not in Phase 3 scope:
 4. **Farm Cleanup dialog** · `246f0a5` **stubbed.** Modal that explains why the action isn't live yet and points at Phase 7. Replaces the dead-code log-only menu handler. Real implementation (wrap `POST /api/farm/scan-cleanup` → `POST /api/farm/cleanup` with an async scan→preview→confirm pipeline) is grouped with Phase 7's other decommission work.
 5. **Submission form** · `4baf35f` **done.** `src/ui/qml/panels/SubmissionForm.qml` is a standalone component (Phase 5 Loader-mounts the same file inside JobDetailPanel without changes) opened from File → New Job and the JobListPanel's "New Job…" button via a modal `Dialog` in Main.qml. Form: template ComboBox bound to `templatesModel`, job name, frame start/end/chunk size/priority, dynamic per-template flag rows from `templateById`, error banner, Submit/Cancel. AppBridge gained `templateById(id) → QVariantMap` (template + flag list as variant maps), `submitJob(...)` (validates → bakes manifest → leader: `dispatchManager.queueSubmission`; worker: `postToLeaderAsync POST /api/jobs` with marshal-back to UI thread), and `submissionSucceeded`/`submissionFailed` signals. Out-of-v1: file picker for type=file flags, live output-path preview, inline per-field validation hints — all Phase 5 polish.
 
-### Phase 5 — JobDetail + frame grid · 1–1.5 weeks
+### Phase 5 — JobDetail + frame grid · 1–1.5 weeks · **code complete, benchmark pending**
 
-- `JobDetailPanel.qml` — three-state (Empty / Submission / Detail). Submission mode built in Phase 4 drops in here.
-- Detail mode: header (name, state, badges, action buttons), tab bar for Frames/Chunks, content area.
-- **Frame grid** (`src/ui/painters/frame_grid.{h,cpp}`):
-  - `class FrameGrid : public QQuickPaintedItem`
-  - Properties: `ChunksModel* model`, `int frameStart`, `int frameEnd`, `int cellsPerRow` (computed from width).
-  - `paint(QPainter*)`: iterate chunks, draw colored rectangles per frame state (matches current color table in README).
-  - `update()` called only from `QAbstractItemModel::dataChanged` — not every frame, not per timer.
-  - Performance target: zero measurable GPU/CPU at idle; <5 ms repaint for 10,000 frames. If too slow, escalate to scene-graph nodes (`QQuickItem::updatePaintNode`).
-- Chunk table (`TableView` bound to `ChunksModel`) below the grid. Context menu: Reassign, Submit Chunk as Job, Retry.
-- Async submission state handled via signals on `AppBridge` (`Q_INVOKABLE` kicks off, signal reports back `submissionSucceeded`/`submissionFailed`).
+Commits (chronological):
+- `5e8d76e` Step 6a — `src/ui/qml/panels/JobDetailPanel.qml` replaces the bottom-left placeholder. Three-state Loader switch keyed off a new `appBridge.submissionMode` Q_PROPERTY (`submission` wins, else `empty` when no `currentJobId`, else `detail`). SubmissionForm moves from a modal Dialog (Phase 4 scaffold) to inline mount per the original plan. `AppBridge::requestSubmissionMode` now just flips our flag; `MonitorApp::shouldEnterSubmission` is dead code pending Phase 7.
+- `32f30df` Step 6b — Detail-mode header: job name + state badge (colour per active/paused/cancelled/completed), progress bar + `done/total`, badge row (rendering / failed / priority / created-at), action row (Pause/Resume contextual, Retry failed when `failedChunks > 0`, Requeue, Cancel, Delete). Backed by a `QVariantMap currentJob` Q_PROPERTY that re-emits on every 20 Hz jobs refresh so the header stays live.
+- `cedea3e` Step 6c — `src/ui/painters/frame_grid.{h,cpp}` — `QQuickPaintedItem` subclass. Q_PROPERTY: `ChunksModel* model`, `frameStart`, `frameEnd`, `cellSize`. Paint algorithm: pass 1 fills every frame cell with unclaimed colour; pass 2 overpaints each chunk's range in the chunk's colour, then overpaints `CompletedFramesRole` in green. `update()` only fires on model signals (`dataChanged` / `rowsInserted` / `rowsRemoved` / `modelReset`) or property changes — no timer, matching the plan's "zero GPU/CPU at idle" rule. Registered via `qmlRegisterType<MR::FrameGrid>("MinRenderUi", 1, 0, "FrameGrid")` in `main_qt.cpp`. Colours hardcoded; Theme.qml will replace them in Phase 6. Added `CompletedFramesRole` to ChunksModel exposing `ChunkRow::completed_frames` as a QVariantList for per-frame override rendering.
+- `997e32d` Step 6d — JobDetailPanel Detail-mode content area is now a vertical SplitView: FrameGrid on top (preferredHeight 200), chunk ListView below with columns state / frames / node / progress / retries.
+- `5b0ca98` Step 6e — chunk right-click Menu with two actions: Reassign (calls `appBridge.reassignChunk(id, "")` — empty target = dispatcher picks) and Submit as separate job (calls `appBridge.resubmitChunkAsJob` and switches `currentJobId` to the returned slug). Job-level actions (Retry failed / Requeue / Cancel / Delete) already live in the header from 6b.
+
+Not yet done:
+- **Frame grid benchmark** against 10 k frames. The v1 paint is two linear passes of `QPainter::fillRect` — should be OK under 5 ms but untested at scale. If it's slow, the plan calls for escalating to `QQuickItem::updatePaintNode` returning a `QSGGeometryNode` of batched quads.
+- Node-picker submenu on the Reassign action (right now it hands "" to let dispatcher choose — good default, but users with a specific target node in mind have to work around it).
 - **Milestone:** full JobDetail functional, frame grid benchmarked.
 
 ### Phase 6 — Theme, fonts, QML components · 3–5 days
