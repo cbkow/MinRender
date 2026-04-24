@@ -981,7 +981,21 @@ void MonitorApp::requeueJob(const std::string& jobId)
     }
     else
     {
-        postToLeaderAsync("/api/jobs/" + jobId + "/requeue", "");
+        // Log the leader's reply so a 404 (leader on old build without
+        // this endpoint) or auth failure shows up locally instead of
+        // silently looking like "button does nothing".
+        postToLeaderAsync("/api/jobs/" + jobId + "/requeue", "",
+            [jobId](bool ok, const std::string& resp) {
+                if (ok)
+                    MonitorLog::instance().info("job", "Requeued job: " + jobId);
+                else
+                {
+                    std::string msg = "Requeue failed for " + jobId;
+                    if (!resp.empty()) msg += " — leader responded: " + resp;
+                    else               msg += " — no response (leader unreachable or missing endpoint)";
+                    MonitorLog::instance().warn("job", msg);
+                }
+            });
     }
 }
 
@@ -1161,6 +1175,27 @@ std::string peerEndpointFor(const std::vector<PeerInfo>& peers,
 }
 } // namespace
 
+namespace {
+// Log HTTP round-trip result for peer remote-control actions so a
+// silent failure (peer unreachable, 404, auth rejection) shows up in
+// the local log instead of making the UI look buggy.
+void logPeerResult(const std::string& action, const std::string& nodeId,
+                   bool success, const std::string& response)
+{
+    if (success)
+    {
+        MonitorLog::instance().info("peer",
+            action + " ok: " + nodeId);
+    }
+    else
+    {
+        std::string msg = action + " failed: " + nodeId;
+        if (!response.empty()) msg += " (" + response + ")";
+        MonitorLog::instance().warn("peer", msg);
+    }
+}
+} // namespace
+
 void MonitorApp::setPeerNodeActive(const std::string& nodeId, bool active)
 {
     const std::string ep = peerEndpointFor(m_peerManager.getPeerSnapshot(), nodeId);
@@ -1179,11 +1214,15 @@ void MonitorApp::setPeerNodeActive(const std::string& nodeId, bool active)
     // reverts this.
     m_peerManager.setPeerNodeState(nodeId, active ? "active" : "stopped");
 
+    const std::string label = active ? "start" : "stop";
     HttpRequest req;
     req.host     = host;
     req.port     = port;
     req.method   = "POST";
     req.endpoint = active ? "/api/node/start" : "/api/node/stop";
+    req.callback = [label, nodeId](bool ok, const std::string& resp) {
+        logPeerResult("peer " + label, nodeId, ok, resp);
+    };
     {
         std::lock_guard<std::mutex> lock(m_httpQueueMutex);
         m_httpQueue.push(std::move(req));
@@ -1209,6 +1248,9 @@ void MonitorApp::restartPeerApp(const std::string& nodeId)
     req.port     = port;
     req.method   = "POST";
     req.endpoint = "/api/node/restart";
+    req.callback = [nodeId](bool ok, const std::string& resp) {
+        logPeerResult("peer restart", nodeId, ok, resp);
+    };
     {
         std::lock_guard<std::mutex> lock(m_httpQueueMutex);
         m_httpQueue.push(std::move(req));

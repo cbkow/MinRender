@@ -219,50 +219,54 @@ Item {
                     anchors.fill: parent
                     acceptedButtons: Qt.RightButton
                     onClicked: (mouse) => {
-                        peerMenu.targetNodeId    = nodeId
-                        peerMenu.targetIsAlive   = isAlive
-                        peerMenu.targetIsActive  = isActive
-                        peerMenu.popup()
+                        if (isAlive)
+                        {
+                            livePeerMenu.targetNodeId   = nodeId
+                            livePeerMenu.targetIsActive = isActive
+                            livePeerMenu.popup()
+                        }
+                        else
+                        {
+                            deadPeerMenu.targetNodeId = nodeId
+                            deadPeerMenu.popup()
+                        }
                     }
                 }
             }
 
+            // Two Menus rather than one with visible:false items — Qt
+            // Quick Menu reserves layout space for hidden MenuItem
+            // children, leaving gaps at popup time. Choose at popup.
             Menu {
-                id: peerMenu
-                property string targetNodeId:    ""
-                property bool   targetIsAlive:   false
-                property bool   targetIsActive:  false
+                id: livePeerMenu
+                property string targetNodeId:   ""
+                property bool   targetIsActive: false
 
-                // --- Live peer actions ---
                 MenuItem {
-                    text: qsTr("Stop")
-                    visible: peerMenu.targetIsAlive && peerMenu.targetIsActive
-                    onTriggered: appBridge.setPeerNodeActive(peerMenu.targetNodeId, false)
-                }
-                MenuItem {
-                    text: qsTr("Start")
-                    visible: peerMenu.targetIsAlive && !peerMenu.targetIsActive
-                    onTriggered: appBridge.setPeerNodeActive(peerMenu.targetNodeId, true)
+                    text: livePeerMenu.targetIsActive ? qsTr("Stop") : qsTr("Start")
+                    onTriggered: appBridge.setPeerNodeActive(
+                        livePeerMenu.targetNodeId, !livePeerMenu.targetIsActive)
                 }
                 MenuItem {
                     text: qsTr("Restart App")
-                    visible: peerMenu.targetIsAlive
-                    onTriggered: appBridge.restartPeerApp(peerMenu.targetNodeId)
+                    onTriggered: appBridge.restartPeerApp(livePeerMenu.targetNodeId)
                 }
                 MenuItem {
                     text: qsTr("Unsuspend")
-                    visible: peerMenu.targetIsAlive
-                    onTriggered: appBridge.unsuspendNode(peerMenu.targetNodeId)
+                    onTriggered: appBridge.unsuspendNode(livePeerMenu.targetNodeId)
                 }
+            }
 
-                // --- Dead peer actions ---
+            Menu {
+                id: deadPeerMenu
+                property string targetNodeId: ""
+
                 // Writes an empty `restart` file under {farmPath}/nodes/{id}/
                 // so the peer's filesystem watcher triggers a local restart
                 // next time it comes back online.
                 MenuItem {
                     text: qsTr("Write restart signal (filesystem)")
-                    visible: !peerMenu.targetIsAlive
-                    onTriggered: appBridge.writePeerRestartSignal(peerMenu.targetNodeId)
+                    onTriggered: appBridge.writePeerRestartSignal(deadPeerMenu.targetNodeId)
                 }
             }
         }
