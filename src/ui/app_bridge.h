@@ -128,6 +128,7 @@ public:
     Q_INVOKABLE void setPeerNodeActive(const QString& nodeId, bool active);
     Q_INVOKABLE void restartPeerApp(const QString& nodeId);
     Q_INVOKABLE void writePeerRestartSignal(const QString& nodeId);
+    Q_INVOKABLE void forgetPeer(const QString& nodeId);
 
     // Job controls — forwarded to MonitorApp. Each takes the slug /
     // job_id exposed by JobsModel. No-op when jobId is empty.

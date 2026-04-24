@@ -459,6 +459,12 @@ void AppBridge::writePeerRestartSignal(const QString& nodeId)
     m_monitor->writePeerRestartSignal(nodeId.toStdString());
 }
 
+void AppBridge::forgetPeer(const QString& nodeId)
+{
+    if (!m_monitor || nodeId.isEmpty()) return;
+    m_monitor->forgetPeer(nodeId.toStdString());
+}
+
 void AppBridge::pauseJob(const QString& jobId)
 {
     if (!m_monitor || jobId.isEmpty()) return;

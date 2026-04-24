@@ -92,6 +92,15 @@ public:
     // false if the farm isn't running or the write failed.
     bool writePeerRestartSignal(const std::string& nodeId);
 
+    // Remove a peer's endpoint.json from the shared farm so
+    // PeerManager's stale-peer reaper drops the cached record on its
+    // next discovery pass. Used to clean up a duplicate peer row
+    // caused by a prior install writing a second endpoint under a
+    // different node_id. Returns false if the farm isn't running or
+    // the file didn't exist (the latter is also the desired end
+    // state, so callers shouldn't treat it as failure).
+    bool forgetPeer(const std::string& nodeId);
+
     // Node state controls
     void setNodeState(NodeState state);
     NodeState nodeState() const { return m_nodeState; }

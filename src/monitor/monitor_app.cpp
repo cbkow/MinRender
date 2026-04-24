@@ -1257,6 +1257,30 @@ void MonitorApp::restartPeerApp(const std::string& nodeId)
     }
 }
 
+bool MonitorApp::forgetPeer(const std::string& nodeId)
+{
+    if (!m_farmRunning || nodeId.empty())
+        return false;
+    if (nodeId == m_identity.nodeId())
+    {
+        MonitorLog::instance().warn("peer",
+            "forgetPeer: refusing to remove own endpoint.json");
+        return false;
+    }
+
+    std::error_code ec;
+    auto endpointPath = m_farmPath / "nodes" / nodeId / "endpoint.json";
+    if (std::filesystem::remove(endpointPath, ec))
+    {
+        MonitorLog::instance().info("peer",
+            "Forgot peer (removed endpoint.json): " + nodeId);
+        return true;
+    }
+    MonitorLog::instance().info("peer",
+        "forgetPeer: no endpoint.json to remove for " + nodeId);
+    return false;
+}
+
 bool MonitorApp::writePeerRestartSignal(const std::string& nodeId)
 {
     if (!m_farmRunning || nodeId.empty())
