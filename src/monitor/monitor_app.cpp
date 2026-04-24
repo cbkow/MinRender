@@ -53,25 +53,9 @@ bool MonitorApp::init()
     // Start background HTTP worker
     startHttpWorker();
 
-    // Start UI IPC server (for Tauri push events)
-    m_uiIpc.start(m_identity.nodeId());
-    m_uiIpc.setCommandHandler([this](const std::string& json)
-    {
-        handleUiCommand(json);
-    });
-
-    // Push log entries to UI in real time
-    MonitorLog::instance().setCallback([this](const MonitorLog::Entry& e)
-    {
-        if (!m_uiIpc.isConnected()) return;
-        nlohmann::json j;
-        j["type"] = "log_entry";
-        j["timestamp_ms"] = e.timestamp_ms;
-        j["level"] = e.level;
-        j["category"] = e.category;
-        j["message"] = e.message;
-        m_uiIpc.push(j.dump());
-    });
+    // (The UI IPC server and its log-push callback were used by the old
+    // Tauri UI scaffold. Removed in Phase 7 — the Qt LogModel consumes
+    // MonitorLog directly via AppBridge.)
 
     // (Qt UI layer initializes separately in main_qt.cpp via AppBridge;
     // the backend here is UI-agnostic.)
@@ -112,31 +96,9 @@ void MonitorApp::update()
 
     // Leader transition detection
     if (isLeader() && !m_wasLeader)
-    {
         onBecomeLeader();
-        if (m_uiIpc.isConnected())
-        {
-            nlohmann::json j;
-            j["type"] = "leader_change";
-            j["is_leader"] = true;
-            j["leader_id"] = m_identity.nodeId();
-            j["leader_endpoint"] = getLeaderEndpoint();
-            m_uiIpc.push(j.dump());
-        }
-    }
     if (!isLeader() && m_wasLeader)
-    {
         onLoseLeadership();
-        if (m_uiIpc.isConnected())
-        {
-            nlohmann::json j;
-            j["type"] = "leader_change";
-            j["is_leader"] = false;
-            j["leader_id"] = "";
-            j["leader_endpoint"] = getLeaderEndpoint();
-            m_uiIpc.push(j.dump());
-        }
-    }
     m_wasLeader = isLeader();
 
     // If leader: run dispatch cycle (gated on background DB init)
@@ -152,10 +114,6 @@ void MonitorApp::update()
         refreshCachedJobs();
         m_cachedTemplates = m_templateManager.getTemplateSnapshot();
         m_lastJobCacheRefresh = now;
-
-        // Push state snapshot to connected UI client
-        if (m_uiIpc.isConnected())
-            pushStateSnapshot();
     }
 
     // Poll local submission dropbox
@@ -169,23 +127,6 @@ void MonitorApp::update()
         m_peerManager.setRenderState("rendering",
             m_renderCoordinator.currentJobId(),
             m_renderCoordinator.currentChunkLabel());
-
-        // Push render progress to UI (~1s throttle)
-        if (m_uiIpc.isConnected())
-        {
-            auto progElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - m_lastProgressPush).count();
-            if (progElapsed >= 1000)
-            {
-                nlohmann::json j;
-                j["type"] = "render_progress";
-                j["job_id"] = m_renderCoordinator.currentJobId();
-                j["chunk_label"] = m_renderCoordinator.currentChunkLabel();
-                j["progress_pct"] = m_renderCoordinator.currentProgress();
-                m_uiIpc.push(j.dump());
-                m_lastProgressPush = now;
-            }
-        }
     }
     else
     {
@@ -233,7 +174,6 @@ void MonitorApp::update()
 void MonitorApp::shutdown()
 {
     MonitorLog::instance().setCallback(nullptr);
-    m_uiIpc.stop();
     stopHttpWorker();
     stopFarm();
 
@@ -246,120 +186,6 @@ void MonitorApp::shutdown()
 // ---------------------------------------------------------------------------
 // UI IPC push events
 // ---------------------------------------------------------------------------
-
-void MonitorApp::pushStateSnapshot()
-{
-    nlohmann::json j;
-    j["type"] = "state_snapshot";
-
-    // Local node
-    j["local_node"] = buildLocalPeerInfo();
-
-    // Peers
-    j["peers"] = m_peerManager.getPeerSnapshot();
-
-    // Jobs — reuse the cached JSON string to avoid re-serializing
-    {
-        std::lock_guard<std::mutex> lock(m_cachedJsonMutex);
-        j["jobs"] = nlohmann::json::parse(m_cachedJobsJson, nullptr, false);
-    }
-
-    // Farm state
-    j["farm_running"] = m_farmRunning;
-    j["farm_path"] = m_farmPath.string();
-    j["farm_error"] = m_farmError;
-    j["is_leader"] = isLeader();
-    j["leader_endpoint"] = getLeaderEndpoint();
-
-    // Render state
-    j["render_state"] = m_renderCoordinator.isRendering() ? "rendering" : "idle";
-    if (m_renderCoordinator.isRendering())
-    {
-        j["active_job"] = m_renderCoordinator.currentJobId();
-        j["active_chunk"] = m_renderCoordinator.currentChunkLabel();
-        j["render_progress"] = m_renderCoordinator.currentProgress();
-    }
-
-    // Agent health
-    j["agent_health"] = m_agentSupervisor.agentHealth();
-    j["agent_connected"] = m_agentSupervisor.isAgentConnected();
-
-    // Tray state (for macOS Swift companion or external consumers)
-    j["tray_icon"] = trayIconName();
-    j["tray_tooltip"] = trayTooltip();
-    j["tray_status"] = trayStatusText();
-
-    // Node state
-    j["node_state"] = (m_nodeState == NodeState::Active) ? "active" : "stopped";
-
-    m_uiIpc.push(j.dump());
-}
-
-void MonitorApp::handleUiCommand(const std::string& json)
-{
-    try
-    {
-        auto j = nlohmann::json::parse(json);
-        std::string type = j.value("type", "");
-
-        if (type == "ping")
-        {
-            nlohmann::json pong;
-            pong["type"] = "pong";
-            m_uiIpc.push(pong.dump());
-        }
-        else if (type == "get_state")
-        {
-            pushStateSnapshot();
-        }
-        else if (type == "get_logs")
-        {
-            // Send buffered log entries to newly connected UI client
-            auto entries = MonitorLog::instance().getEntries();
-            for (const auto& e : entries)
-            {
-                nlohmann::json lj;
-                lj["type"] = "log_entry";
-                lj["timestamp_ms"] = e.timestamp_ms;
-                lj["level"] = e.level;
-                lj["category"] = e.category;
-                lj["message"] = e.message;
-                m_uiIpc.push(lj.dump());
-            }
-        }
-        else if (type == "get_chunks")
-        {
-            std::string jobId = j.value("job_id", "");
-            if (!jobId.empty())
-            {
-                auto chunks = getChunksForJob(jobId);
-                nlohmann::json resp;
-                resp["type"] = "chunks";
-                resp["job_id"] = jobId;
-                nlohmann::json arr = nlohmann::json::array();
-                for (const auto& c : chunks)
-                {
-                    arr.push_back({
-                        {"chunk_id", c.id},
-                        {"frame_start", c.frame_start},
-                        {"frame_end", c.frame_end},
-                        {"state", c.state},
-                        {"assigned_to", c.assigned_to},
-                        {"retries", c.retry_count},
-                        {"completed_frames", c.completed_frames},
-                        {"failed_on", c.failed_on}
-                    });
-                }
-                resp["chunks"] = std::move(arr);
-                m_uiIpc.push(resp.dump());
-            }
-        }
-    }
-    catch (const std::exception& e)
-    {
-        MonitorLog::instance().warn("ui-ipc", std::string("Bad command: ") + e.what());
-    }
-}
 
 void MonitorApp::loadConfig()
 {

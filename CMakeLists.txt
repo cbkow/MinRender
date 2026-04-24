@@ -64,7 +64,6 @@ set(MINRENDER_CORE_SOURCES
     src/core/platform.cpp
     src/core/node_identity.cpp
     src/core/ipc_server.cpp
-    src/core/ui_ipc_server.cpp
     src/core/monitor_log.cpp
     src/core/single_instance.cpp
     src/core/net_utils.cpp
@@ -118,8 +117,7 @@ qt_add_executable(minrender
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )
 
-# QML-only UI — no .ui forms ever, so turn AUTOUIC off so it doesn't
-# misread core/ui_ipc_server.h as a UIC-generated header.
+# QML-only UI — we never use QtDesigner .ui forms, so turn AUTOUIC off.
 set_target_properties(minrender PROPERTIES AUTOUIC OFF)
 
 target_include_directories(minrender PRIVATE
@@ -206,8 +204,9 @@ add_executable(minrender-headless
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )
 
-# Headless has no Qt dependency; disable Qt autogen (AUTOUIC otherwise
-# misinterprets core/ui_ipc_server.h as a UIC-generated header).
+# Headless doesn't use any Qt UI facilities — just QLockFile +
+# QLocalServer/Socket via single_instance.cpp. Disable Qt autogen to
+# skip needless moc/uic/rcc passes.
 set_target_properties(minrender-headless PROPERTIES
     AUTOMOC OFF
     AUTOUIC OFF

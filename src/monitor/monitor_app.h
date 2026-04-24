@@ -5,7 +5,6 @@
 #include "core/peer_info.h"
 #include "core/http_server.h"
 #include "core/udp_notify.h"
-#include "core/ui_ipc_server.h"
 #include "monitor/agent_supervisor.h"
 #include "monitor/render_coordinator.h"
 #include "monitor/template_manager.h"
@@ -159,10 +158,6 @@ private:
     void handleUdpMessages();
     void sendUdpHeartbeat();
 
-    // UI IPC push events
-    void pushStateSnapshot();
-    void handleUiCommand(const std::string& json);
-
     // Background HTTP worker
     void startHttpWorker();
     void stopHttpWorker();
@@ -184,7 +179,6 @@ private:
     DispatchManager m_dispatchManager;
     SubmissionWatcher m_submissionWatcher;
     UdpNotify m_udpNotify;
-    UiIpcServer m_uiIpc;
 
     // Cached snapshots
     std::vector<JobInfo> m_cachedJobs;
@@ -251,9 +245,6 @@ private:
 
     // Job cache refresh timing
     std::chrono::steady_clock::time_point m_lastJobCacheRefresh;
-
-    // UI IPC render progress throttle (~1s)
-    std::chrono::steady_clock::time_point m_lastProgressPush;
 
     // Job selection
     std::string m_selectedJobId;
