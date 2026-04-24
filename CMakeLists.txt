@@ -138,6 +138,7 @@ qt_add_qml_module(minrender
     QML_FILES
         src/ui/qml/Main.qml
         src/ui/qml/panels/FarmCleanupDialog.qml
+        src/ui/qml/panels/JobDetailPanel.qml
         src/ui/qml/panels/JobListPanel.qml
         src/ui/qml/panels/LogPanel.qml
         src/ui/qml/panels/NodePanel.qml

@@ -230,6 +230,10 @@ void AppBridge::setCurrentJobId(const QString& jobId)
     m_currentJobId = jobId;
     emit currentJobIdChanged();
 
+    // Picking a real job cancels submission mode — user moved on.
+    if (!jobId.isEmpty() && m_submissionMode)
+        setSubmissionMode(false);
+
     // Keep MonitorApp's selected-job state in sync — HTTP handlers
     // and render logic key off selectedJobId() for some behavior.
     if (m_monitor)
@@ -246,6 +250,14 @@ void AppBridge::setCurrentJobId(const QString& jobId)
         refreshChunks();
         m_chunksTimer.start();
     }
+}
+
+void AppBridge::setSubmissionMode(bool on)
+{
+    if (m_submissionMode == on)
+        return;
+    m_submissionMode = on;
+    emit submissionModeChanged();
 }
 
 void AppBridge::refreshChunks()
@@ -434,8 +446,10 @@ void AppBridge::retryFailedChunks(const QString& jobId)
 
 void AppBridge::requestSubmissionMode()
 {
-    if (!m_monitor) return;
-    m_monitor->requestSubmissionMode();
+    // The MonitorApp flag was a one-shot consumed by the old ImGui
+    // dashboard; with AppBridge driving UI state we use our own
+    // submissionMode property directly.
+    setSubmissionMode(true);
 }
 
 QVariantMap AppBridge::templateById(const QString& templateId) const

@@ -51,7 +51,7 @@ ApplicationWindow {
 
         Menu {
             title: qsTr("&Jobs")
-            Action { text: qsTr("New Job…"); onTriggered: submissionDialog.open() }
+            Action { text: qsTr("New Job…"); onTriggered: appBridge.submissionMode = true }
         }
 
         Menu {
@@ -119,7 +119,7 @@ ApplicationWindow {
                 SplitView.preferredHeight: panelSettings.jobListHeight
                 SplitView.minimumHeight: 120
                 onHeightChanged: if (SplitView.view) panelSettings.jobListHeight = height
-                onNewJobRequested: submissionDialog.open()
+                onNewJobRequested: appBridge.submissionMode = true
             }
 
             // Bottom pane: horizontal split — JobDetail on left, Log on right.
@@ -127,18 +127,12 @@ ApplicationWindow {
                 orientation: Qt.Horizontal
                 SplitView.fillHeight: true
 
-                Rectangle {
-                    id: jobDetailPlaceholder
+                JobDetailPanel {
+                    id: jobDetailInstance
                     visible: panelSettings.jobDetailVisible
-                    color: "#1a1a1a"
                     SplitView.preferredWidth: panelSettings.jobDetailWidth
-                    SplitView.minimumWidth: 240
+                    SplitView.minimumWidth: 280
                     onWidthChanged: if (SplitView.view) panelSettings.jobDetailWidth = width
-                    Label {
-                        anchors.centerIn: parent
-                        text: qsTr("Job Detail (Phase 5)")
-                        color: "#888"
-                    }
                 }
 
                 LogPanel {
@@ -187,39 +181,5 @@ ApplicationWindow {
     // --- Farm Cleanup dialog (Phase 7 stub) ---
     FarmCleanupDialog {
         id: farmCleanupDialog
-    }
-
-    // --- Submission dialog ---
-    // Phase 5 will Loader-mount SubmissionForm inside the JobDetail panel
-    // when the user requests submission mode. For Phase 4 it lives in a
-    // modal Dialog so the rest of the panel layout doesn't have to learn
-    // a third state yet (Empty / Submission / Detail).
-    Dialog {
-        id: submissionDialog
-        title: qsTr("New Job")
-        modal: true
-        anchors.centerIn: parent
-        width: 680
-        height: Math.min(720, window.height - 80)
-        closePolicy: Popup.NoAutoClose
-
-        Loader {
-            anchors.fill: parent
-            active: submissionDialog.visible
-            sourceComponent: submissionFormComponent
-        }
-
-        Component {
-            id: submissionFormComponent
-            SubmissionForm {
-                onSubmitted: (jobId) => {
-                    submissionDialog.close()
-                    appBridge.currentJobId = jobId
-                }
-                onCancelled: submissionDialog.close()
-                // failed leaves the dialog open so the user can fix and retry;
-                // the form's error banner shows the reason.
-            }
-        }
     }
 }

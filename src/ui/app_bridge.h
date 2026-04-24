@@ -40,6 +40,12 @@ class AppBridge : public QObject
     Q_PROPERTY(QString currentJobId READ currentJobId WRITE setCurrentJobId
                NOTIFY currentJobIdChanged)
 
+    // True while the JobDetailPanel should show the submission form.
+    // Set by New Job actions; cleared by SubmissionForm's submit/cancel
+    // or by selecting an existing job.
+    Q_PROPERTY(bool submissionMode READ submissionMode WRITE setSubmissionMode
+               NOTIFY submissionModeChanged)
+
     // "This Node" descriptors — stable for the life of the process except
     // for isLeader and nodeState, which flip with leadership / tray toggles.
     Q_PROPERTY(QString thisNodeId       READ thisNodeId       CONSTANT)
@@ -74,6 +80,9 @@ public:
 
     QString currentJobId() const { return m_currentJobId; }
     void setCurrentJobId(const QString& jobId);
+
+    bool submissionMode() const { return m_submissionMode; }
+    void setSubmissionMode(bool on);
 
     QString thisNodeId() const;
     QString thisNodeHostname() const;
@@ -174,6 +183,7 @@ signals:
     void showNotificationsChanged();
     void stagingEnabledChanged();
     void currentJobIdChanged();
+    void submissionModeChanged();
     void thisNodeIsLeaderChanged();
     void thisNodeActiveChanged();
 
@@ -200,6 +210,7 @@ private:
     std::unique_ptr<TemplatesModel> m_templatesModel;
     QTimer                          m_chunksTimer;
     QString                         m_currentJobId;
+    bool m_submissionMode   = false;
     bool m_lastFarmRunning  = false;
     bool m_lastIsLeader     = false;
     bool m_lastNodeActive   = true;
