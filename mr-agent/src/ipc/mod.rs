@@ -4,6 +4,12 @@ pub mod windows;
 #[cfg(windows)]
 pub use windows::WindowsPipeClient as PipeClient;
 
+#[cfg(unix)]
+pub mod unix;
+
+#[cfg(unix)]
+pub use unix::UnixSocketClient as PipeClient;
+
 use std::io::{self, Read, Write};
 
 /// Write a length-prefixed JSON message.

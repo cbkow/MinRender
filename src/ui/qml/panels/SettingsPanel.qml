@@ -26,6 +26,10 @@ Item {
         }
     }
 
+    PathMappingsDialog {
+        id: pathMappingsDialog
+    }
+
     ColumnLayout {
         id: contentColumn
         anchors {
@@ -137,6 +141,23 @@ Item {
             text: qsTr("Enable staging")
             checked: appBridge.stagingEnabled
             onToggled: appBridge.stagingEnabled = checked
+        }
+
+        // --- Path mappings ---
+        SectionHeader { text: qsTr("Path mappings") }
+        RowLayout {
+            Layout.fillWidth: true
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Map share roots between Windows, macOS, and Linux for cross-OS dispatch.")
+                color: Theme.textMuted
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+            Button {
+                text: qsTr("Edit…")
+                onClicked: pathMappingsDialog.open()
+            }
         }
 
         // --- UI ---

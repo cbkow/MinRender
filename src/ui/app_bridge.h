@@ -259,6 +259,14 @@ public:
     // broken before they hit Save.
     Q_INVOKABLE bool syncRootIsValid() const;
 
+    // Path mapping accessors for the Path Mappings dialog. Returns/accepts
+    // a JSON array of {win, mac, lin, enabled, label} entries. Mutates
+    // MonitorApp::config().path_mappings in-memory and persists to disk
+    // via saveConfig() (mappings are infrequently edited; no separate
+    // dirty flag like the main settings dialog uses).
+    Q_INVOKABLE QString pathMappingsJson() const;
+    Q_INVOKABLE void    setPathMappings(const QString& json);
+
 signals:
     void farmRunningChanged();
     void accentColorChanged();
@@ -284,6 +292,8 @@ signals:
 
     void submissionSucceeded(const QString& jobId);
     void submissionFailed(const QString& reason);
+
+    void pathMappingsChanged();
 
 private:
     // Snapshot of MonitorApp::config() taken at construction and after each

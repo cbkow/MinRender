@@ -2,6 +2,7 @@
 
 #include "core/config.h"
 #include "core/monitor_log.h"
+#include "core/path_mapping.h"
 #include "core/platform.h"
 #include "monitor/dispatch_manager.h"
 #include "monitor/monitor_app.h"
@@ -694,6 +695,45 @@ void AppBridge::saveSettings()
         m_monitor->requestFarmRestart();
 }
 
+QString AppBridge::pathMappingsJson() const
+{
+    if (!m_monitor) return QStringLiteral("[]");
+    nlohmann::json arr = nlohmann::json::array();
+    for (const auto& m : m_monitor->config().path_mappings)
+        arr.push_back(m);
+    return QString::fromStdString(arr.dump());
+}
+
+void AppBridge::setPathMappings(const QString& json)
+{
+    if (!m_monitor) return;
+
+    std::vector<PathMapping> parsed;
+    try
+    {
+        auto j = nlohmann::json::parse(json.toStdString());
+        if (!j.is_array())
+            return;
+        parsed.reserve(j.size());
+        for (const auto& item : j)
+            parsed.push_back(item.get<PathMapping>());
+    }
+    catch (const std::exception& e)
+    {
+        // Malformed JSON from the dialog — leave config untouched. The
+        // dialog stringifies its own model, so this should only fire if
+        // someone calls setPathMappings via QML console with bad input.
+        MonitorLog::instance().warn(
+            "AppBridge",
+            std::string("setPathMappings: failed to parse JSON: ") + e.what());
+        return;
+    }
+
+    m_monitor->config().path_mappings = std::move(parsed);
+    m_monitor->saveConfig();
+    emit pathMappingsChanged();
+}
+
 QString AppBridge::thisNodeId() const
 {
     return m_monitor
@@ -882,14 +922,33 @@ QVariantMap AppBridge::templateById(const QString& templateId) const
 
     const JobTemplate& t = *it;
 
+#ifdef Q_OS_MACOS
+    // Templates are typically authored on Windows; their default flag
+    // values can contain canonical Windows paths (Z:\..., \\server\...).
+    // Translate to native Mac form so the submission form shows
+    // /Volumes/... in the placeholder. Non-path defaults (runtime
+    // tokens like {frame}, empty strings) pass through unchanged because
+    // translatePath only rewrites strings that prefix-match a configured
+    // mapping. Submission re-canonicalizes via toCanonicalPath() so the
+    // round-trip is loss-free.
+    const auto& mappingsForUi = m_monitor->config().path_mappings;
+#endif
+
     QVariantList flags;
     flags.reserve(static_cast<int>(t.flags.size()));
     for (const auto& f : t.flags)
     {
         QVariantMap fm;
         fm["flag"]     = QString::fromStdString(f.flag);
+#ifdef Q_OS_MACOS
+        fm["value"]    = f.value.has_value()
+                         ? QString::fromStdString(
+                             MR::fromCanonicalPath(*f.value, mappingsForUi))
+                         : QString();
+#else
         fm["value"]    = f.value.has_value()
                          ? QString::fromStdString(*f.value) : QString();
+#endif
         fm["info"]     = QString::fromStdString(f.info);
         fm["help"]     = QString::fromStdString(f.help);
         fm["editable"] = f.editable;
@@ -969,6 +1028,29 @@ void AppBridge::submitJob(const QString& templateId,
         tmpl.job_defaults.max_retries,
         tmpl.job_defaults.timeout_seconds,
         m_monitor->identity().nodeId(), os);
+
+#ifdef Q_OS_MACOS
+    // MinRender is Windows-first: paths in manifests, SQLite, and on the
+    // wire are stored in canonical Windows form. On macOS we translate at
+    // the submission boundary so a Mac artist picking /Volumes/... lands
+    // in the database as Z:\... — exactly what a Windows submitter would
+    // produce. After this step submitted_os is overwritten to "windows"
+    // because the manifest's paths are now in Windows form; the dispatcher
+    // (dispatch_manager.cpp:410) keys on submitted_os to decide whether
+    // to run cross-OS translation, and getting that wrong double-translates.
+    if (MR::currentOsTag() == "mac")
+    {
+        const auto& mappings = m_monitor->config().path_mappings;
+        for (auto& flag : manifest.flags)
+        {
+            if (flag.value.has_value() && !flag.value->empty())
+                flag.value = MR::toCanonicalPath(*flag.value, mappings);
+        }
+        if (manifest.output_dir.has_value() && !manifest.output_dir->empty())
+            manifest.output_dir = MR::toCanonicalPath(*manifest.output_dir, mappings);
+        manifest.submitted_os = "windows";
+    }
+#endif
 
     if (m_monitor->isLeader())
     {

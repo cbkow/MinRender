@@ -92,7 +92,8 @@ inline std::string translatePath(
                 remainder = remainder.substr(1);
 
             std::string normTarget = normalizePath(tgtPrefix);
-            // Strip trailing slash from target
+            // Strip trailing slash from target (covers both '/' and '\'
+            // since normalizePath already converted '\' to '/')
             while (!normTarget.empty() && normTarget.back() == '/')
                 normTarget.pop_back();
 
@@ -106,6 +107,27 @@ inline std::string translatePath(
 
     // No mapping matched — normalize separators only
     return toNativeSeparators(path, targetOS);
+}
+
+/// Translate a path from the current OS form to canonical Windows form.
+/// On Windows this is a no-op (separator normalization only). Used at
+/// the submission boundary on macOS to canonicalize manifest paths
+/// before persisting to SQLite or POSTing to the leader.
+inline std::string toCanonicalPath(
+    const std::string& path,
+    const std::vector<PathMapping>& mappings)
+{
+    return translatePath(currentOsTag(), "win", path, mappings);
+}
+
+/// Translate a canonical Windows path back to the current OS form.
+/// On Windows this is a no-op. Used at UI display boundaries on macOS
+/// so /Volumes/... appears in panels instead of Z:\... .
+inline std::string fromCanonicalPath(
+    const std::string& path,
+    const std::vector<PathMapping>& mappings)
+{
+    return translatePath("win", currentOsTag(), path, mappings);
 }
 
 } // namespace MR
