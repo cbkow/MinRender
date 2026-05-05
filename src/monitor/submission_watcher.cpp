@@ -1,6 +1,7 @@
 #include "monitor/submission_watcher.h"
 #include "monitor/monitor_app.h"
 #include "monitor/template_manager.h"
+#include "core/path_mapping.h"
 #include "core/platform.h"
 #include "core/monitor_log.h"
 #include "core/net_utils.h"
@@ -180,6 +181,30 @@ void SubmissionWatcher::processSubmission(const fs::path& jsonPath)
         tmpl.job_defaults.max_retries,
         tmpl.job_defaults.timeout_seconds,
         m_app->identity().nodeId(), os);
+
+    // Canonicalize macOS-submitted paths to Windows form before persisting.
+    // Mirrors the Qt UI submission boundary in app_bridge.cpp: DCC plugins
+    // (Blender / C4D / AE) write the user's native /Volumes/... paths into
+    // submission JSON without knowing about the path-mapping config, so we
+    // translate here before the manifest is queued or POSTed to the leader.
+    // Setting submitted_os = "windows" prevents dispatch_manager.cpp:410
+    // from re-translating mac→win on its way to a Windows worker (which
+    // would double-translate already-canonical paths or, if no mapping
+    // covers the macOS root, silently send a broken path to the worker).
+#ifdef __APPLE__
+    if (MR::currentOsTag() == "mac")
+    {
+        const auto& mappings = m_app->config().path_mappings;
+        for (auto& flag : manifest.flags)
+        {
+            if (flag.value.has_value() && !flag.value->empty())
+                flag.value = MR::toCanonicalPath(*flag.value, mappings);
+        }
+        if (manifest.output_dir.has_value() && !manifest.output_dir->empty())
+            manifest.output_dir = MR::toCanonicalPath(*manifest.output_dir, mappings);
+        manifest.submitted_os = "windows";
+    }
+#endif
 
     // Submit to leader (job stored in SQLite, no shared FS write needed)
     if (m_app->isLeader())
