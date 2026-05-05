@@ -1,5 +1,6 @@
 # Build
 build/
+build-mac/
 out/
 cmake-build-*/
 CMakeCache.txt
@@ -31,12 +32,10 @@ Desktop.ini
 
 # Dependencies (fetched by CMake)
 _deps/
-.claude/
 
 # Rust
 mr-agent/target/
 
 # Internal planning notes
 notes/
-.claude/settings.local.json
-/.claude
+.claude/
