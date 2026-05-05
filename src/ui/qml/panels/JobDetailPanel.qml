@@ -53,9 +53,11 @@ Item {
                     color: Theme.textMuted
                     font.pixelSize: Theme.fontSizeBase
                 }
-                Button {
+                FlatButton {
                     Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("New Job…")
+                    iconName: "plus"
+                    text: qsTr("New Job")
+                    variant: "primary"
                     onClicked: appBridge.submissionMode = true
                 }
             }
@@ -168,9 +170,8 @@ Item {
                             Layout.fillWidth: true
                             spacing: 8
 
-                            ProgressBar {
+                            Progress {
                                 Layout.fillWidth: true
-                                from: 0; to: 1
                                 value: job.progress || 0
                             }
                             Label {
@@ -218,34 +219,50 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.topMargin: 4
-                            spacing: 6
+                            spacing: 0
 
-                            Button {
+                            FlatButton {
                                 visible: job.state === "active"
+                                iconName: "pause"
                                 text: qsTr("Pause")
                                 onClicked: appBridge.pauseJob(appBridge.currentJobId)
                             }
-                            Button {
+                            FlatButton {
                                 visible: job.state === "paused"
+                                iconName: "play"
                                 text: qsTr("Resume")
+                                variant: "primary"
                                 onClicked: appBridge.resumeJob(appBridge.currentJobId)
                             }
-                            Button {
+                            FlatButton {
+                                iconName: "arrow-clockwise"
                                 text: qsTr("Retry failed")
                                 enabled: (job.failedChunks || 0) > 0
                                 onClicked: appBridge.retryFailedChunks(appBridge.currentJobId)
                             }
-                            Button {
+                            FlatButton {
+                                iconName: "arrows-counter-clockwise"
                                 text: qsTr("Requeue")
                                 onClicked: appBridge.requeueJob(appBridge.currentJobId)
                             }
+                            FlatButton {
+                                iconName: "folder-open"
+                                text: qsTr("Open output")
+                                ToolTip.text: qsTr("Reveal the job's render folder in the file manager. Uses Path Mappings to translate canonical paths.")
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 600
+                                onClicked: appBridge.openJobOutput(appBridge.currentJobId)
+                            }
                             Item { Layout.fillWidth: true }
-                            Button {
+                            FlatButton {
+                                iconName: "x"
                                 text: qsTr("Cancel")
                                 onClicked: appBridge.cancelJob(appBridge.currentJobId)
                             }
-                            Button {
+                            FlatButton {
+                                iconName: "trash"
                                 text: qsTr("Delete")
+                                variant: "danger"
                                 onClicked: appBridge.deleteJob(appBridge.currentJobId)
                             }
                         }
@@ -274,6 +291,7 @@ Item {
                             bgColor:        Theme.frameBg
                             unclaimedColor: Theme.frameUnclaimed
                             assignedColor:  Theme.frameAssigned
+                            renderedColor:  Theme.frameRendered
                             completedColor: Theme.frameCompleted
                             failedColor:    Theme.frameFailed
                         }
@@ -396,11 +414,10 @@ Item {
                                     Item {
                                         width: 120
                                         height: parent.height
-                                        ProgressBar {
+                                        Progress {
                                             anchors.verticalCenter: parent.verticalCenter
                                             width: parent.width - 6
                                             value: progress
-                                            from: 0; to: 1
                                         }
                                     }
                                     Label {

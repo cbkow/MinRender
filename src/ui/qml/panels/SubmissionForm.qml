@@ -193,9 +193,10 @@ Item {
                     // File picker for flags the template marks as type=file
                     // (e.g. Scene File in the C4D template). filter is
                     // turned into a Qt name-filter string: "Filter (*.ext)".
-                    Button {
+                    FlatButton {
                         visible: modelData.type === "file"
-                        text: qsTr("Browse…")
+                        iconName: "folder-open"
+                        text: qsTr("Browse")
                         onClicked: {
                             flagFilePicker.targetIndex = index
                             flagFilePicker.nameFilters = modelData.filter
@@ -263,14 +264,15 @@ Item {
 
         Item { Layout.fillWidth: true }
 
-        Button {
+        FlatButton {
             text: qsTr("Cancel")
             onClicked: root.cancelled()
         }
 
-        Button {
+        FlatButton {
+            iconName: "paper-plane-tilt"
             text: qsTr("Submit")
-            highlighted: true
+            variant: "primary"
             enabled: jobNameField.text.length > 0 && currentTemplate !== null
             onClicked: {
                 errorBanner.text = ""

@@ -109,12 +109,14 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 4
-                    spacing: 6
+                    spacing: Theme.spacing
 
-                    Button {
+                    FlatButton {
+                        Layout.fillWidth: true
+                        iconName: appBridge.thisNodeActive ? "pause" : "play"
                         text: appBridge.thisNodeActive
                               ? qsTr("Stop") : qsTr("Resume")
-                        Layout.fillWidth: true
+                        variant: appBridge.thisNodeActive ? "default" : "primary"
                         onClicked: appBridge.toggleNodeActive()
                     }
                 }

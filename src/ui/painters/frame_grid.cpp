@@ -95,6 +95,11 @@ void FrameGrid::setAssignedColor(const QColor& c)
     if (m_assigned == c) return;
     m_assigned = c; emit assignedColorChanged(); update();
 }
+void FrameGrid::setRenderedColor(const QColor& c)
+{
+    if (m_rendered == c) return;
+    m_rendered = c; emit renderedColorChanged(); update();
+}
 void FrameGrid::setCompletedColor(const QColor& c)
 {
     if (m_completed == c) return;
@@ -168,8 +173,16 @@ void FrameGrid::paint(QPainter* painter)
                 painter->fillRect(cellRect(i), chunkColor);
         }
 
-        // Completed frames inside this chunk override — even if the
-        // chunk state is still "assigned" they're proof of progress.
+        // Completed frames inside this chunk override the chunk's base
+        // colour. If the chunk itself is "completed" (files have been
+        // copied to the destination), every frame is shown in the bright
+        // completedColor — chunkColor === m_completed already, so this
+        // pass is a no-op for those. Otherwise the frame was rendered
+        // locally and is still in staging awaiting copy: draw it in the
+        // dimmer renderedColor so the user can tell rendered-but-not-
+        // copied apart from fully-finished work.
+        const QColor frameDoneColor =
+            (state == QStringLiteral("completed")) ? m_completed : m_rendered;
         const QVariantList done =
             m_model->data(idx, ChunksModel::CompletedFramesRole).toList();
         for (const QVariant& v : done)
@@ -178,7 +191,7 @@ void FrameGrid::paint(QPainter* painter)
             const int i = f - m_frameStart;
             if (i < 0 || i >= totalFrames)
                 continue;
-            painter->fillRect(cellRect(i), m_completed);
+            painter->fillRect(cellRect(i), frameDoneColor);
         }
     }
 }

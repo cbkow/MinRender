@@ -19,6 +19,30 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 
+# macOS screenshots (default capture filenames)
+Screenshot*.png
+Screenshot*.jpeg
+Screenshot*.jpg
+Screen Shot*.png
+
+# macOS packaging artifacts
+*.dmg
+*.pkg
+*.app/
+
+# Qt build/cache scraps
+*.qmake.stash
+.qtc_clangd/
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+
+# Editor / tooling
+compile_commands.json
+*.swp
+*~
+.cache/
+
 # Binaries
 *.exe
 *.dll

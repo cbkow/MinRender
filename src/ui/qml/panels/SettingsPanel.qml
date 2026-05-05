@@ -62,6 +62,7 @@ Item {
         }
         RowLayout {
             Layout.fillWidth: true
+            spacing: Theme.spacingLoose
             TextField {
                 id: syncRootField
                 Layout.fillWidth: true
@@ -69,8 +70,9 @@ Item {
                 onEditingFinished: appBridge.syncRoot = text
                 placeholderText: qsTr("e.g. \\\\server\\share\\MinRender")
             }
-            Button {
-                text: qsTr("Browse…")
+            FlatButton {
+                iconName: "folder-open"
+                text: qsTr("Browse")
                 onClicked: folderPicker.open()
             }
         }
@@ -147,15 +149,17 @@ Item {
         SectionHeader { text: qsTr("Path mappings") }
         RowLayout {
             Layout.fillWidth: true
+            spacing: Theme.spacingLoose
             Label {
                 Layout.fillWidth: true
                 text: qsTr("Map share roots between Windows, macOS, and Linux for cross-OS dispatch.")
                 color: Theme.textMuted
-                font.pixelSize: 11
+                font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.WordWrap
             }
-            Button {
-                text: qsTr("Edit…")
+            FlatButton {
+                iconName: "swap"
+                text: qsTr("Edit")
                 onClicked: pathMappingsDialog.open()
             }
         }
@@ -180,11 +184,11 @@ Item {
             bottom: parent.bottom
             margins: 16
         }
-        spacing: 8
+        spacing: Theme.spacingLoose
 
         Item { Layout.fillWidth: true }
 
-        Button {
+        FlatButton {
             text: qsTr("Cancel")
             onClicked: {
                 appBridge.revertSettings()
@@ -192,9 +196,10 @@ Item {
             }
         }
 
-        Button {
+        FlatButton {
             text: qsTr("Save")
-            highlighted: true
+            iconName: "check"
+            variant: "primary"
             onClicked: {
                 appBridge.saveSettings()
                 root.accepted()

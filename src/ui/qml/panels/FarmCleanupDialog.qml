@@ -88,7 +88,8 @@ Dialog {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
-            Button {
+            FlatButton {
+                iconName: "arrows-clockwise"
                 text: qsTr("Rescan")
                 onClicked: root.rescan()
             }
@@ -190,7 +191,7 @@ Dialog {
                     text: section.title + " · " + section.items.length
                 }
                 Item { Layout.fillWidth: true }
-                Button {
+                FlatButton {
                     text: section.actionLabel
                     enabled: section.items.length > 0
                              && root.selectedInList(section.items).length > 0

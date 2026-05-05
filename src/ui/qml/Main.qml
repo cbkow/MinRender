@@ -31,7 +31,9 @@ ApplicationWindow {
 
         property real nodePanelWidth: window.width * 0.28
         property real jobListHeight: (window.height - menuBarArea.height) * 0.33
-        property real jobDetailWidth: window.width * 0.36
+        // 50/50 horizontal split for the bottom (JobDetail | Log) — the
+        // remaining width after NodePanel is divided evenly.
+        property real jobDetailWidth: (window.width - nodePanelWidth) * 0.5
 
         property bool nodePanelVisible: true
         property bool jobListVisible: true

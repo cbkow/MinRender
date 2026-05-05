@@ -885,6 +885,54 @@ void AppBridge::retryFailedChunks(const QString& jobId)
     m_monitor->retryFailedChunks(jobId.toStdString());
 }
 
+void AppBridge::openJobOutput(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+
+    const std::string id = jobId.toStdString();
+    const auto& jobs = m_monitor->cachedJobs();
+    auto it = std::find_if(jobs.begin(), jobs.end(),
+        [&](const JobInfo& j) { return j.manifest.job_id == id; });
+    if (it == jobs.end())
+    {
+        MonitorLog::instance().warn(
+            "AppBridge", "openJobOutput: job not found: " + id);
+        return;
+    }
+
+    if (!it->manifest.output_dir.has_value()
+        || it->manifest.output_dir->empty())
+    {
+        MonitorLog::instance().warn(
+            "AppBridge", "openJobOutput: job has no output_dir: " + id);
+        return;
+    }
+
+    // Manifests store paths in canonical Windows form. fromCanonicalPath
+    // is identity on Windows and translates to /Volumes/... on macOS via
+    // the configured path mappings. If no mapping matches, the helper
+    // returns a separator-normalized version of the canonical path,
+    // which generally won't exist on the local filesystem — log instead
+    // of opening a bogus path.
+    const std::string& canonical = *it->manifest.output_dir;
+    const std::string native = MR::fromCanonicalPath(
+        canonical, m_monitor->config().path_mappings);
+
+    std::filesystem::path p(native);
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec))
+    {
+        MonitorLog::instance().warn(
+            "AppBridge",
+            "openJobOutput: resolved path does not exist locally — "
+            "check Path Mappings in Settings. canonical='" + canonical
+            + "' resolved='" + native + "'");
+        return;
+    }
+
+    MR::openFolderInExplorer(p);
+}
+
 void AppBridge::requestSubmissionMode()
 {
     // The MonitorApp flag was a one-shot consumed by the old ImGui

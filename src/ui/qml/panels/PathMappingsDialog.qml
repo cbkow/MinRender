@@ -180,9 +180,12 @@ Dialog {
                             font.family: Theme.monoFamily
                             font.pixelSize: Theme.fontSizeSmall
                         }
-                        Button {
-                            Layout.preferredWidth: 28
-                            text: qsTr("✕")
+                        FlatButton {
+                            Layout.preferredWidth: Theme.toolStripHeight
+                            iconName: "trash"
+                            ToolTip.text: qsTr("Remove")
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 500
                             onClicked: root.removeMapping(index)
                         }
                     }
@@ -192,22 +195,25 @@ Dialog {
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+            spacing: Theme.spacingLoose
 
-            Button {
+            FlatButton {
+                iconName: "plus"
                 text: qsTr("Add Mapping")
+                variant: "primary"
                 onClicked: root.addMapping()
             }
 
             Item { Layout.fillWidth: true }
 
-            Button {
+            FlatButton {
                 text: qsTr("Cancel")
                 onClicked: root.reject()
             }
-            Button {
+            FlatButton {
+                iconName: "check"
                 text: qsTr("Save")
-                highlighted: true
+                variant: "primary"
                 onClicked: root.save()
             }
         }

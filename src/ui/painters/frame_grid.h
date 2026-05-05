@@ -28,6 +28,13 @@ class FrameGrid : public QQuickPaintedItem
     Q_PROPERTY(QColor bgColor        READ bgColor        WRITE setBgColor        NOTIFY bgColorChanged)
     Q_PROPERTY(QColor unclaimedColor READ unclaimedColor WRITE setUnclaimedColor NOTIFY unclaimedColorChanged)
     Q_PROPERTY(QColor assignedColor  READ assignedColor  WRITE setAssignedColor  NOTIFY assignedColorChanged)
+    // Frame rendered locally / sitting in staging — not yet copied to
+    // the destination. Drawn over `assignedColor` for individual frames
+    // listed in completed_frames while the chunk state is still
+    // assigned/rendering. Distinct from `completedColor` so the user can
+    // tell when a chunk has finished rendering but the post-render copy
+    // is still in flight.
+    Q_PROPERTY(QColor renderedColor  READ renderedColor  WRITE setRenderedColor  NOTIFY renderedColorChanged)
     Q_PROPERTY(QColor completedColor READ completedColor WRITE setCompletedColor NOTIFY completedColorChanged)
     Q_PROPERTY(QColor failedColor    READ failedColor    WRITE setFailedColor    NOTIFY failedColorChanged)
 
@@ -52,6 +59,8 @@ public:
     void setUnclaimedColor(const QColor& c);
     QColor assignedColor() const { return m_assigned; }
     void setAssignedColor(const QColor& c);
+    QColor renderedColor() const { return m_rendered; }
+    void setRenderedColor(const QColor& c);
     QColor completedColor() const { return m_completed; }
     void setCompletedColor(const QColor& c);
     QColor failedColor() const { return m_failed; }
@@ -67,6 +76,7 @@ signals:
     void bgColorChanged();
     void unclaimedColorChanged();
     void assignedColorChanged();
+    void renderedColorChanged();
     void completedColorChanged();
     void failedColorChanged();
 
@@ -85,9 +95,10 @@ private:
 
     QColor m_bg        { 0x10, 0x10, 0x10 };
     QColor m_unclaimed { 0x30, 0x30, 0x30 };
-    QColor m_assigned  { 0x7a, 0xa2, 0xf7 };
-    QColor m_completed { 0x9e, 0xce, 0x6a };
-    QColor m_failed    { 0xf7, 0x76, 0x8e };
+    QColor m_assigned  { 0x01, 0x89, 0xf1 };
+    QColor m_rendered  { 0x2a, 0x82, 0x28 };  // dark green — staged, awaiting copy
+    QColor m_completed { 0x46, 0xc8, 0x46 };  // light green — chunk fully copied to destination
+    QColor m_failed    { 0xc0, 0x40, 0x40 };
 };
 
 } // namespace MR

@@ -90,25 +90,34 @@ Item {
                 ToolSeparator { Layout.fillHeight: true }
 
                 // Level filter chips — only meaningful for Monitor Log.
-                ToolButton {
+                // subtleChecked → no accent border, sits flush with the
+                // toolstrip; on/off shows as text color (bright level
+                // color when on, muted when off).
+                FlatButton {
                     text: qsTr("Info")
                     enabled: !root.remoteMode
                     checkable: true
                     checked: root.showInfo
+                    subtleChecked: true
+                    checkedColor: Theme.info
                     onToggled: root.showInfo = checked
                 }
-                ToolButton {
+                FlatButton {
                     text: qsTr("Warn")
                     enabled: !root.remoteMode
                     checkable: true
                     checked: root.showWarn
+                    subtleChecked: true
+                    checkedColor: Theme.warn
                     onToggled: root.showWarn = checked
                 }
-                ToolButton {
+                FlatButton {
                     text: qsTr("Error")
                     enabled: !root.remoteMode
                     checkable: true
                     checked: root.showError
+                    subtleChecked: true
+                    checkedColor: Theme.error
                     onToggled: root.showError = checked
                 }
 
@@ -134,9 +143,9 @@ Item {
 
                 ToolSeparator { Layout.fillHeight: true }
 
-                Button {
+                FlatButton {
+                    iconName: "broom"
                     text: qsTr("Clear")
-                    flat: true
                     enabled: !root.remoteMode
                     onClicked: appBridge.logModel.clear()
                 }

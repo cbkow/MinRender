@@ -54,7 +54,7 @@ Item {
     // Column widths (px). Checkbox | Name | State | Progress | Created
     readonly property int colCheck:    28
     readonly property int colState:    90
-    readonly property int colProgress: 140
+    readonly property int colProgress: 280
     readonly property int colCreated:  140
 
     ColumnLayout {
@@ -72,8 +72,10 @@ Item {
                 return s
             }
 
-            Button {
-                text: qsTr("New Job…")
+            FlatButton {
+                iconName: "plus"
+                text: qsTr("New Job")
+                variant: "primary"
                 onClicked: root.newJobRequested()
             }
         }
@@ -221,11 +223,10 @@ Item {
                     Item {
                         width: root.colProgress
                         height: parent.height
-                        ProgressBar {
+                        Progress {
                             anchors.verticalCenter: parent.verticalCenter
                             width: parent.width - 40
                             value: progress
-                            from: 0; to: 1
                         }
                         Label {
                             anchors.right: parent.right

@@ -19,18 +19,30 @@ Rectangle {
     property string subtitle: ""
     default property alias trailingContent: trailing.children
 
-    implicitHeight: 32
-    color: Theme.surface
+    implicitHeight: Theme.toolStripHeight
+    color: Theme.toolbar
+
+    // Bottom divider — single 1px rule that separates the header from
+    // panel content. Same idiom as ToolStrip; gives the flat toolbar
+    // a crisp edge instead of relying on a colour-ramp seam.
+    Rectangle {
+        anchors.left:   parent.left
+        anchors.right:  parent.right
+        anchors.bottom: parent.bottom
+        height: Theme.dividerWidth
+        color: Theme.divider
+    }
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 6
-        anchors.rightMargin: 6
-        spacing: 6
+        anchors.leftMargin: Theme.padding
+        anchors.rightMargin: Theme.spacingTight
+        spacing: Theme.spacing
 
         Label {
             id: titleLabel
-            color: Theme.textPrimary
+            color: Theme.textBright
+            font.family: Theme.fontFamily
             font.bold: true
             font.pixelSize: Theme.fontSizeBase
         }
@@ -38,12 +50,13 @@ Rectangle {
             visible: root.subtitle.length > 0
             text: root.subtitle
             color: Theme.textMuted
+            font.family: Theme.fontFamily
             font.pixelSize: Theme.fontSizeBase
         }
         Item { Layout.fillWidth: true }
         RowLayout {
             id: trailing
-            spacing: 4
+            spacing: 0
         }
     }
 }

@@ -34,9 +34,10 @@ class AppBridge : public QObject
     // Font family names resolved after QFontDatabase::addApplicationFont
     // registers the bundled .ttfs. Set once at startup, constant for the
     // life of the app.
-    Q_PROPERTY(QString interFamily   READ interFamily   CONSTANT)
-    Q_PROPERTY(QString monoFamily    READ monoFamily    CONSTANT)
-    Q_PROPERTY(QString symbolsFamily READ symbolsFamily CONSTANT)
+    Q_PROPERTY(QString interFamily    READ interFamily    CONSTANT)
+    Q_PROPERTY(QString monoFamily     READ monoFamily     CONSTANT)
+    Q_PROPERTY(QString symbolsFamily  READ symbolsFamily  CONSTANT)
+    Q_PROPERTY(QString phosphorFamily READ phosphorFamily CONSTANT)
 
     Q_PROPERTY(MR::JobsModel*      jobsModel      READ jobsModel      CONSTANT)
     Q_PROPERTY(MR::NodesModel*     nodesModel     READ nodesModel     CONSTANT)
@@ -111,16 +112,18 @@ public:
     bool farmRunning() const;
     QColor accentColor() const { return m_accentColor; }
 
-    QString interFamily()   const { return m_interFamily; }
-    QString monoFamily()    const { return m_monoFamily; }
-    QString symbolsFamily() const { return m_symbolsFamily; }
+    QString interFamily()    const { return m_interFamily; }
+    QString monoFamily()     const { return m_monoFamily; }
+    QString symbolsFamily()  const { return m_symbolsFamily; }
+    QString phosphorFamily() const { return m_phosphorFamily; }
 
     // main_qt.cpp calls these after QFontDatabase::addApplicationFont so
     // the resolved family names (which may differ slightly from the file
     // name — e.g. "Inter" vs "Inter_18pt") are pinned at a single place.
-    void setInterFamily(const QString& v)   { m_interFamily   = v; }
-    void setMonoFamily(const QString& v)    { m_monoFamily    = v; }
-    void setSymbolsFamily(const QString& v) { m_symbolsFamily = v; }
+    void setInterFamily(const QString& v)    { m_interFamily    = v; }
+    void setMonoFamily(const QString& v)     { m_monoFamily     = v; }
+    void setSymbolsFamily(const QString& v)  { m_symbolsFamily  = v; }
+    void setPhosphorFamily(const QString& v) { m_phosphorFamily = v; }
 
     JobsModel*      jobsModel()      const { return m_jobsModel.get(); }
     NodesModel*     nodesModel()     const { return m_nodesModel.get(); }
@@ -182,6 +185,14 @@ public:
     Q_INVOKABLE void requeueJob(const QString& jobId);
     Q_INVOKABLE void archiveJob(const QString& jobId);
     Q_INVOKABLE void retryFailedChunks(const QString& jobId);
+
+    // Reveals the job's output_dir in the platform file manager. The
+    // manifest stores paths in canonical Windows form; on macOS we
+    // translate to /Volumes/... via MR::fromCanonicalPath before handing
+    // off to MR::openFolderInExplorer. No-op (and a log warning) if the
+    // job has no output_dir or the resolved path doesn't exist locally
+    // — typical when path mappings aren't configured for this host.
+    Q_INVOKABLE void openJobOutput(const QString& jobId);
 
     Q_INVOKABLE void requestSubmissionMode();
 
@@ -304,9 +315,10 @@ private:
 
     MonitorApp* m_monitor;
     QColor m_accentColor;
-    QString m_interFamily   = QStringLiteral("sans-serif");
-    QString m_monoFamily    = QStringLiteral("monospace");
-    QString m_symbolsFamily = QStringLiteral("Segoe UI Symbol");
+    QString m_interFamily    = QStringLiteral("sans-serif");
+    QString m_monoFamily     = QStringLiteral("monospace");
+    QString m_symbolsFamily  = QStringLiteral("Segoe UI Symbol");
+    QString m_phosphorFamily = QStringLiteral("Phosphor");
     Config m_snapshot;
     // Drives the 3 s ChunksModel refresh while m_currentJobId is set.
     void refreshChunks();

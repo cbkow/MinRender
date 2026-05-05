@@ -126,7 +126,12 @@ int main(int argc, char* argv[])
     loadFamily(fontDir + "Inter_18pt-Bold.ttf");
     loadFamily(fontDir + "Inter_18pt-Italic.ttf");
     const QString monoName    = loadFamily(fontDir + "JetBrainsMono-Regular.ttf");
-    const QString symbolsName = loadFamily(fontDir + "MaterialSymbolsSharp-Regular.ttf");
+    // Phosphor is the primary icon font (matches ufb's UI vocabulary).
+    // Material Symbols stays bundled as a fallback for the few sites that
+    // already reference Theme.symbolsFamily; new code should prefer the
+    // QML Icon component.
+    const QString phosphorName = loadFamily(fontDir + "Phosphor.ttf");
+    const QString symbolsName  = loadFamily(fontDir + "MaterialSymbolsSharp-Regular.ttf");
 
     // Default app font → Inter (falls through to Qt's default if Inter
     // failed to load). Tweaks to sizes happen in QML via Theme.
@@ -156,6 +161,7 @@ int main(int argc, char* argv[])
     if (!interName.isEmpty())    bridge.setInterFamily(interName);
     if (!monoName.isEmpty())     bridge.setMonoFamily(monoName);
     if (!symbolsName.isEmpty())  bridge.setSymbolsFamily(symbolsName);
+    if (!phosphorName.isEmpty()) bridge.setPhosphorFamily(phosphorName);
     engine.rootContext()->setContextProperty(
         QStringLiteral("appBridge"), &bridge);
 

@@ -142,9 +142,13 @@ qt_add_qml_module(minrender
     QML_FILES
         src/ui/qml/Main.qml
         src/ui/qml/Theme.qml
+        src/ui/qml/components/FlatButton.qml
+        src/ui/qml/components/Icon.qml
         src/ui/qml/components/PanelHeader.qml
+        src/ui/qml/components/Progress.qml
         src/ui/qml/components/SectionHeader.qml
         src/ui/qml/components/StatusBadge.qml
+        src/ui/qml/components/ToolStrip.qml
         src/ui/qml/panels/FarmCleanupDialog.qml
         src/ui/qml/panels/JobDetailPanel.qml
         src/ui/qml/panels/JobListPanel.qml
@@ -153,6 +157,8 @@ qt_add_qml_module(minrender
         src/ui/qml/panels/PathMappingsDialog.qml
         src/ui/qml/panels/SettingsPanel.qml
         src/ui/qml/panels/SubmissionForm.qml
+    RESOURCES
+        src/ui/qml/PhosphorIcons.js
     RESOURCE_PREFIX /qt/qml
 )
 
