@@ -114,6 +114,8 @@ qt_add_executable(minrender
     src/ui/platform/accent_color.cpp
     src/ui/platform/title_bar.cpp
     src/ui/platform/tray.cpp
+    $<$<NOT:$<BOOL:${APPLE}>>:src/ui/platform/color_space.cpp>
+    $<$<BOOL:${APPLE}>:src/ui/platform/color_space_mac.mm>
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )
 

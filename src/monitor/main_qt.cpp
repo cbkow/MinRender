@@ -11,6 +11,7 @@
 #include "monitor/monitor_app.h"
 #include "ui/app_bridge.h"
 #include "ui/painters/frame_grid.h"
+#include "ui/platform/color_space.h"
 #include "ui/platform/title_bar.h"
 #include "ui/platform/tray.h"
 
@@ -170,7 +171,13 @@ int main(int argc, char* argv[])
     for (QObject* obj : engine.rootObjects())
     {
         if (auto* w = qobject_cast<QWindow*>(obj))
+        {
             MR::enableDarkTitleBar(w);
+            // sRGB pin must run after winId() resolves to a real NSView
+            // (which happens once the window is created). loadFromModule
+            // returns synchronously after construction, so this is safe.
+            MR::pinSRgbColorSpace(w);
+        }
     }
 
     auto showWindow = [&engine]() {
