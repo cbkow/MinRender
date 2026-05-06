@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    macOS Dock icon. Self-contained: dark squircle tile + the three
+    Phosphor-tinted circles in white. ~22% corner radius matches
+    Apple's superellipse curvature so the tile sits naturally in the
+    Dock alongside Finder, Safari, etc.
+
+    Source for `minrender.icns`. To regenerate:
+      sizes="16 32 64 128 256 512 1024"
+      for sz in $sizes; do
+          magick MinRender-macos.svg -background none -resize ${sz}x${sz} \
+              /tmp/MinRender.iconset/icon_${sz}x${sz}.png
+      done
+      iconutil -c icns -o minrender.icns /tmp/MinRender.iconset
+
+    The flat (transparent-bg) `MinRender.svg` stays the canonical
+    cross-platform master — used for the Windows .ico, in-app embedded
+    icons, and any printed/web material where a tile would be wrong.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="white"/>
+  <!-- Circles fill the tile at 1:1 — the design carries its own
+       internal margin so we don't add the ufb-style safe-area inset
+       on top. Coordinates are the original 512-viewBox values doubled
+       to fit the 1024 canvas. -->
+  <circle cx="772.84" cy="266.72" r="147.52" fill="#101010"/>
+  <circle cx="477.80" cy="201.14" r="41.16"  fill="#101010"/>
+  <circle cx="391.44" cy="623.62" r="291.44" fill="#101010"/>
+</svg>

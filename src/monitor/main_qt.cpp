@@ -82,7 +82,17 @@ int main(int argc, char* argv[])
     }
 
     QQuickStyle::setStyle("Fusion");
+#ifndef Q_OS_MACOS
+    // On Windows the title-bar / taskbar icon has to be set explicitly;
+    // setWindowIcon also flows into QSystemTrayIcon's tooltip-flash
+    // image. On macOS we deliberately DON'T set it: Cocoa uses the
+    // bundle's CFBundleIconFile (minrender.icns — squircle tile) for
+    // both the inactive Dock entry and the running-app Dock entry.
+    // Calling setWindowIcon here would replace the running icon with
+    // the embedded transparent-bg .ico, producing an inverted look
+    // mid-launch.
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/minrender.ico")));
+#endif
 
     // Dark palette for any QtWidgets surfaces (native dialogs etc.). QML
     // rendering picks up colours from Theme.qml instead, but this keeps
