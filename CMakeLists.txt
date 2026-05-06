@@ -197,6 +197,68 @@ add_custom_command(TARGET minrender POST_BUILD
 if(WIN32)
     set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
+
+# ===========================================================================
+# macOS .app bundle wiring
+# ===========================================================================
+# Without MACOSX_BUNDLE the build emits a bare Mach-O at build/minrender,
+# which inherits the launching shell, has no Dock icon, and confuses Qt's
+# native tray integration. With MACOSX_BUNDLE the same target produces
+# build/minrender.app — a directory that LaunchServices treats as a
+# proper application: double-click works, dock icon renders, tray icon
+# survives between sessions.
+#
+# Resource layout in the bundle:
+#   Contents/MacOS/minrender             — Qt UI executable
+#   Contents/MacOS/mr-agent              — Rust render agent (POST_BUILD copy)
+#   Contents/MacOS/resources/...         — fonts, templates, plugins, icons
+#                                           (matches applicationDirPath()
+#                                           lookups in C++ code, no #ifdef)
+#   Contents/Resources/minrender.icns    — bundle icon (CFBundleIconFile)
+#   Contents/Info.plist                  — generated from the template below
+if(APPLE)
+    set_target_properties(minrender PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/MacOSXBundleInfo.plist.in"
+        MACOSX_BUNDLE_BUNDLE_NAME           "MinRender"
+        MACOSX_BUNDLE_GUI_IDENTIFIER        "studio.bialkow.minrender"
+        MACOSX_BUNDLE_BUNDLE_VERSION        "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING  "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_LONG_VERSION_STRING   "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_INFO_STRING           "MinRender ${PROJECT_VERSION}"
+        MACOSX_BUNDLE_ICON_FILE             "minrender.icns"
+        MACOSX_BUNDLE_COPYRIGHT             "Copyright © Chris Bialkowski"
+    )
+
+    # Pin the .icns into Contents/Resources/ at build time. CFBundleIconFile
+    # above names "minrender.icns", which LaunchServices resolves relative
+    # to that folder.
+    set_source_files_properties(resources/icons/minrender.icns
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(minrender PRIVATE resources/icons/minrender.icns)
+
+    # Copy the Rust render agent into the bundle alongside the Qt binary.
+    # AgentSupervisor on Unix spawns `applicationDirPath / "mr-agent"`,
+    # so this lands it where the existing code already looks. CMake doesn't
+    # drive cargo — the agent has to be built first via `cargo build
+    # --release` from mr-agent/, then cmake gets re-run to pick it up.
+    set(MR_AGENT_RELEASE_BIN
+        "${CMAKE_CURRENT_SOURCE_DIR}/mr-agent/target/release/mr-agent")
+    if(EXISTS "${MR_AGENT_RELEASE_BIN}")
+        add_custom_command(TARGET minrender POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MR_AGENT_RELEASE_BIN}"
+                "$<TARGET_FILE_DIR:minrender>/mr-agent"
+            COMMENT "Copying mr-agent into .app bundle"
+            VERBATIM)
+    else()
+        message(WARNING
+            "mr-agent release binary not found at ${MR_AGENT_RELEASE_BIN}. "
+            "The .app will build but won't render locally until you run "
+            "`cargo build --release` from mr-agent/ and re-run cmake.")
+    endif()
+endif()
 if(MSVC)
     target_compile_options(minrender PRIVATE /W4)
 endif()
