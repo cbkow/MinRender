@@ -15,15 +15,9 @@ namespace {
 
 QIcon loadTrayIcon()
 {
-    // Embedded first (always present post-link); fall back to the copy
-    // POST_BUILD places next to the binary in dev builds.
-    QIcon icon(QStringLiteral(":/icons/minrender.ico"));
-    if (icon.isNull())
-    {
-        icon = QIcon(QCoreApplication::applicationDirPath()
-                     + QStringLiteral("/resources/icons/minrender.ico"));
-    }
-    return icon;
+    // qt_add_resources embeds minrender.ico into the binary at link time
+    // (CMakeLists "app_icons" entry), so this lookup always resolves.
+    return QIcon(QStringLiteral(":/icons/minrender.ico"));
 }
 
 } // namespace

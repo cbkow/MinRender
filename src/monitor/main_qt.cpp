@@ -120,8 +120,22 @@ int main(int argc, char* argv[])
         return families.isEmpty() ? QString() : families.first();
     };
 
-    const QString fontDir = QCoreApplication::applicationDirPath()
-                          + QStringLiteral("/resources/fonts/");
+    // Bundled fonts on disk:
+    //   macOS bundle:    minrender.app/Contents/Resources/fonts/
+    //   Win/Linux:       <bin>/resources/fonts/
+    // The fallback covers running a fresh dev build before resources/
+    // has been copied — useful when stepping through main_qt.cpp under
+    // a debugger that hasn't triggered the POST_BUILD step.
+#ifdef Q_OS_MACOS
+    QString fontDir = QCoreApplication::applicationDirPath()
+                    + QStringLiteral("/../Resources/fonts/");
+#else
+    QString fontDir = QCoreApplication::applicationDirPath()
+                    + QStringLiteral("/resources/fonts/");
+#endif
+    if (!QDir(fontDir).exists())
+        fontDir = QCoreApplication::applicationDirPath()
+                + QStringLiteral("/resources/fonts/");
 
     const QString interName = loadFamily(fontDir + "Inter_18pt-Regular.ttf");
     loadFamily(fontDir + "Inter_18pt-Bold.ttf");

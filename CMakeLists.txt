@@ -188,11 +188,22 @@ target_link_libraries(minrender PRIVATE
     ${PLATFORM_LIBS}
 )
 
-# Copy resources/ next to the executable at build time
+# Copy resources/ to the platform-appropriate runtime location.
+# - macOS .app bundle: Contents/Resources/. Subdirs in Contents/MacOS/
+#   violate the bundle layout convention and break codesign on
+#   resource walks (codesign expects only Mach-O under MacOS).
+# - Windows/Linux: next to the executable at <bin>/resources/, matching
+#   the install layout the Inno Setup installer creates.
+if(APPLE)
+    set(MR_RUNTIME_RESOURCES_DEST
+        "$<TARGET_BUNDLE_CONTENT_DIR:minrender>/Resources")
+else()
+    set(MR_RUNTIME_RESOURCES_DEST "$<TARGET_FILE_DIR:minrender>/resources")
+endif()
 add_custom_command(TARGET minrender POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/resources"
-        "$<TARGET_FILE_DIR:minrender>/resources"
+        "${MR_RUNTIME_RESOURCES_DEST}"
     COMMENT "Copying resources to build output"
 )
 

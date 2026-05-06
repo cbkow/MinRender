@@ -1,10 +1,14 @@
 # Build
 build/
 build-mac/
+build-mac-release/
 out/
 cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
+
+# Release artifacts (signed/notarized output)
+release/
 
 # IDE
 .vs/
