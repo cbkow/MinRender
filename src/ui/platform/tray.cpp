@@ -15,9 +15,21 @@ namespace {
 
 QIcon loadTrayIcon()
 {
-    // qt_add_resources embeds minrender.ico into the binary at link time
-    // (CMakeLists "app_icons" entry), so this lookup always resolves.
+#ifdef Q_OS_MACOS
+    // macOS menu bar status items expect a template image — pure black
+    // on transparent — that the system auto-tints based on the
+    // currently-active appearance (light / dark menu bar) and selection
+    // state. setIsMask flips the underlying NSImage's `template`
+    // property to YES so the menu bar does the tinting for us.
+    QIcon icon(QStringLiteral(":/icons/MinRenderBlack.png"));
+    icon.setIsMask(true);
+    return icon;
+#else
+    // Windows / Linux trays render the icon as-supplied; use the
+    // multi-resolution colour .ico so the cobalt mark reads at every
+    // tray size from 16px up.
     return QIcon(QStringLiteral(":/icons/minrender.ico"));
+#endif
 }
 
 } // namespace

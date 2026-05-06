@@ -7,7 +7,7 @@
 bl_info = {
     "name": "MinRender",
     "author": "MinRender",
-    "version": (0, 0, 1),
+    "version": (0, 4, 1),
     "blender": (4, 0, 0),
     "location": "Render Properties > MinRender",
     "description": "Submit render jobs to MinRender farm",

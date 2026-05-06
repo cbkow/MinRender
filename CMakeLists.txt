@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MinRender VERSION 0.0.1 LANGUAGES C CXX)
+project(MinRender VERSION 0.4.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -172,6 +172,7 @@ qt_add_resources(minrender "app_icons"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
     FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/minrender.ico"
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/MinRenderBlack.png"
 )
 
 target_link_libraries(minrender PRIVATE
