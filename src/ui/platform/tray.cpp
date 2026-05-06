@@ -111,8 +111,10 @@ void Tray::setNodeActive(bool active)
         return;
     m_nodeActive = active;
     updateMenuLabels();
-    // Phase 6 will swap in mR_tray_GREEN / mR_tray_GREY / mR_tray_RED
-    // icons here to reflect node state.
+    // Status-coloured tray icon is deferred. The new monochrome logo is
+    // a single-shape silhouette; when we want stop/active/error tints,
+    // do them at runtime by painting Theme.success/warn/error onto a
+    // QPixmap copy of the loaded icon — avoids shipping five PNGs.
 }
 
 void Tray::updateMenuLabels()
