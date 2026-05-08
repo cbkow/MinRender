@@ -233,6 +233,30 @@ int main(int argc, char* argv[])
         monitor.requestExit();
     };
 
+#ifdef Q_OS_MACOS
+    // Dock-click activation. Main.qml's onClosing hides the window via
+    // setVisible(false) — Cocoa won't auto-reopen a hidden NSWindow on
+    // a Dock rapp event, so without this hook the Dock icon is dead
+    // until the user remembers the menu-bar tray. Qt's delegate forces
+    // a state change to ApplicationActive on every rapp, even when the
+    // app is already active, so this fires reliably; the isVisible
+    // guard avoids redundant raises during Cmd-Tab refocus when the
+    // window is already showing.
+    QObject::connect(&app, &QApplication::applicationStateChanged,
+        [&](Qt::ApplicationState state) {
+            if (state != Qt::ApplicationActive)
+                return;
+            const auto objs = engine.rootObjects();
+            if (objs.isEmpty())
+                return;
+            if (auto* w = qobject_cast<QWindow*>(objs.first());
+                w && !w->isVisible())
+            {
+                showWindow();
+            }
+        });
+#endif
+
     QGuiApplication::setQuitOnLastWindowClosed(false);
 
     // 50 ms pump — mirrors main_headless.cpp. The only path out of
