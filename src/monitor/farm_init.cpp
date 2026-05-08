@@ -15,6 +15,12 @@
 #include <Windows.h>
 #include <bcrypt.h>
 #pragma comment(lib, "bcrypt.lib")
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#include <climits>
+#else
+#include <unistd.h>
+#include <climits>
 #endif
 
 namespace MR {
@@ -46,26 +52,50 @@ static std::string getExeDir()
     wchar_t buf[MAX_PATH];
     GetModuleFileNameW(nullptr, buf, MAX_PATH);
     return fs::path(buf).parent_path().string();
+#elif defined(__APPLE__)
+    // _NSGetExecutablePath always returns the path to the on-disk
+    // executable, regardless of cwd — the previous "." fallback failed
+    // for .app bundles launched from Finder (cwd "/"), making
+    // findBundled* silently return empty and skipping the version-bump
+    // template/plugin refresh.
+    char buf[PATH_MAX];
+    uint32_t bufsize = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &bufsize) == 0)
+        return fs::path(buf).parent_path().string();
+    return ".";
 #else
+    char buf[PATH_MAX];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n > 0)
+    {
+        buf[n] = '\0';
+        return fs::path(buf).parent_path().string();
+    }
     return ".";
 #endif
 }
 
-static fs::path findBundledTemplatesDir()
+// Resolve a bundled resource subdirectory. On macOS the cmake build copies
+// resources/ into Contents/Resources/, so the canonical lookup is
+// applicationDirPath/../Resources/<sub>. The exe-dir-relative path is kept
+// as a fallback for the Windows/Linux layout and for dev builds where the
+// macOS bundle copy hasn't run.
+static fs::path findBundledResourceDir(const std::string& sub)
 {
-    fs::path dir = fs::path(getExeDir()) / "resources" / "templates";
-    if (fs::is_directory(dir))
-        return dir;
+    fs::path exeDir = getExeDir();
+#ifdef __APPLE__
+    fs::path bundleDir = exeDir / ".." / "Resources" / sub;
+    if (fs::is_directory(bundleDir))
+        return fs::canonical(bundleDir);
+#endif
+    fs::path exeRelDir = exeDir / "resources" / sub;
+    if (fs::is_directory(exeRelDir))
+        return exeRelDir;
     return {};
 }
 
-static fs::path findBundledPluginsDir()
-{
-    fs::path dir = fs::path(getExeDir()) / "resources" / "plugins";
-    if (fs::is_directory(dir))
-        return dir;
-    return {};
-}
+static fs::path findBundledTemplatesDir() { return findBundledResourceDir("templates"); }
+static fs::path findBundledPluginsDir()   { return findBundledResourceDir("plugins"); }
 
 // Delete any .json in dest that isn't present in bundle. Safe because these
 // dirs (templates/examples and templates/plugins) are bundle-managed; user
