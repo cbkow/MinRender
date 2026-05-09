@@ -18,6 +18,7 @@
 #include <QtQml/qqml.h>
 
 #include <QApplication>
+#include <QColorSpace>
 #include <QDir>
 #include <QFontDatabase>
 #include <QIcon>
@@ -27,6 +28,7 @@
 #include <QQmlContext>
 #include <QQmlError>
 #include <QQuickStyle>
+#include <QSurfaceFormat>
 #include <QTimer>
 #include <QWindow>
 
@@ -53,6 +55,24 @@ int main(int argc, char* argv[])
     _set_invalid_parameter_handler(invalidParameterHandler);
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_DEBUG);
 #endif
+
+    // Pin the rendering surface to sRGB before any QWindow / QQuickWindow
+    // is created. On macOS the RHI Metal backend reads QSurfaceFormat to
+    // decide the CAMetalLayer's colorspace; with the default unset it
+    // inherits the screen's gamut (Display P3 on modern Macs), so hex
+    // tokens like Theme.qml's #2E5BFF render visibly oversaturated. The
+    // NSWindow.colorSpace tag in pinSRgbColorSpace() only labels the
+    // window for screenshots — it does not retag the Metal layer Qt
+    // already created. Setting the default format here flows into the
+    // RHI for every QQuickWindow.
+    //
+    // Windows / Linux: setting sRGB here is a no-op in practice — D3D11
+    // and X11/Wayland surfaces already render in sRGB.
+    {
+        QSurfaceFormat fmt = QSurfaceFormat::defaultFormat();
+        fmt.setColorSpace(QColorSpace(QColorSpace::SRgb));
+        QSurfaceFormat::setDefaultFormat(fmt);
+    }
 
     // QApplication (not QGuiApplication) for QSystemTrayIcon.
     QApplication app(argc, argv);

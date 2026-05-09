@@ -4,15 +4,15 @@ class QWindow;
 
 namespace MR {
 
-// Pin the window's surface to sRGB so our hex colour tokens render
-// consistently across platforms. macOS displays default to Display P3
-// (Liquid Retina XDR, modern external panels); without an explicit
-// sRGB tag, the CAMetalLayer backing the QQuickWindow inherits the
-// display's wide-gamut colour space and our sRGB values get
-// oversaturated (#0189f1 reads more electric than intended).
+// Tag the NSWindow's color space as sRGB. This is belt-and-suspenders
+// alongside the QSurfaceFormat sRGB pin in main_qt.cpp — the surface
+// format governs the CAMetalLayer that QQuickWindow actually renders
+// into (which is what fixed the visible oversaturation), while this
+// NSWindow tag governs how the system labels the window for things
+// like screenshots and Window Server compositing.
 //
-// Windows / Linux: no-op. Windows defaults to sRGB; Linux compositors
-// don't colour-manage Qt swap chains.
+// Windows / Linux: no-op. Windows D3D11 swap chains default to sRGB;
+// Linux compositors don't colour-manage Qt surfaces.
 void pinSRgbColorSpace(QWindow* window);
 
 } // namespace MR
