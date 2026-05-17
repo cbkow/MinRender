@@ -15,7 +15,7 @@ setlocal
 set "REPO=%~dp0.."
 set "BUILD=%REPO%\build"
 set "DEPLOY=%BUILD%\deploy"
-set "QT_BIN=C:\Qt\6.11.0\msvc2022_64\bin"
+set "QT_BIN=C:\Qt\6.11.1\msvc2022_64\bin"
 set "AGENT=%REPO%\mr-agent\target\release\mr-agent.exe"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
