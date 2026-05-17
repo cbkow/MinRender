@@ -33,16 +33,32 @@ Button {
     // Internal palette derived from variant + state.
     QtObject {
         id: pal
-        readonly property color bgIdle:
-            root.variant === "primary" ? Theme.accent
-          : root.variant === "danger"  ? Theme.error
-                                       : "transparent"
+        readonly property color bgIdle: {
+            if (!root.enabled) {
+                // Disabled primary/danger get a muted fill rather than the
+                // saturated brand colour — otherwise the dimmed text reads
+                // as light-grey-on-blue/red and looks broken. accentMuted
+                // is the same blue at much lower lightness, so the button
+                // still reads as "blue action, currently unavailable".
+                if (root.variant === "primary") return Theme.accentMuted
+                if (root.variant === "danger")  return Qt.darker(Theme.error, 2.2)
+                return "transparent"
+            }
+            if (root.variant === "primary") return Theme.accent
+            if (root.variant === "danger")  return Theme.error
+            return "transparent"
+        }
         readonly property color bgHover:
             root.variant === "primary" ? Theme.accentHover
           : root.variant === "danger"  ? Qt.lighter(Theme.error, 1.15)
                                        : Theme.surfaceHover
         readonly property color fg: {
-            if (!root.enabled) return Theme.textMuted
+            if (!root.enabled) {
+                // Disabled text uses textSecondary (#888) instead of
+                // textMuted (#666) so it stays legible on the muted
+                // primary/danger fills above and on Theme.bg for default.
+                return Theme.textSecondary
+            }
             if (root.subtleChecked)
                 return root.checked ? root.checkedColor : root.uncheckedColor
             if (root.variant === "default") return Theme.textPrimary

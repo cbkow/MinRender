@@ -18,7 +18,7 @@
         { "flag": "-render", "value": null, "info": "Render flag", "editable": false },
         { "flag": "", "value": "", "id": "scene_file", "info": "Scene File (.c4d)", "editable": true, "required": true, "type": "file", "filter": "c4d" },
         { "flag": "-take", "value": null, "info": "Take flag", "editable": false },
-        { "flag": "", "value": "", "id": "take_name", "editable": true, "info": "Take Name (leave blank for default)",
+        { "flag": "", "value": "", "id": "take_name", "editable": true, "info": "Take Name",
           "help": "Name of the Take to render. Leave blank to use the scene's active Take." },
         { "flag": "-oimage", "value": null, "info": "Output image path flag", "editable": false },
         { "flag": "", "value": "", "id": "output_path", "info": "Output Path", "editable": true, "required": true, "type": "output",

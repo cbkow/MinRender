@@ -12,6 +12,27 @@ ApplicationWindow {
     visible: true
     title: qsTr("MinRender Monitor")
 
+    // QML controls (TextField/ComboBox/SpinBox/CheckBox/MenuBar) read
+    // their colours from the inherited palette, NOT the Theme singleton
+    // and NOT QApplication::setPalette (which only reaches QtWidgets).
+    // Setting roles here propagates to every child control so inputs
+    // render against Theme.surface with Theme.textPrimary text rather
+    // than Fusion's default near-white-on-white.
+    palette.window:          Theme.bg
+    palette.windowText:      Theme.textPrimary
+    palette.base:            Theme.surface
+    palette.alternateBase:   Theme.surfaceAlt
+    palette.text:            Theme.textPrimary
+    palette.placeholderText: Theme.textMuted
+    palette.button:          Theme.surfaceAlt
+    palette.buttonText:      Theme.textPrimary
+    palette.highlight:       Theme.accent
+    palette.highlightedText: Theme.textBright
+    palette.toolTipBase:     Theme.surfaceAlt
+    palette.toolTipText:     Theme.textPrimary
+    palette.mid:             Theme.borderStrong
+    palette.dark:            Theme.textSecondary
+
     // Hide to tray on close. The user quits via tray → Exit (which calls
     // QCoreApplication::quit via main_qt.cpp) or File → Exit menu item.
     // main_qt.cpp sets setQuitOnLastWindowClosed(false), so hiding the

@@ -171,16 +171,18 @@ Item {
             }
         }
 
-        // --- Bulk-action strip (visible only when rows are checked) ---
+        // --- Bulk-action strip (always present) ---
         // Mirrors the right-click jobMenu for single jobs, but loops
         // every action over every checked id and clears the selection
-        // afterwards. Destructive ops route through bulkConfirmDialog so
-        // a stray click can't wipe N jobs.
+        // afterwards. Always rendered so the available actions stay
+        // visible/discoverable; each button is disabled when no rows
+        // are checked instead of toggling the whole strip away.
+        // Destructive ops still route through bulkConfirmDialog so a
+        // stray click can't wipe N jobs.
         Rectangle {
             Layout.fillWidth: true
-            visible: root.checkedCount() > 0
             color: Theme.toolbar
-            implicitHeight: visible ? Theme.toolStripHeight : 0
+            implicitHeight: Theme.toolStripHeight
 
             // 1px bottom divider to seat the strip cleanly under the header.
             Rectangle {
@@ -198,8 +200,12 @@ Item {
                 spacing: 0
 
                 Label {
-                    text: qsTr("%1 selected").arg(root.checkedCount())
-                    color: Theme.textBright
+                    text: root.checkedCount() > 0
+                        ? qsTr("%1 selected").arg(root.checkedCount())
+                        : qsTr("No selection")
+                    color: root.checkedCount() > 0
+                        ? Theme.textBright
+                        : Theme.textMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeBase
                     Layout.rightMargin: Theme.padding
@@ -207,30 +213,35 @@ Item {
                 FlatButton {
                     iconName: "pause"
                     text: qsTr("Pause")
+                    enabled: root.checkedCount() > 0
                     onClicked: root.applyToChecked(
                         function(id) { appBridge.pauseJob(id) })
                 }
                 FlatButton {
                     iconName: "play"
                     text: qsTr("Resume")
+                    enabled: root.checkedCount() > 0
                     onClicked: root.applyToChecked(
                         function(id) { appBridge.resumeJob(id) })
                 }
                 FlatButton {
                     iconName: "arrow-clockwise"
                     text: qsTr("Retry failed")
+                    enabled: root.checkedCount() > 0
                     onClicked: root.applyToChecked(
                         function(id) { appBridge.retryFailedChunks(id) })
                 }
                 FlatButton {
                     iconName: "arrows-counter-clockwise"
                     text: qsTr("Requeue")
+                    enabled: root.checkedCount() > 0
                     onClicked: root.applyToChecked(
                         function(id) { appBridge.requeueJob(id) })
                 }
                 FlatButton {
                     iconName: "archive"
                     text: qsTr("Archive")
+                    enabled: root.checkedCount() > 0
                     onClicked: root.applyToChecked(
                         function(id) { appBridge.archiveJob(id) })
                 }
@@ -238,6 +249,7 @@ Item {
                 FlatButton {
                     iconName: "x"
                     text: qsTr("Cancel")
+                    enabled: root.checkedCount() > 0
                     onClicked: bulkConfirmDialog.openWith(
                         "cancel",
                         qsTr("Cancel %1 job%2?")
@@ -250,6 +262,7 @@ Item {
                     iconName: "trash"
                     text: qsTr("Delete")
                     variant: "danger"
+                    enabled: root.checkedCount() > 0
                     onClicked: bulkConfirmDialog.openWith(
                         "delete",
                         qsTr("Delete %1 job%2?")
@@ -257,13 +270,6 @@ Item {
                             .arg(root.checkedCount() === 1 ? "" : "s"),
                         qsTr("Removes job records and SQLite history. Output files on disk are NOT deleted. This cannot be undone."),
                         function(id) { appBridge.deleteJob(id) })
-                }
-                FlatButton {
-                    iconName: "x-circle"
-                    ToolTip.text: qsTr("Clear selection")
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 500
-                    onClicked: root.clearChecked()
                 }
             }
         }

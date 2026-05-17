@@ -26,7 +26,7 @@ cd "$REPO"
 # ---------------------------------------------------------------------------
 # Config — these are the only knobs you should normally touch.
 # ---------------------------------------------------------------------------
-QT_PREFIX="${QT_PREFIX:-/Users/chris/Qt/6.11.0/macos}"
+QT_PREFIX="${QT_PREFIX:-/Users/chris/Qt/6.11.1/macos}"
 SIGN_ID="${SIGN_ID:-Developer ID Application: Christopher Bialkowski (5Z4S9VHV56)}"
 TEAM_ID="${TEAM_ID:-5Z4S9VHV56}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-AC_PASSWORD}"

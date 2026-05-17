@@ -21,7 +21,7 @@ QIcon loadTrayIcon()
     // currently-active appearance (light / dark menu bar) and selection
     // state. setIsMask flips the underlying NSImage's `template`
     // property to YES so the menu bar does the tinting for us.
-    QIcon icon(QStringLiteral(":/icons/MinRenderBlack.png"));
+    QIcon icon(QStringLiteral(":/icons/minRenderMacOStray.png"));
     icon.setIsMask(true);
     return icon;
 #else
