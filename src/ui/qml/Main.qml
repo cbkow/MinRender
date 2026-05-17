@@ -107,13 +107,19 @@ ApplicationWindow {
         }
 
         Menu {
-            title: qsTr("&Help")
-            Action { text: qsTr("Guide");               onTriggered: console.log("[Menu] Help → Guide (Phase 4)") }
-            Action { text: qsTr("Check for Updates…"); onTriggered: console.log("[Menu] Help → Updates (Phase 2)") }
+            title: qsTr("&About")
+            // Version line stays disabled — it's a label, not an action.
+            // Qt.application.version is fed by main_qt.cpp's
+            // QCoreApplication::setApplicationVersion, which reads the
+            // CMake PROJECT_VERSION at compile time.
+            Action {
+                text: qsTr("MinRender v%1").arg(Qt.application.version)
+                enabled: false
+            }
             MenuSeparator {}
             Action {
-                text: qsTr("MinRender %1").arg(Qt.application.version)
-                enabled: false
+                text: qsTr("Docs")
+                onTriggered: Qt.openUrlExternally("http://minrender.com/")
             }
         }
     }
