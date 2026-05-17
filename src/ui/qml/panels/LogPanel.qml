@@ -193,7 +193,7 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.leftMargin: 8
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                     spacing: 8
 
                     Text {
@@ -269,7 +269,7 @@ Item {
                         right: parent.right
                         verticalCenter: parent.verticalCenter
                         leftMargin: 8
-                        rightMargin: 8
+                        rightMargin: Theme.padding + Theme.scrollBarWidth
                     }
                     text: modelData
                     color: root.lineColor(modelData)
@@ -342,7 +342,7 @@ Item {
                         Label {
                             anchors.fill: parent
                             anchors.leftMargin: 8
-                            anchors.rightMargin: 8
+                            anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                             verticalAlignment: Text.AlignVCenter
                             text: modelData.displayLabel
                             color: Theme.textPrimary
@@ -412,7 +412,7 @@ Item {
                                 right: parent.right
                                 verticalCenter: parent.verticalCenter
                                 leftMargin: 8
-                                rightMargin: 8
+                                rightMargin: Theme.padding + Theme.scrollBarWidth
                             }
                             text: modelData
                             color: root.lineColor(modelData)

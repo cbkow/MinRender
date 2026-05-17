@@ -130,6 +130,12 @@ int main(int argc, char* argv[])
         p.setColor(QPalette::HighlightedText, QColor(0x0f, 0x0f, 0x0f));
         p.setColor(QPalette::ToolTipBase,     QColor(0x22, 0x22, 0x22));
         p.setColor(QPalette::ToolTipText,     QColor(0xcc, 0xcc, 0xcc));
+        // Mid + Dark drive the Fusion ScrollBar thumb (idle vs pressed).
+        // Default Fusion derives them from Button (#222) and they end up
+        // almost invisible on the #161616 surfaces — bump them so the
+        // thumb reads clearly against the dark background.
+        p.setColor(QPalette::Mid,             QColor(0x66, 0x66, 0x66));
+        p.setColor(QPalette::Dark,            QColor(0xaa, 0xaa, 0xaa));
         p.setColor(QPalette::Disabled, QPalette::WindowText, QColor(0x66, 0x66, 0x66));
         p.setColor(QPalette::Disabled, QPalette::Text,       QColor(0x66, 0x66, 0x66));
         p.setColor(QPalette::Disabled, QPalette::ButtonText, QColor(0x66, 0x66, 0x66));

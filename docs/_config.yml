@@ -2,7 +2,7 @@ title: MinRender
 description: Docs and manual
 remote_theme: just-the-docs/just-the-docs
 
-logo: "/images/minrender_logo.png"
+logo: "/images/minrender-logo.png"
 
 # Enable color scheme switching
 color_scheme: dark

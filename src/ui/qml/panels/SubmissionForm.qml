@@ -96,7 +96,10 @@ Item {
         }
         clip: true
         contentWidth: availableWidth
-        ScrollBar.vertical: MrScrollBar { policy: ScrollBar.AlwaysOn }
+        // AsNeeded so an empty / short form doesn't show a scroll track.
+        // The 24px rightMargin on the ScrollView's anchors reserves more
+        // than enough room for the thumb when it appears.
+        ScrollBar.vertical: MrScrollBar {}
         ScrollBar.horizontal: MrScrollBar { policy: ScrollBar.AlwaysOff }
 
         ColumnLayout {

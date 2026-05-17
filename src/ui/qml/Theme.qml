@@ -100,6 +100,10 @@ QtObject {
     readonly property int rowHeightTall:    28
     readonly property int toolStripHeight:  32
     readonly property int headerHeight:     28
+    // Width of MrScrollBar's thumb. Delegates reserve this much on
+    // their right edge so the bar overlays a padding gutter rather
+    // than text/buttons when the AsNeeded policy reveals it.
+    readonly property int scrollBarWidth:   8
 
     // --- Padding / spacing ---
     readonly property int paddingTight:  4

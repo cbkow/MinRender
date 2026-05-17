@@ -277,7 +277,7 @@ Item {
             Row {
                 anchors.fill: parent
                 anchors.leftMargin: 8
-                anchors.rightMargin: 8
+                anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                 spacing: 8
 
                 Label {
@@ -355,7 +355,7 @@ Item {
                 Row {
                     anchors.fill: parent
                     anchors.leftMargin: 8
-                    anchors.rightMargin: 8
+                    anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                     spacing: 8
 
                     Label {
