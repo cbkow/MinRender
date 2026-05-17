@@ -100,7 +100,8 @@ Dialog {
             Layout.fillHeight: true
             clip: true
             contentWidth: availableWidth
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+            ScrollBar.vertical: MrScrollBar {}
+            ScrollBar.horizontal: MrScrollBar { policy: ScrollBar.AlwaysOff }
 
             ColumnLayout {
                 width: parent.width - 16

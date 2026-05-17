@@ -349,9 +349,7 @@ Item {
                             clip: true
                             model: appBridge.chunksModel
                             boundsBehavior: Flickable.StopAtBounds
-                            ScrollBar.vertical: ScrollBar {
-                                policy: ScrollBar.AsNeeded
-                            }
+                            ScrollBar.vertical: MrScrollBar {}
 
                             delegate: Rectangle {
                                 required property var    chunkId

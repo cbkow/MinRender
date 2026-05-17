@@ -96,8 +96,8 @@ Item {
         }
         clip: true
         contentWidth: availableWidth
-        ScrollBar.vertical.policy: ScrollBar.AlwaysOn
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+        ScrollBar.vertical: MrScrollBar { policy: ScrollBar.AlwaysOn }
+        ScrollBar.horizontal: MrScrollBar { policy: ScrollBar.AlwaysOff }
 
         ColumnLayout {
             id: column

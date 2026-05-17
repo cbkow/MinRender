@@ -173,7 +173,7 @@ Item {
                     positionViewAtEnd()
             }
 
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: MrScrollBar {}
 
             delegate: Rectangle {
                 required property var    timestamp
@@ -252,7 +252,7 @@ Item {
                     positionViewAtEnd()
             }
 
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: MrScrollBar {}
 
             delegate: Rectangle {
                 required property string modelData
@@ -325,7 +325,7 @@ Item {
                     clip: true
                     model: appBridge.taskOutputChunks
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: MrScrollBar {}
 
                     currentIndex: appBridge.selectedTaskChunkIndex
 
@@ -386,7 +386,7 @@ Item {
                     clip: true
                     model: appBridge.taskOutputLines
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.vertical: MrScrollBar {}
 
                     property bool atBottom: true
                     onContentYChanged: {

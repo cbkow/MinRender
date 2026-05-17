@@ -146,6 +146,7 @@ qt_add_qml_module(minrender
         src/ui/qml/Theme.qml
         src/ui/qml/components/FlatButton.qml
         src/ui/qml/components/Icon.qml
+        src/ui/qml/components/MrScrollBar.qml
         src/ui/qml/components/PanelHeader.qml
         src/ui/qml/components/Progress.qml
         src/ui/qml/components/SectionHeader.qml

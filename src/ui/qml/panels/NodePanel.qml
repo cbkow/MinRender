@@ -144,7 +144,7 @@ Item {
             clip: true
             model: appBridge.nodesModel
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: MrScrollBar {}
 
             delegate: Rectangle {
                 required property string nodeId
