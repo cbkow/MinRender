@@ -1,4 +1,4 @@
-title: QCView
+title: MinRender
 description: Docs and manual
 remote_theme: just-the-docs/just-the-docs
 
@@ -13,4 +13,3 @@ enable_dark_mode: true
 just_the_docs:
   custom_css:
     - custom/custom.scss
-

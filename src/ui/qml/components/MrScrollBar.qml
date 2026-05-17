@@ -1,37 +1,39 @@
 import QtQuick
-import QtQuick.Controls.Basic
+import QtQuick.Templates as T
 import MinRenderUi 1.0
 
-// Themed ScrollBar matching the flat ufb-ish visual language. The default
-// Basic-style ScrollBar thumb is a near-black gray that disappears on
-// Theme.bg (#161616), so we replace the contentItem with a thumb that
-// uses the borderStrong/textMuted/textSecondary progression already
-// established for hover/pressed elsewhere.
+// Themed ScrollBar matching the flat ufb-ish visual language. Derived
+// from QtQuick.Templates.ScrollBar (not Basic/Fusion) so we don't
+// inherit the default opacity-fade states that hide the thumb at rest —
+// on Theme.bg (#161616) the default Basic thumb fades to roughly the
+// background colour and disappears.
 //
-// Usage mirrors plain ScrollBar — drop in via the attached property or
-// the explicit ScrollBar.vertical: form:
+// Usage mirrors plain ScrollBar:
 //   ListView { ScrollBar.vertical: MrScrollBar {} }
 //   ScrollView { ScrollBar.vertical: MrScrollBar { policy: ScrollBar.AlwaysOn } }
-ScrollBar {
+T.ScrollBar {
     id: root
 
-    // Default to AsNeeded so the bar disappears in lists that already fit.
-    // Override per-site for AlwaysOn (e.g. SubmissionForm).
-    policy: ScrollBar.AsNeeded
+    policy: T.ScrollBar.AsNeeded
 
-    // Fixed thickness regardless of orientation. Qt's default fluctuates
-    // with hover; locking it keeps adjacent rows from reflowing.
+    // Fixed thickness regardless of orientation. Qt's defaults grow/
+    // shrink on hover; locking it keeps adjacent rows from reflowing.
     implicitWidth:  orientation === Qt.Vertical   ? 10 : 0
     implicitHeight: orientation === Qt.Horizontal ? 10 : 0
 
-    // Transparent track — the thumb alone signals scroll position. Keeps
-    // tight lists from gaining a visual gutter when the bar appears.
-    background: Item {}
+    // Transparent track — the thumb alone signals scroll position.
+    background: Rectangle {
+        color: "transparent"
+    }
 
     contentItem: Rectangle {
+        implicitWidth:  root.orientation === Qt.Vertical   ? 10 : 0
+        implicitHeight: root.orientation === Qt.Horizontal ? 10 : 0
         radius: Theme.radius
-        color: root.pressed ? Theme.textSecondary
-             : root.hovered ? Theme.textMuted
-                            : Theme.borderStrong
+        color: root.pressed ? Theme.textPrimary
+             : root.hovered ? Theme.textSecondary
+                            : Theme.textMuted
+        // No opacity transitions — the thumb stays solid whenever the
+        // bar is visible. Visibility is governed entirely by `policy`.
     }
 }
