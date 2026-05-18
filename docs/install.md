@@ -5,7 +5,7 @@ nav_order: 2
 
 # Install
 
-Download the latest `.exe` from the [releases page](https://github.com/cbkow/minrender/releases) and run the installer on every node that will participate in the farm.
+Download the latest `.exe` or `.dmg` from the [releases page](https://github.com/cbkow/minrender/releases/latest) and run the installer on every node that will participate in the farm.
 
 > The installer opens HTTP port **8420** and UDP port **4243** in the Windows Firewall and adds a startup shortcut so MinRender launches with the machine. MinRender, like all render farm coordinators, lets you launch executables remotely. That behavior is dangerous outside a trusted LAN — keep it inside one, test your flow thoroughly, and practice safe computing.
 
