@@ -816,6 +816,11 @@ void MonitorApp::deleteJob(const std::string& jobId)
     // Cancel first (abort any active render)
     cancelJob(jobId);
 
+    // Tell the render coordinator to drop any post-cancel stdout for this
+    // job. Without this, flushStdout() recreates the subtree we are about
+    // to remove and remove_all fails with ENOTEMPTY on macOS.
+    m_renderCoordinator.markJobDeleted(jobId);
+
     if (isLeader() && m_databaseManager.isOpen())
     {
         m_databaseManager.deleteJob(jobId);
@@ -832,8 +837,20 @@ void MonitorApp::deleteJob(const std::string& jobId)
         auto jobDir = m_farmPath / "jobs" / jobId;
         std::error_code ec;
         std::filesystem::remove_all(jobDir, ec);
+
+        // One retry on transient errors — covers macOS sidecar files
+        // (.DS_Store, ._*) and Spotlight metadata that briefly re-occupy
+        // the directory during teardown.
         if (ec)
-            MonitorLog::instance().warn("job", "Failed to remove job dir: " + ec.message());
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            ec.clear();
+            std::filesystem::remove_all(jobDir, ec);
+        }
+
+        if (ec)
+            MonitorLog::instance().warn("job",
+                "Failed to remove job dir " + jobDir.string() + ": " + ec.message());
     }
 
     if (m_selectedJobId == jobId)

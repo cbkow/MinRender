@@ -235,6 +235,12 @@ void RenderCoordinator::purgeJob(const std::string& jobId)
     m_dispatchQueue = std::move(keep);
 }
 
+void RenderCoordinator::markJobDeleted(const std::string& jobId)
+{
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    m_deletedJobs.insert(jobId);
+}
+
 void RenderCoordinator::setStopped(bool stopped)
 {
     m_stopped = stopped;
@@ -522,6 +528,18 @@ void RenderCoordinator::flushStdout()
     auto& ar = m_activeRender.value();
     if (ar.stdoutBuffer.empty())
         return;
+
+    // If the job has been deleted, drop the tail output instead of
+    // recreating {farmPath}/jobs/<jobId>/stdout/<nodeId>/ underneath the
+    // MonitorApp::deleteJob remove_all that's running concurrently.
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        if (m_deletedJobs.count(ar.manifest.job_id))
+        {
+            ar.stdoutBuffer.clear();
+            return;
+        }
+    }
 
     auto stdoutDir = m_farmPath / "jobs" / ar.manifest.job_id / "stdout" / m_nodeId;
     ensureDir(stdoutDir);

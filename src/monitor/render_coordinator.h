@@ -44,6 +44,14 @@ public:
     // Abort (kill-only — no drain concept)
     void abortCurrentRender(const std::string& reason);
     void purgeJob(const std::string& jobId);  // Remove queued (not yet active) chunks for a job
+
+    // Mark a job as deleted so post-cancel stdout from the agent is
+    // dropped instead of being flushed to {farmPath}/jobs/<jobId>/...,
+    // which would race with MonitorApp::deleteJob's remove_all and cause
+    // ENOTEMPTY on macOS (sharing violation on Windows). Safe to call
+    // repeatedly; entries are kept for the farm's lifetime.
+    void markJobDeleted(const std::string& jobId);
+
     void setStopped(bool stopped);
     bool isStopped() const { return m_stopped; }
     void setStagingEnabled(bool enabled);
@@ -81,6 +89,10 @@ private:
     };
     std::queue<PendingDispatch> m_dispatchQueue;
     std::mutex m_queueMutex;
+
+    // Job ids whose FS subtree is being torn down. Guarded by m_queueMutex.
+    // flushStdout() checks this and bails before recreating the directory.
+    std::set<std::string> m_deletedJobs;
 
     // Active render state (main thread only)
     struct ActiveRender
