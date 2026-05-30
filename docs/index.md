@@ -19,7 +19,7 @@ A lightweight render farm coordinator for small VFX teams and freelancers.
 - **HTTP coordination** — job dispatch, progress tracking, and completion reporting over an HTTP mesh.
 - **Local staging** — opt-in render-to-local-then-copy mode to prevent file corruption from cloud sync tools (Synology Drive, Dropbox, etc.).
 - **Resilient** — each node keeps a SQLite snapshot of the leader's state. If the leader drops, a new one picks up where it left off. Worst case: frames rendered in the last 30 seconds get re-rendered.
-- **Windows-first** — macOS and Linux support planned.
+- **Semi cross-platform** — Windows and macOS clients available.
 
 Built with C++ (Qt 6 Quick / QML) and Rust.
 
