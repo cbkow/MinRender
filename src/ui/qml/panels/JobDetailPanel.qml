@@ -201,10 +201,31 @@ Item {
                                 color: Theme.error
                                 font.pixelSize: Theme.fontSizeSmall
                             }
+                            // Priority is editable post-submission: dispatch
+                            // re-sorts on every chunk request, so a change
+                            // takes effect on the next dispatch. Within an
+                            // equal-priority group, order is set by the drag
+                            // handles in the jobs panel.
                             Label {
-                                text: qsTr("priority %1").arg(job.priority || 0)
+                                text: qsTr("priority")
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.fontSizeSmall
+                            }
+                            SpinBox {
+                                id: prioritySpin
+                                from: 1
+                                to: 999
+                                editable: true
+                                // Plain `value:` bindings break on first user
+                                // edit; this keeps tracking the backend value
+                                // whenever the user isn't interacting.
+                                Binding on value {
+                                    value: job.priority || 50
+                                    when: !prioritySpin.activeFocus
+                                    restoreMode: Binding.RestoreBindingOrValue
+                                }
+                                onValueModified: appBridge.setJobPriority(
+                                    appBridge.currentJobId, value)
                             }
                             Item { Layout.fillWidth: true }
                             Label {

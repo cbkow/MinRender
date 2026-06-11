@@ -272,6 +272,54 @@ void HttpServer::setupRoutes()
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
+    // POST /api/jobs/:id/move -- reorder within the equal-priority group.
+    // Body: {"target": "<jobId>", "position": "before"|"after"}
+    m_server.Post(R"(/api/jobs/([^/]+)/move)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+        std::string jobId = req.matches[1];
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            std::string target = body.at("target").get<std::string>();
+            bool before = body.value("position", "before") == "before";
+            if (!m_app->moveJob(jobId, target, before))
+            {
+                res.status = 409;
+                res.set_content(R"({"error":"move_rejected"})", "application/json");
+                return;
+            }
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
+    // POST /api/jobs/:id/priority -- change priority after submission.
+    // Body: {"priority": N}
+    m_server.Post(R"(/api/jobs/([^/]+)/priority)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+        std::string jobId = req.matches[1];
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            int priority = body.at("priority").get<int>();
+            m_app->setJobPriority(jobId, priority);
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
     // POST /api/jobs/:id/retry-failed -- retry only failed chunks
     m_server.Post(R"(/api/jobs/([^/]+)/retry-failed)", [this](const httplib::Request& req, httplib::Response& res)
     {

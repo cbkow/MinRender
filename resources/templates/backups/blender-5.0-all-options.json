@@ -108,7 +108,6 @@
     },
 
     "process": {
-        "kill_method": "terminate",
         "working_dir": null
     },
 

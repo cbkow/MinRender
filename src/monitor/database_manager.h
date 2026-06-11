@@ -60,6 +60,9 @@ public:
     std::vector<JobSummary> getAllJobs();
     bool updateJobState(const std::string& jobId, const std::string& newState);
     bool updateJobPriority(const std::string& jobId, int priority);
+    // Reorder jobId next to targetJobId within their (equal) priority group.
+    // Fails if priorities differ — drag-reorder is within-group only.
+    bool moveJob(const std::string& jobId, const std::string& targetJobId, bool before);
     bool deleteJob(const std::string& jobId);
 
     // Chunks

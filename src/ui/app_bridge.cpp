@@ -293,6 +293,17 @@ void AppBridge::setSubmissionMode(bool on)
     emit submissionModeChanged();
 }
 
+void AppBridge::setJobsRefreshPaused(bool paused)
+{
+    if (m_jobsRefreshPaused == paused)
+        return;
+    m_jobsRefreshPaused = paused;
+    emit jobsRefreshPausedChanged();
+    // Catch up immediately when the drag ends.
+    if (!paused && m_monitor)
+        m_jobsModel->setJobs(m_monitor->cachedJobs());
+}
+
 QVariantMap AppBridge::currentJob() const
 {
     if (!m_monitor || m_currentJobId.isEmpty())
@@ -642,7 +653,10 @@ void AppBridge::refresh()
     // MonitorApp::refreshCachedJobs runs on the same thread (the 50 ms
     // QTimer that calls this method), so direct push is safe. The model
     // diffs internally and only emits dataChanged for changed rows.
-    m_jobsModel->setJobs(m_monitor->cachedJobs());
+    // Skipped mid-drag (jobsRefreshPaused) so a reorder in progress
+    // isn't reset under the cursor.
+    if (!m_jobsRefreshPaused)
+        m_jobsModel->setJobs(m_monitor->cachedJobs());
 
     // The selected job's field values (progress, failed count, etc.)
     // may have moved even when its row didn't reorder; let JobDetail
@@ -859,6 +873,18 @@ void AppBridge::cancelJob(const QString& jobId)
 {
     if (!m_monitor || jobId.isEmpty()) return;
     m_monitor->cancelJob(jobId.toStdString());
+}
+
+void AppBridge::moveJob(const QString& jobId, const QString& targetId, bool before)
+{
+    if (!m_monitor || jobId.isEmpty() || targetId.isEmpty()) return;
+    m_monitor->moveJob(jobId.toStdString(), targetId.toStdString(), before);
+}
+
+void AppBridge::setJobPriority(const QString& jobId, int priority)
+{
+    if (!m_monitor || jobId.isEmpty()) return;
+    m_monitor->setJobPriority(jobId.toStdString(), priority);
 }
 
 void AppBridge::deleteJob(const QString& jobId)

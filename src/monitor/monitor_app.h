@@ -62,6 +62,11 @@ public:
     // Job controls
     void pauseJob(const std::string& jobId);
     void resumeJob(const std::string& jobId);
+    // Reorder within an equal-priority group (drag handles in the jobs
+    // panel). Returns false when the leader rejects the move locally;
+    // worker-side forwards always return true (result arrives async).
+    bool moveJob(const std::string& jobId, const std::string& targetJobId, bool before);
+    void setJobPriority(const std::string& jobId, int priority);
     void cancelJob(const std::string& jobId);
     void requeueJob(const std::string& jobId);
     void deleteJob(const std::string& jobId);
@@ -164,6 +169,7 @@ private:
     void onBecomeLeader();
     void onLoseLeadership();
     void refreshCachedJobs();
+    void abortRenderIfJobGone();
     void reportCompletion(const std::string& jobId, const ChunkRange& chunk,
                           const std::string& state);
     void reportFrameCompletion(const std::string& jobId, int frame);
@@ -257,6 +263,9 @@ private:
 
     // Job cache refresh timing
     std::chrono::steady_clock::time_point m_lastJobCacheRefresh;
+    // Set from the HTTP worker thread after a successful move/priority
+    // post so the next update() tick refreshes the jobs cache early.
+    std::atomic<bool> m_forceJobsRefresh{false};
 
     // Job selection
     std::string m_selectedJobId;

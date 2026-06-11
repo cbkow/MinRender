@@ -50,9 +50,10 @@ struct OutputDetection
     std::string info;
 };
 
+// Cancel/timeout always kills the whole DCC process tree (Job Object on
+// Windows, process group on macOS) — there is no configurable kill method.
 struct ProcessConfig
 {
-    std::string kill_method = "terminate";
     std::optional<std::string> working_dir;
 };
 
@@ -335,14 +336,13 @@ inline void from_json(const nlohmann::json& j, OutputDetection& o)
 inline void to_json(nlohmann::json& j, const ProcessConfig& p)
 {
     j = nlohmann::json{
-        {"kill_method", p.kill_method},
         {"working_dir", p.working_dir.has_value() ? nlohmann::json(p.working_dir.value()) : nlohmann::json(nullptr)},
     };
 }
 
 inline void from_json(const nlohmann::json& j, ProcessConfig& p)
 {
-    if (j.contains("kill_method"))  j.at("kill_method").get_to(p.kill_method);
+    // Older manifests/templates may still carry "kill_method" — ignored.
     if (j.contains("working_dir") && !j.at("working_dir").is_null())
         p.working_dir = j.at("working_dir").get<std::string>();
 }

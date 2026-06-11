@@ -42,7 +42,7 @@ Templates live in `{farm}/templates/`. Example templates ship in `{farm}/templat
     "job_defaults": { "frame_start": 1, "frame_end": 100, "chunk_size": 10 },
     "progress": { "patterns": [], "error_patterns": [] },
     "output_detection": { "stdout_regex": null, "validation": "exit_code_only" },
-    "process": { "kill_method": "terminate" },
+    "process": { "working_dir": null },
     "environment": {},
     "tags_required": ["blend"]
 }
@@ -271,15 +271,17 @@ How MinRender finds the path of rendered output files. Used for validation (chec
 
 ```json
 "process": {
-    "kill_method": "terminate",
     "working_dir": null
 }
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `kill_method` | `string` | `"terminate"` | How to stop the process on abort. `"terminate"` sends a termination signal. |
 | `working_dir` | `string?` | `null` | Working directory for the process. `null` = inherit. Supports runtime tokens (`{chunk_start}`, etc.). |
+
+On cancel or timeout, MinRender always kills the renderer's entire process
+tree immediately (Job Object on Windows, process group on macOS) — this is
+not configurable. A `kill_method` field from older templates is ignored.
 
 ---
 

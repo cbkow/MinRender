@@ -1,5 +1,6 @@
 mod executor;
 mod ipc;
+mod kill;
 mod messages;
 mod parser;
 mod watchdog;
@@ -369,9 +370,11 @@ fn main() {
                                     MonitorToAgent::Shutdown => {
                                         log::info!("Received shutdown during render, aborting");
                                         if let Some(ref exec) = active_render {
+                                            // Kills the whole process tree synchronously.
                                             exec.abort();
                                         }
-                                        // Wait briefly for worker to finish
+                                        // Brief grace so the worker can reap the
+                                        // child and flush final log lines.
                                         thread::sleep(Duration::from_millis(500));
                                         break;
                                     }
@@ -492,6 +495,18 @@ fn main() {
                                     frame_end,
                                     exit_code: -1,
                                     error: format!("Failed to start render: {}", e),
+                                }),
+                            );
+                            // Report idle so the monitor restores the node's
+                            // ready-for-work flag — without this, a spawn
+                            // failure leaves the node undispatchable (the
+                            // agent never entered "rendering" and doesn't
+                            // exit, so no other signal arrives).
+                            let _ = send_message(
+                                &mut pipe,
+                                &AgentToMonitor::Status(StatusMessage {
+                                    state: "idle".into(),
+                                    pid: process::id(),
                                 }),
                             );
                         }

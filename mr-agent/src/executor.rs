@@ -1,10 +1,11 @@
 use std::io::BufRead;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::kill::ProcessKiller;
 use crate::messages::TaskMessage;
 use crate::parser::{CompletionParser, OutputParser, ProgressParser};
 
@@ -26,7 +27,7 @@ pub enum RenderEvent {
 
 pub struct RenderExecutor {
     event_rx: mpsc::Receiver<RenderEvent>,
-    abort_flag: Arc<AtomicBool>,
+    killer: Arc<ProcessKiller>,
     worker: Option<JoinHandle<()>>,
     pub job_id: String,
     pub frame_start: u32,
@@ -38,7 +39,6 @@ const STDOUT_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 
 impl RenderExecutor {
     pub fn start(task: TaskMessage) -> Result<Self, String> {
-        let job_id = task.job_id.clone();
         let frame_start = task.frame_start;
         let frame_end = task.frame_end;
 
@@ -62,13 +62,15 @@ impl RenderExecutor {
         // causing frame completion lines to arrive in bulk at process exit.
         cmd.env("PYTHONUNBUFFERED", "1");
 
+        ProcessKiller::prepare_command(&mut cmd);
+
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn process: {}", e))?;
 
+        let killer = Arc::new(ProcessKiller::new(&child));
+
         let (event_tx, event_rx) = mpsc::channel::<RenderEvent>();
-        let abort_flag = Arc::new(AtomicBool::new(false));
-        let abort_clone = abort_flag.clone();
 
         // Build completion parser early — shared between stdout loop and stderr thread
         let completion_parser = Arc::new(
@@ -124,20 +126,37 @@ impl RenderExecutor {
             .as_ref()
             .and_then(|cfg| OutputParser::new(cfg));
 
-        let timeout = task.timeout_seconds.map(Duration::from_secs);
+        // Timeout watchdog — independent of stdout, so a silent or hung
+        // process still gets killed. Self-terminates within 100ms of the
+        // render finishing.
+        if let Some(t) = task.timeout_seconds.map(Duration::from_secs) {
+            let k = killer.clone();
+            thread::spawn(move || {
+                let start = Instant::now();
+                loop {
+                    if k.is_finished() {
+                        return;
+                    }
+                    if start.elapsed() > t {
+                        k.kill(&format!("Timeout after {}s", t.as_secs()));
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+            });
+        }
 
+        let worker_killer = killer.clone();
         let worker = thread::spawn(move || {
             worker_func(
                 child,
                 event_tx,
-                abort_clone,
+                worker_killer,
                 progress_parser,
                 output_parser,
                 completion_parser,
                 completion_counter,
                 stderr_lines,
-                timeout,
-                job_id.clone(),
                 frame_start,
                 frame_end,
             );
@@ -145,7 +164,7 @@ impl RenderExecutor {
 
         Ok(Self {
             event_rx,
-            abort_flag,
+            killer,
             worker: Some(worker),
             job_id: task.job_id,
             frame_start: task.frame_start,
@@ -162,9 +181,9 @@ impl RenderExecutor {
         events
     }
 
-    /// Signal the render process to abort.
+    /// Immediately kill the render process tree.
     pub fn abort(&self) {
-        self.abort_flag.store(true, Ordering::SeqCst);
+        self.killer.kill("Aborted by monitor");
     }
 
     /// Check if the worker thread has finished.
@@ -176,17 +195,23 @@ impl RenderExecutor {
     }
 }
 
+impl Drop for RenderExecutor {
+    fn drop(&mut self) {
+        // Covers every exit path in the agent (shutdown, pipe death,
+        // reconnect failure, panic) — no-op if the render already finished.
+        self.killer.kill("Agent shutting down");
+    }
+}
+
 fn worker_func(
     mut child: Child,
     tx: mpsc::Sender<RenderEvent>,
-    abort_flag: Arc<AtomicBool>,
+    killer: Arc<ProcessKiller>,
     progress_parser: Option<ProgressParser>,
     output_parser: Option<OutputParser>,
     completion_parser: Arc<Option<CompletionParser>>,
     completion_counter: Arc<AtomicU32>,
     stderr_lines: Arc<Mutex<Vec<String>>>,
-    timeout: Option<Duration>,
-    _job_id: String,
     frame_start: u32,
     frame_end: u32,
 ) {
@@ -209,33 +234,9 @@ fn worker_func(
     let mut last_flush = Instant::now();
     let mut last_output_file: Option<String> = None;
 
+    // Abort and timeout are NOT checked here: a tree kill (ProcessKiller)
+    // closes the child-side pipe handles, so this loop simply sees EOF.
     for line in reader.lines() {
-        // Check abort
-        if abort_flag.load(Ordering::SeqCst) {
-            let _ = child.kill();
-            let _ = child.wait();
-            flush_stdout(&tx, &mut stdout_buf, &stderr_lines);
-            let _ = tx.send(RenderEvent::Failed {
-                exit_code: -1,
-                error: "Aborted by monitor".into(),
-            });
-            return;
-        }
-
-        // Check timeout
-        if let Some(t) = timeout {
-            if start_time.elapsed() > t {
-                let _ = child.kill();
-                let _ = child.wait();
-                flush_stdout(&tx, &mut stdout_buf, &stderr_lines);
-                let _ = tx.send(RenderEvent::Failed {
-                    exit_code: -1,
-                    error: format!("Timeout after {}s", t.as_secs()),
-                });
-                return;
-            }
-        }
-
         let line = match line {
             Ok(l) => l,
             Err(_) => break,
@@ -287,6 +288,7 @@ fn worker_func(
     let status = match child.wait() {
         Ok(s) => s,
         Err(e) => {
+            killer.mark_finished();
             let _ = tx.send(RenderEvent::Failed {
                 exit_code: -1,
                 error: format!("Failed to wait for process: {}", e),
@@ -294,11 +296,19 @@ fn worker_func(
             return;
         }
     };
+    killer.mark_finished();
 
     let elapsed_ms = start_time.elapsed().as_millis() as u64;
     let exit_code = status.code().unwrap_or(-1);
 
-    if status.success() {
+    // A recorded kill reason (abort/timeout) wins over the exit status —
+    // even if the kill raced a clean exit, the monitor asked for it.
+    if let Some(reason) = killer.kill_reason() {
+        let _ = tx.send(RenderEvent::Failed {
+            exit_code,
+            error: reason,
+        });
+    } else if status.success() {
         let _ = tx.send(RenderEvent::Completed {
             elapsed_ms,
             exit_code,

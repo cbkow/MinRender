@@ -88,6 +88,17 @@ void DatabaseManager::createSchema()
         m_db->exec("ALTER TABLE chunks ADD COLUMN failed_on TEXT NOT NULL DEFAULT '[]'");
     }
     catch (...) {} // column already exists — safe to ignore
+
+    // Migration: add sort_key column (idempotent). Orders jobs within an
+    // equal-priority group (drag-to-reorder) without touching the
+    // user-visible submitted_at_ms. Defaults to the submission timestamp,
+    // so untouched groups keep submission order.
+    try
+    {
+        m_db->exec("ALTER TABLE jobs ADD COLUMN sort_key INTEGER");
+    }
+    catch (...) {} // column already exists — safe to ignore
+    m_db->exec("UPDATE jobs SET sort_key = submitted_at_ms WHERE sort_key IS NULL");
 }
 
 // --- Jobs ---
@@ -98,13 +109,14 @@ bool DatabaseManager::insertJob(const JobRow& job)
     try
     {
         SQLite::Statement q(*m_db,
-            "INSERT INTO jobs (job_id, manifest_json, current_state, priority, submitted_at_ms) "
-            "VALUES (?, ?, ?, ?, ?)");
+            "INSERT INTO jobs (job_id, manifest_json, current_state, priority, submitted_at_ms, sort_key) "
+            "VALUES (?, ?, ?, ?, ?, ?)");
         q.bind(1, job.job_id);
         q.bind(2, job.manifest_json);
         q.bind(3, job.current_state);
         q.bind(4, job.priority);
         q.bind(5, job.submitted_at_ms);
+        q.bind(6, job.submitted_at_ms);  // sort_key: new jobs join the back of their priority group
         q.exec();
         return true;
     }
@@ -153,7 +165,7 @@ std::vector<JobSummary> DatabaseManager::getAllJobs()
         // Get all jobs
         SQLite::Statement q(*m_db,
             "SELECT job_id, manifest_json, current_state, priority, submitted_at_ms "
-            "FROM jobs ORDER BY priority ASC, submitted_at_ms ASC");
+            "FROM jobs ORDER BY priority ASC, COALESCE(sort_key, submitted_at_ms) ASC, submitted_at_ms ASC");
 
         while (q.executeStep())
         {
@@ -211,7 +223,10 @@ bool DatabaseManager::updateJobPriority(const std::string& jobId, int priority)
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
-        SQLite::Statement q(*m_db, "UPDATE jobs SET priority = ? WHERE job_id = ?");
+        // Reset sort_key so the job enters its new priority group in
+        // submission order rather than carrying a renumbered key over.
+        SQLite::Statement q(*m_db,
+            "UPDATE jobs SET priority = ?, sort_key = submitted_at_ms WHERE job_id = ?");
         q.bind(1, priority);
         q.bind(2, jobId);
         return q.exec() > 0;
@@ -219,6 +234,75 @@ bool DatabaseManager::updateJobPriority(const std::string& jobId, int priority)
     catch (const std::exception& e)
     {
         MonitorLog::instance().error("db", std::string("updateJobPriority failed: ") + e.what());
+        return false;
+    }
+}
+
+bool DatabaseManager::moveJob(const std::string& jobId, const std::string& targetJobId, bool before)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    if (jobId == targetJobId)
+        return false;
+    try
+    {
+        SQLite::Transaction txn(*m_db);
+
+        // Both jobs must exist and share a priority — reordering is only
+        // defined within an equal-priority group (dispatch sorts by
+        // priority first, so a cross-group move would be meaningless).
+        int prio = 0, targetPrio = 0;
+        {
+            SQLite::Statement q(*m_db, "SELECT job_id, priority FROM jobs WHERE job_id IN (?, ?)");
+            q.bind(1, jobId);
+            q.bind(2, targetJobId);
+            int found = 0;
+            while (q.executeStep())
+            {
+                ++found;
+                if (q.getColumn(0).getString() == jobId) prio = q.getColumn(1).getInt();
+                else                                     targetPrio = q.getColumn(1).getInt();
+            }
+            if (found != 2 || prio != targetPrio)
+                return false;
+        }
+
+        // Snapshot the group in current display order, splice the moved
+        // job next to the target, then renumber the whole group with
+        // gapless small keys. Groups are small, so a full renumber is
+        // simpler and collision-proof compared to midpoint insertion.
+        std::vector<std::string> ids;
+        {
+            SQLite::Statement q(*m_db,
+                "SELECT job_id FROM jobs WHERE priority = ? "
+                "ORDER BY COALESCE(sort_key, submitted_at_ms) ASC, submitted_at_ms ASC");
+            q.bind(1, prio);
+            while (q.executeStep())
+                ids.push_back(q.getColumn(0).getString());
+        }
+
+        ids.erase(std::remove(ids.begin(), ids.end(), jobId), ids.end());
+        auto targetIt = std::find(ids.begin(), ids.end(), targetJobId);
+        if (targetIt == ids.end())
+            return false;
+        ids.insert(before ? targetIt : targetIt + 1, jobId);
+
+        {
+            SQLite::Statement q(*m_db, "UPDATE jobs SET sort_key = ? WHERE job_id = ?");
+            for (size_t i = 0; i < ids.size(); ++i)
+            {
+                q.bind(1, static_cast<int64_t>((i + 1) * 1024));
+                q.bind(2, ids[i]);
+                q.exec();
+                q.reset();
+            }
+        }
+
+        txn.commit();
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("moveJob failed: ") + e.what());
         return false;
     }
 }
@@ -337,7 +421,8 @@ DatabaseManager::findNextPendingChunk()
             FROM chunks c
             JOIN jobs j ON c.job_id = j.job_id
             WHERE c.state = 'pending' AND j.current_state = 'active'
-            ORDER BY j.priority ASC, j.submitted_at_ms ASC, c.frame_start ASC
+            ORDER BY j.priority ASC, COALESCE(j.sort_key, j.submitted_at_ms) ASC,
+                     j.submitted_at_ms ASC, c.frame_start ASC
             LIMIT 1
         )");
 
@@ -375,7 +460,8 @@ DatabaseManager::findNextPendingChunkForNode(const std::vector<std::string>& nod
             FROM jobs j
             WHERE j.current_state = 'active'
               AND EXISTS (SELECT 1 FROM chunks c WHERE c.job_id = j.job_id AND c.state = 'pending')
-            ORDER BY j.priority ASC, j.submitted_at_ms ASC
+            ORDER BY j.priority ASC, COALESCE(j.sort_key, j.submitted_at_ms) ASC,
+                     j.submitted_at_ms ASC
         )");
 
         while (jobQ.executeStep())

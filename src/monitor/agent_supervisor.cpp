@@ -316,6 +316,14 @@ void AgentSupervisor::ipcThreadFunc()
             MonitorLog::instance().info("agent", "Agent disconnected (render cycle complete)");
             m_ipc.disconnect();
 
+            // The agent is one-shot per render and kills its whole DCC
+            // process tree before exiting (ProcessKiller), so its exit
+            // means the node can take new work — even when the render
+            // failed before ever reaching the "rendering" state (e.g.
+            // spawn failure), which the status-transition path below
+            // never sees.
+            m_readyForWork.store(true);
+
 #ifdef _WIN32
             if (m_processHandle)
             {
@@ -380,8 +388,12 @@ void AgentSupervisor::processMessages()
                 if (pid != 0) m_agentPid = pid;
                 MonitorLog::instance().info("agent", "Agent status: state=" + m_agentState + " pid=" + std::to_string(m_agentPid));
 
-                // DCC confirmed dead → node is ready for new work
-                if (m_agentState == "idle" && prevState == "rendering")
+                // DCC confirmed dead → node is ready for new work. The
+                // agent only reports idle when it has no active render,
+                // so any idle report (not just rendering→idle) restores
+                // readiness — a spawn failure goes straight back to idle
+                // without ever reporting "rendering".
+                if (m_agentState == "idle")
                     m_readyForWork.store(true);
             }
             else if (type == "pong")

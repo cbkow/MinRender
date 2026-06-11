@@ -143,10 +143,72 @@ Item {
         return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd HH:mm")
     }
 
-    // Column widths (px). Name (fillRest) | State | Progress | Created
+    // Column widths (px).
+    // Handle | Pri | Name (fillRest) | State | Progress | Created
+    readonly property int colHandle:   22
+    readonly property int colPri:      36
     readonly property int colState:    90
     readonly property int colProgress: 280
     readonly property int colCreated:  140
+
+    function priorityAt(rowIdx) {
+        return appBridge.jobsModel.data(
+            appBridge.jobsModel.index(rowIdx, 0),
+            Qt.UserRole + 11)  // PriorityRole
+    }
+
+    // --- Drag-to-reorder state ---
+    // Reordering is only meaningful within a contiguous equal-priority
+    // run (dispatch sorts by priority first), so the drop gap is clamped
+    // to the dragged row's run. Model refreshes are paused for the
+    // duration (appBridge.jobsRefreshPaused), so indices are stable.
+    property string dragJobId: ""
+    property int dragIndex: -1
+    property int dragRunStart: -1   // first row of the equal-priority run
+    property int dragRunEnd: -1     // last row of the equal-priority run
+    property int dropGap: -1        // insertion gap (row index the job lands before); -1 = invalid
+
+    function beginDrag(jobId, rowIdx) {
+        appBridge.jobsRefreshPaused = true
+        dragJobId = jobId
+        dragIndex = rowIdx
+        const prio = priorityAt(rowIdx)
+        let lo = rowIdx, hi = rowIdx
+        while (lo > 0 && priorityAt(lo - 1) === prio) --lo
+        while (hi < jobList.count - 1 && priorityAt(hi + 1) === prio) ++hi
+        dragRunStart = lo
+        dragRunEnd = hi
+        dropGap = -1
+    }
+
+    function updateDrag(contentY) {
+        let gap = Math.round(contentY / 32)   // 32 = fixed row height
+        if (gap < dragRunStart || gap > dragRunEnd + 1) {
+            dropGap = -1                       // outside the priority run
+            return
+        }
+        // Dropping into its own slot is a no-op — hide the indicator.
+        if (gap === dragIndex || gap === dragIndex + 1) {
+            dropGap = -1
+            return
+        }
+        dropGap = gap
+    }
+
+    function endDrag() {
+        if (dropGap >= 0) {
+            if (dropGap <= dragRunEnd)
+                appBridge.moveJob(dragJobId, jobIdAt(dropGap), true)
+            else
+                appBridge.moveJob(dragJobId, jobIdAt(dropGap - 1), false)
+        }
+        dragJobId = ""
+        dragIndex = -1
+        dragRunStart = -1
+        dragRunEnd = -1
+        dropGap = -1
+        appBridge.jobsRefreshPaused = false
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -255,7 +317,7 @@ Item {
                         qsTr("Cancel %1 job%2?")
                             .arg(root.checkedCount())
                             .arg(root.checkedCount() === 1 ? "" : "s"),
-                        qsTr("This stops dispatch immediately. The jobs can be requeued later."),
+                        qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
                         function(id) { appBridge.cancelJob(id) })
                 }
                 FlatButton {
@@ -286,12 +348,23 @@ Item {
                 anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                 spacing: 8
 
+                Item { width: root.colHandle; height: 1 }
+
+                Label {
+                    text: qsTr("Pri")
+                    color: Theme.textSecondary
+                    font.pixelSize: 11
+                    width: root.colPri
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
                 Label {
                     text: qsTr("Name")
                     color: Theme.textSecondary
                     font.pixelSize: 11
-                    width: parent.width - root.colState
-                           - root.colProgress - root.colCreated - 3 * 8
+                    width: parent.width - root.colHandle - root.colPri
+                           - root.colState - root.colProgress
+                           - root.colCreated - 5 * 8
                     anchors.verticalCenter: parent.verticalCenter
                     elide: Text.ElideRight
                 }
@@ -338,12 +411,16 @@ Item {
                 required property int    doneChunks
                 required property int    failedChunks
                 required property var    createdAt
+                required property int    priority
                 required property int    index
 
                 width: jobList.width
                 height: 32
                 color: root.isChecked(jobId) ? Theme.selection
                      : (index % 2 === 0 ? Theme.bgAlt : Theme.surface)
+                // Ghost the row being dragged so the indicator line reads
+                // as "this is where it's going".
+                opacity: root.dragJobId === jobId ? 0.45 : 1.0
 
                 // Accent left-rule on the "primary" row (currentJobId).
                 // Distinguishes the row whose detail is showing from
@@ -364,13 +441,34 @@ Item {
                     anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                     spacing: 8
 
+                    Item {
+                        width: root.colHandle
+                        height: parent.height
+                        Icon {
+                            anchors.centerIn: parent
+                            name: "dots-six-vertical"
+                            size: 14
+                            color: Theme.textMuted
+                        }
+                    }
+
+                    Label {
+                        text: priority
+                        color: Theme.textSecondary
+                        font.pixelSize: 11
+                        font.family: Theme.monoFamily
+                        width: root.colPri
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
                     Label {
                         text: name
                         color: Theme.textPrimary
                         font.pixelSize: Theme.fontSizeBase
                         font.family: Theme.monoFamily
-                        width: parent.width - root.colState
-                               - root.colProgress - root.colCreated - 3 * 8
+                        width: parent.width - root.colHandle - root.colPri
+                               - root.colState - root.colProgress
+                               - root.colCreated - 5 * 8
                         anchors.verticalCenter: parent.verticalCenter
                         elide: Text.ElideMiddle
                     }
@@ -437,6 +535,40 @@ Item {
                         mouse.accepted = true
                     }
                 }
+
+                // Drag-to-reorder handle. Declared after the row MouseArea
+                // so it wins the left 22px strip. The row never physically
+                // moves during the drag — an indicator line marks the drop
+                // gap and the backend refresh applies the new order.
+                MouseArea {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: root.colHandle
+                    preventStealing: true
+                    cursorShape: root.dragJobId !== ""
+                                 ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                    onPressed: root.beginDrag(jobId, index)
+                    onPositionChanged: (mouse) => {
+                        const p = mapToItem(jobList.contentItem, mouse.x, mouse.y)
+                        root.updateDrag(p.y)
+                    }
+                    onReleased: root.endDrag()
+                    onCanceled: { root.dropGap = -1; root.endDrag() }
+                }
+            }
+
+            // Insertion indicator for drag-to-reorder. Declared children
+            // of a Flickable are reparented into contentItem, so y is in
+            // content coordinates (scrolls with the rows).
+            Rectangle {
+                visible: root.dropGap >= 0
+                x: 0
+                y: root.dropGap * 32 - 1
+                width: jobList.width - Theme.scrollBarWidth
+                height: 2
+                color: Theme.accent
+                z: 10
             }
         }
     }
@@ -501,7 +633,7 @@ Item {
                 qsTr("Cancel %1 job%2?")
                     .arg(root.checkedCount())
                     .arg(root.checkedCount() === 1 ? "" : "s"),
-                qsTr("This stops dispatch immediately. The jobs can be requeued later."),
+                qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
                 function(id) { appBridge.cancelJob(id) })
         }
         MenuItem {

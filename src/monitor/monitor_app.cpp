@@ -111,7 +111,7 @@ void MonitorApp::update()
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - m_lastJobCacheRefresh).count();
-    if (elapsed >= 2000)
+    if (m_forceJobsRefresh.exchange(false) || elapsed >= 2000)
     {
         refreshCachedJobs();
         m_cachedTemplates = m_templateManager.getTemplateSnapshot();
@@ -620,6 +620,8 @@ void MonitorApp::refreshCachedJobs()
             std::lock_guard<std::mutex> lock(m_cachedJsonMutex);
             m_cachedJobsJson = jsonArr.dump();
         }
+
+        abortRenderIfJobGone();
     }
     else if (m_farmRunning)
     {
@@ -671,6 +673,8 @@ void MonitorApp::refreshCachedJobs()
                                 std::lock_guard<std::mutex> lock(m_cachedJsonMutex);
                                 m_cachedJobsJson = res->body;
                             }
+
+                            abortRenderIfJobGone();
                         }
                         else
                         {
@@ -687,6 +691,41 @@ void MonitorApp::refreshCachedJobs()
             }
         }
     }
+}
+
+// Called after every successful jobs-cache refresh (leader DB read or
+// worker HTTP fetch). If the job we're currently rendering was cancelled
+// or deleted on another node, kill the local render immediately — this is
+// what propagates an aggressive cancel across the farm (≤ one refresh
+// interval of latency). Failed refreshes never reach here, so a flaky
+// leader can't take down a healthy render.
+void MonitorApp::abortRenderIfJobGone()
+{
+    if (!m_renderCoordinator.isRendering())
+        return;
+
+    const std::string jobId = m_renderCoordinator.currentJobId();
+    if (jobId.empty())
+        return;
+
+    const JobInfo* found = nullptr;
+    for (const auto& info : m_cachedJobs)
+    {
+        if (info.manifest.job_id == jobId)
+        {
+            found = &info;
+            break;
+        }
+    }
+
+    if (found && found->current_state != "cancelled")
+        return;
+
+    const std::string reason = found ? "job cancelled" : "job removed";
+    MonitorLog::instance().info("render",
+        "Aborting local render, " + reason + " elsewhere: " + jobId);
+    m_renderCoordinator.abortCurrentRender(reason);
+    m_renderCoordinator.purgeJob(jobId);
 }
 
 std::string MonitorApp::getCachedJobsJson() const
@@ -760,6 +799,68 @@ void MonitorApp::resumeJob(const std::string& jobId)
     else
     {
         postToLeaderAsync("/api/jobs/" + jobId + "/resume", "");
+    }
+}
+
+bool MonitorApp::moveJob(const std::string& jobId, const std::string& targetJobId, bool before)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        if (!m_databaseManager.moveJob(jobId, targetJobId, before))
+        {
+            MonitorLog::instance().warn("job",
+                "Move rejected (missing job or unequal priority): " + jobId);
+            return false;
+        }
+        MonitorLog::instance().info("job", "Moved job " + jobId
+            + (before ? " before " : " after ") + targetJobId);
+        // Refresh now so the UI shows the new order on the next tick
+        // instead of after the 2s cadence.
+        refreshCachedJobs();
+        return true;
+    }
+
+    nlohmann::json body = {
+        {"target", targetJobId},
+        {"position", before ? "before" : "after"},
+    };
+    postToLeaderAsync("/api/jobs/" + jobId + "/move", body.dump(),
+        [this, jobId](bool ok, const std::string& resp) {
+            if (ok)
+            {
+                // Pull the new order promptly rather than waiting out
+                // the 2s refresh interval. (Atomic — we're on the HTTP
+                // worker thread here.)
+                m_forceJobsRefresh.store(true);
+            }
+            else
+            {
+                std::string msg = "Move failed for " + jobId;
+                if (!resp.empty()) msg += " — leader responded: " + resp;
+                else               msg += " — no response (leader unreachable or missing endpoint)";
+                MonitorLog::instance().warn("job", msg);
+            }
+        });
+    return true;
+}
+
+void MonitorApp::setJobPriority(const std::string& jobId, int priority)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        m_databaseManager.updateJobPriority(jobId, priority);
+        MonitorLog::instance().info("job",
+            "Set priority " + std::to_string(priority) + " on job: " + jobId);
+        refreshCachedJobs();
+    }
+    else
+    {
+        nlohmann::json body = {{"priority", priority}};
+        postToLeaderAsync("/api/jobs/" + jobId + "/priority", body.dump(),
+            [this](bool ok, const std::string&) {
+                if (ok)
+                    m_forceJobsRefresh.store(true);
+            });
     }
 }
 

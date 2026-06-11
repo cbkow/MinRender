@@ -48,6 +48,13 @@ class AppBridge : public QObject
     Q_PROPERTY(QString currentJobId READ currentJobId WRITE setCurrentJobId
                NOTIFY currentJobIdChanged)
 
+    // True while a drag-reorder is in flight in the jobs panel. Suspends
+    // pushing backend snapshots into JobsModel so a 2s refresh can't
+    // reset the ListView mid-drag. Row data may go briefly stale; the
+    // first refresh after release catches up.
+    Q_PROPERTY(bool jobsRefreshPaused READ jobsRefreshPaused
+               WRITE setJobsRefreshPaused NOTIFY jobsRefreshPausedChanged)
+
     // True while the JobDetailPanel should show the submission form.
     // Set by New Job actions; cleared by SubmissionForm's submit/cancel
     // or by selecting an existing job.
@@ -137,6 +144,9 @@ public:
     bool submissionMode() const { return m_submissionMode; }
     void setSubmissionMode(bool on);
 
+    bool jobsRefreshPaused() const { return m_jobsRefreshPaused; }
+    void setJobsRefreshPaused(bool paused);
+
     QVariantMap currentJob() const;
 
     QString     logSourceId()   const { return m_logSourceId; }
@@ -185,6 +195,12 @@ public:
     Q_INVOKABLE void requeueJob(const QString& jobId);
     Q_INVOKABLE void archiveJob(const QString& jobId);
     Q_INVOKABLE void retryFailedChunks(const QString& jobId);
+
+    // Dispatch-order controls. moveJob reorders jobId next to targetId —
+    // rejected (leader-side) unless both share a priority. setJobPriority
+    // moves a job between priority groups.
+    Q_INVOKABLE void moveJob(const QString& jobId, const QString& targetId, bool before);
+    Q_INVOKABLE void setJobPriority(const QString& jobId, int priority);
 
     // Reveals the job's output_dir in the platform file manager. The
     // manifest stores paths in canonical Windows form; on macOS we
@@ -291,6 +307,7 @@ signals:
     void stagingEnabledChanged();
     void currentJobIdChanged();
     void submissionModeChanged();
+    void jobsRefreshPausedChanged();
     void currentJobChanged();
     void thisNodeIsLeaderChanged();
     void thisNodeActiveChanged();
@@ -352,6 +369,7 @@ private:
     QStringList                     m_taskOutputLines;  // task mode selected chunk contents
 
     bool m_submissionMode   = false;
+    bool m_jobsRefreshPaused = false;
     bool m_lastFarmRunning  = false;
     bool m_lastIsLeader     = false;
     bool m_lastNodeActive   = true;

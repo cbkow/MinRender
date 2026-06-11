@@ -118,15 +118,23 @@ private:
 
     std::atomic<bool> m_snapshotInProgress{false};
 
-    // Nodes we've dispatched to that haven't yet shown up as "rendering" in a peer snapshot.
-    // Prevents re-assigning work before the UDP heartbeat propagates the busy state.
-    std::unordered_set<std::string> m_dispatchedNodes;
+    // Nodes we've dispatched to that haven't yet shown up as "rendering" in
+    // a peer snapshot, with the dispatch time. Prevents re-assigning work
+    // before the UDP heartbeat propagates the busy state. Entries also
+    // expire after DISPATCHED_ENTRY_TTL_MS: a render that fails or is
+    // aborted within one heartbeat interval never broadcasts "rendering",
+    // and without the TTL its entry would block the node forever.
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_dispatchedNodes;
 
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_lastAgentRestartAttempt;
 
     static constexpr int DISPATCH_INTERVAL_MS = 2000;
     static constexpr int SNAPSHOT_INTERVAL_MS = 30000;
     static constexpr int AGENT_RESTART_COOLDOWN_MS = 60000;
+    // Long enough that a genuinely-started render has shown "rendering" in
+    // a heartbeat well before expiry (heartbeats are ~2s); short enough
+    // that an instant spawn-failure can't idle a node for long.
+    static constexpr int DISPATCHED_ENTRY_TTL_MS = 15000;
 };
 
 } // namespace MR

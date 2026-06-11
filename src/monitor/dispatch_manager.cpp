@@ -297,19 +297,31 @@ void DispatchManager::assignWork()
     peers.push_back(localInfo);
 
     // Clear dispatched-node entries once the peer snapshot confirms rendering
-    // (heartbeat has propagated), or the node is no longer alive/active.
+    // (heartbeat has propagated), the node is no longer alive/active, or the
+    // entry has outlived its TTL. The TTL covers renders that end faster
+    // than a heartbeat interval (instant spawn failure, immediate abort,
+    // failed dispatch POST) — those never broadcast "rendering", and
+    // without expiry the entry would block the node until app restart.
+    const auto staleCutoff = std::chrono::steady_clock::now()
+        - std::chrono::milliseconds(DISPATCHED_ENTRY_TTL_MS);
     for (auto it = m_dispatchedNodes.begin(); it != m_dispatchedNodes.end(); )
     {
         bool confirmed = false;
         for (const auto& p : peers)
         {
-            if (p.node_id == *it)
+            if (p.node_id == it->first)
             {
                 // Heartbeat caught up — node shows rendering, or it already finished
                 if (p.render_state == "rendering" || !p.is_alive)
                     confirmed = true;
                 break;
             }
+        }
+        if (!confirmed && it->second < staleCutoff)
+        {
+            MonitorLog::instance().info("dispatch",
+                "Dispatched-node entry expired without rendering heartbeat: " + it->first);
+            confirmed = true;
         }
         if (confirmed)
             it = m_dispatchedNodes.erase(it);
@@ -374,7 +386,7 @@ void DispatchManager::assignWork()
                 auto manifest = nlohmann::json::parse(manifestJson).get<JobManifest>();
                 ChunkRange cr{chunk.frame_start, chunk.frame_end};
                 m_app->renderCoordinator().queueDispatch(manifest, cr);
-                m_dispatchedNodes.insert(peer.node_id);
+                m_dispatchedNodes[peer.node_id] = std::chrono::steady_clock::now();
                 MonitorLog::instance().info("dispatch",
                     "Self-assigned: " + chunk.job_id + " f" + std::to_string(chunk.frame_start) +
                     "-" + std::to_string(chunk.frame_end));
@@ -401,9 +413,9 @@ void DispatchManager::assignWork()
             }
 
             // Mark dispatched optimistically — chunk is already assigned in DB.
-            // If the POST fails, the chunk reverts to pending and this entry clears
-            // on the next cycle when the node doesn't show as "rendering".
-            m_dispatchedNodes.insert(peer.node_id);
+            // If the POST fails, the chunk reverts to pending and this entry
+            // expires via the TTL (the node never shows "rendering").
+            m_dispatchedNodes[peer.node_id] = std::chrono::steady_clock::now();
 
             nlohmann::json manifestData = nlohmann::json::parse(manifestJson);
 
