@@ -18,6 +18,7 @@ A lightweight render farm coordinator for small VFX teams and freelancers.
 - **Fast discovery** — UDP multicast for LAN, falls back to a file-system phonebook for VPNs and complex networks.
 - **HTTP coordination** — job dispatch, progress tracking, and completion reporting over an HTTP mesh.
 - **Local staging** — opt-in render-to-local-then-copy mode to prevent file corruption from cloud sync tools (Synology Drive, Dropbox, etc.).
+- **Live queue control** — drag jobs to reorder the queue, change priority mid-flight, and cancel kills the renderer's whole process tree on every node, instantly.
 - **Resilient** — each node keeps a SQLite snapshot of the leader's state. If the leader drops, a new one picks up where it left off. Worst case: frames rendered in the last 30 seconds get re-rendered.
 - **Semi cross-platform** — Windows and macOS clients available.
 

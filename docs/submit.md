@@ -15,6 +15,8 @@ Click **New Job** in the Jobs panel (or **Jobs → New Job…** in the menu bar)
 
 Fill out the form. Fields marked with an asterisk are required; everything else is either ignored or left to the DCC's defaults if blank. Press **Submit**.
 
+**Priority** defaults to 50 — lower numbers render sooner. It isn't locked in at submission: you can change it later from the job detail view, or drag jobs of equal priority into a custom order in the Jobs panel. See [job order & priority](monitor.md#job-order--priority).
+
 ![Job submission form](/images/mr011.jpg)
 
 {: .note }
