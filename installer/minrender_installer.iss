@@ -91,8 +91,12 @@ Name: "launchafter"; Description: "Launch {#MyAppName} after installation"; Grou
 ; Qt DLLs, platforms\, styles\, qml\, resources\ (fonts, icons,
 ; templates, etc.).
 Source: "..\build\deploy\*"; DestDir: "{app}"; \
-    Excludes: "resources\plugins\blender\*,resources\plugins\cinema4d\*,resources\plugins\afterEffects\*"; \
+    Excludes: "resources\plugins\blender\*,resources\plugins\cinema4d\*,resources\plugins\afterEffects\*,vc_redist.x64.exe"; \
     Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
+
+; VC++ runtime redistributable — staged by windeployqt --compiler-runtime.
+; Installed to {tmp} and executed quietly below, not left in {app}.
+Source: "..\build\deploy\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall; Components: core
 
 ; DCC plugins — per-component so the user can opt out
 Source: "..\build\deploy\resources\plugins\blender\*";      DestDir: "{app}\resources\plugins\blender";      Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins\blender
@@ -220,6 +224,12 @@ begin
 end;
 
 [Run]
+; Install the VC++ runtime first — minrender.exe and the Qt DLLs won't load
+; without it on a machine that has never had the redistributable. The redist
+; no-ops quickly if the same or newer version is already present.
+Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; \
+    StatusMsg: "Installing Microsoft Visual C++ Runtime..."; Components: core
+
 ; Launch application after installation if task is selected
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent; Tasks: launchafter
 

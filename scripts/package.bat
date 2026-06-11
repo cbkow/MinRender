@@ -16,6 +16,10 @@ set "REPO=%~dp0.."
 set "BUILD=%REPO%\build"
 set "DEPLOY=%BUILD%\deploy"
 set "QT_BIN=C:\Qt\6.11.1\msvc2022_64\bin"
+REM windeployqt needs VCINSTALLDIR to locate the VC++ runtime redist DLLs
+REM (vcruntime140, msvcp140). Without it they're silently skipped and the
+REM app won't launch on machines without the VC++ redistributable.
+if not defined VCINSTALLDIR set "VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\"
 set "AGENT=%REPO%\mr-agent\target\release\mr-agent.exe"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
@@ -58,6 +62,7 @@ REM modules to pull in (QtQuick, QtQuick.Controls, QtQml, etc). Without
 REM it, the platform plugin lands but QML imports fail at runtime.
 "%QT_BIN%\windeployqt.exe" ^
   --release ^
+  --compiler-runtime ^
   --no-translations ^
   --no-system-d3d-compiler ^
   --no-opengl-sw ^
