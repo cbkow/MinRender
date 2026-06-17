@@ -24,8 +24,8 @@ set "AGENT=%REPO%\mr-agent\target\release\mr-agent.exe"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
 REM --- Sanity checks ---
-if not exist "%BUILD%\minrender.exe" (
-  echo ERROR: %BUILD%\minrender.exe missing. Run scripts\build_msvc.bat first.
+if not exist "%BUILD%\minRender.exe" (
+  echo ERROR: %BUILD%\minRender.exe missing. Run scripts\build_msvc.bat first.
   exit /b 1
 )
 if not exist "%BUILD%\mr-restart.exe" (
@@ -42,9 +42,18 @@ if exist "%DEPLOY%" rmdir /S /Q "%DEPLOY%"
 mkdir "%DEPLOY%" || exit /b 1
 
 REM --- Executables ---
-copy /Y "%BUILD%\minrender.exe"          "%DEPLOY%\" >nul || exit /b 1
+copy /Y "%BUILD%\minRender.exe"          "%DEPLOY%\" >nul || exit /b 1
 copy /Y "%BUILD%\minrender-headless.exe" "%DEPLOY%\" >nul || exit /b 1
 copy /Y "%BUILD%\mr-restart.exe"         "%DEPLOY%\" >nul || exit /b 1
+
+REM WinSparkle.dll — CMake's POST_BUILD drops it next to minRender.exe when
+REM external\winsparkle is vendored (auto-update enabled). Optional: absent in
+REM dev builds without the updater. Must ship beside the exe so the app loads it.
+if exist "%BUILD%\WinSparkle.dll" (
+  copy /Y "%BUILD%\WinSparkle.dll" "%DEPLOY%\" >nul || exit /b 1
+) else (
+  echo WARN: %BUILD%\WinSparkle.dll not found - auto-update disabled in this build.
+)
 
 REM Rust-built agent — warn if missing, don't fail (dev may not have rebuilt)
 if exist "%AGENT%" (
@@ -67,7 +76,7 @@ REM it, the platform plugin lands but QML imports fail at runtime.
   --no-system-d3d-compiler ^
   --no-opengl-sw ^
   --qmldir "%REPO%\src\ui\qml" ^
-  "%DEPLOY%\minrender.exe" || exit /b 1
+  "%DEPLOY%\minRender.exe" || exit /b 1
 
 REM windeployqt on minrender pulls Qt6Core/Network/Gui/etc. The headless
 REM sidecar uses Qt6Core + Qt6Network only, which are already present

@@ -64,7 +64,7 @@ bool Tray::init()
 
     m_icon = std::make_unique<QSystemTrayIcon>(loadTrayIcon());
     m_icon->setContextMenu(m_menu.get());
-    m_icon->setToolTip(QStringLiteral("MinRender"));
+    m_icon->setToolTip(QStringLiteral("minRender"));
 
     // Single-click / double-click both restore the window, matching the
     // Win32 tray's behavior.

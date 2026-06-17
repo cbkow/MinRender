@@ -71,7 +71,7 @@ Dialog {
 
         Label {
             Layout.fillWidth: true
-            text: qsTr("MinRender stores paths in canonical Windows form. Mappings translate between Windows, macOS, and Linux roots when jobs cross OSes or when a macOS user submits to the Windows farm.")
+            text: qsTr("minRender stores paths in canonical Windows form. Mappings translate between Windows, macOS, and Linux roots when jobs cross OSes or when a macOS user submits to the Windows farm.")
             color: Theme.textMuted
             font.pixelSize: Theme.fontSizeSmall
             wrapMode: Text.WordWrap

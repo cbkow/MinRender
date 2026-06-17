@@ -61,6 +61,20 @@ compile_commands.json
 # Dependencies (fetched by CMake)
 _deps/
 
+# Vendored auto-update SDKs (binary; not committed).
+#   external/Sparkle    — fetched by scripts/fetch_sparkle.sh (macOS)
+#   external/winsparkle — copied from a sister project: include/, lib/, bin/ (Windows)
+# When absent, the CMake auto-update block compiles the bridge to a no-op.
+/external/Sparkle/
+/external/winsparkle/
+
+# Sparkle EdDSA PRIVATE key. generate_keys -x exports it to a plaintext file —
+# never commit it. The private key belongs in the login Keychain + an offline
+# backup; only the PUBLIC key is embedded in the app.
+*sparkle_private*
+*.eddsa
+dsa_priv.pem
+
 # Rust
 mr-agent/target/
 

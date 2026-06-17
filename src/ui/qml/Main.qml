@@ -10,7 +10,7 @@ ApplicationWindow {
     width: 1440
     height: 900
     visible: true
-    title: qsTr("MinRender Monitor")
+    title: qsTr("minRender Monitor")
 
     // QML controls (TextField/ComboBox/SpinBox/CheckBox/MenuBar) read
     // their colours from the inherited palette, NOT the Theme singleton
@@ -113,13 +113,17 @@ ApplicationWindow {
             // QCoreApplication::setApplicationVersion, which reads the
             // CMake PROJECT_VERSION at compile time.
             Action {
-                text: qsTr("MinRender v%1").arg(Qt.application.version)
+                text: qsTr("minRender v%1").arg(Qt.application.version)
                 enabled: false
             }
             MenuSeparator {}
             Action {
+                text: qsTr("Check for &Updates…")
+                onTriggered: appUpdater.checkForUpdates()
+            }
+            Action {
                 text: qsTr("Docs")
-                onTriggered: Qt.openUrlExternally("http://minrender.com/")
+                onTriggered: Qt.openUrlExternally("https://minrender.com/")
             }
         }
     }

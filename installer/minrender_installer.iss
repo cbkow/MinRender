@@ -1,11 +1,11 @@
-; MinRender Installer Script for Inno Setup 6
+; minRender Installer Script for Inno Setup 6
 ; https://jrsoftware.org/isinfo.php
 
-#define MyAppName "MinRender"
-#define MyAppVersion "0.4.7"
+#define MyAppName "minRender"
+#define MyAppVersion "0.4.8"
 #define MyAppPublisher "cbkow"
 #define MyAppURL "https://github.com/cbkow/minrender"
-#define MyAppExeName "minrender.exe"
+#define MyAppExeName "minRender.exe"
 #define MyAgentExeName "mr-agent.exe"
 
 [Setup]
@@ -30,7 +30,9 @@ LicenseFile=..\LICENSE
 
 ; Output settings
 OutputDir=.
-OutputBaseFilename=minrender-setup-{#MyAppVersion}
+; Asset name matches the Windows appcast enclosure (scripts/update_appcast_win.sh)
+; so WinSparkle downloads + runs this installer to apply an update.
+OutputBaseFilename=minRender-{#MyAppVersion}-Setup-x64
 Compression=lzma2/max
 SolidCompression=yes
 
@@ -87,9 +89,9 @@ Name: "launchafter"; Description: "Launch {#MyAppName} after installation"; Grou
 ; Core — everything under deploy\ except the DCC plugin subfolders
 ; (those are handled by the plugins\* components below). The
 ; ExcludePatterns strip the plugin trees; the core block installs
-; minrender.exe, minrender-headless.exe, mr-restart.exe, mr-agent.exe,
-; Qt DLLs, platforms\, styles\, qml\, resources\ (fonts, icons,
-; templates, etc.).
+; minRender.exe, minrender-headless.exe, mr-restart.exe, mr-agent.exe,
+; WinSparkle.dll (when auto-update is built in), Qt DLLs, platforms\,
+; styles\, qml\, resources\ (fonts, icons, templates, etc.).
 Source: "..\build\deploy\*"; DestDir: "{app}"; \
     Excludes: "resources\plugins\blender\*,resources\plugins\cinema4d\*,resources\plugins\afterEffects\*,vc_redist.x64.exe"; \
     Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
@@ -224,7 +226,7 @@ begin
 end;
 
 [Run]
-; Install the VC++ runtime first — minrender.exe and the Qt DLLs won't load
+; Install the VC++ runtime first — minRender.exe and the Qt DLLs won't load
 ; without it on a machine that has never had the redistributable. The redist
 ; no-ops quickly if the same or newer version is already present.
 Filename: "{tmp}\vc_redist.x64.exe"; Parameters: "/install /quiet /norestart"; \

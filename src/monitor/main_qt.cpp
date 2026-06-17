@@ -14,6 +14,7 @@
 #include "ui/platform/color_space.h"
 #include "ui/platform/title_bar.h"
 #include "ui/platform/tray.h"
+#include "ui/updater/app_updater.h"
 
 #include <QtQml/qqml.h>
 
@@ -216,6 +217,13 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("appBridge"), &bridge);
 
+    // "Check for Updates…" in the About menu drives this. The underlying
+    // Sparkle/WinSparkle calls are inline no-ops unless the updater is vendored
+    // (see the CMake auto-update block).
+    AppUpdater appUpdater;
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("appUpdater"), &appUpdater);
+
     engine.loadFromModule("MinRenderUi", "Main");
 
     for (QObject* obj : engine.rootObjects())
@@ -302,6 +310,13 @@ int main(int argc, char* argv[])
             QCoreApplication::quit();
     });
     pumpTimer.start();
+
+    // Start the auto-updater once the event loop is running and the UI is up.
+    // On macOS this honors the Info.plist SU* keys (daily background check);
+    // on Windows it configures WinSparkle's feed + key. No-op when the updater
+    // isn't vendored. Deferred via singleShot so the first check never blocks
+    // launch. GUI target only — the headless sidecar never calls this.
+    QTimer::singleShot(0, &app, [] { MR::startSparkleUpdater(); });
 
     const int rc = app.exec();
 

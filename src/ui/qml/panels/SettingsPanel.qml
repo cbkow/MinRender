@@ -68,7 +68,7 @@ Item {
                 Layout.fillWidth: true
                 text: appBridge.syncRoot
                 onEditingFinished: appBridge.syncRoot = text
-                placeholderText: qsTr("e.g. \\\\server\\share\\MinRender")
+                placeholderText: qsTr("e.g. \\\\server\\share\\minRender")
             }
             FlatButton {
                 iconName: "folder-open"

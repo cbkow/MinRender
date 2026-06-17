@@ -2,8 +2,12 @@
 # Build, sign, and notarize a distributable macOS release.
 #
 # Output:
-#   release/MinRender-<version>.app   — signed & stapled .app
-#   release/MinRender-<version>.dmg   — signed, notarized & stapled DMG
+#   release/minRender-<version>-macOS.dmg  — signed, notarized & stapled DMG
+#   (the .app inside it is signed + stapled too)
+#
+# The DMG name matches the Sparkle appcast enclosure convention
+# (scripts/update_appcast.sh), so after notarizing + uploading to the GitHub
+# release you can run update_appcast.sh to publish the update.
 #
 # Notarization uses the keychain profile named in $NOTARY_PROFILE (default
 # AC_PASSWORD, matching the convention used by the QCView-Player release
@@ -37,9 +41,9 @@ ENTITLEMENTS="${ENTITLEMENTS:-$REPO/scripts/entitlements.plist}"
 # Version comes from CMakeLists project() line so we can't drift.
 VERSION="$(grep -E '^project\(MinRender VERSION' CMakeLists.txt \
             | sed -E 's/.*VERSION ([0-9.]+).*/\1/')"
-APP_NAME="MinRender"
-APP="$BUILD_DIR/minrender.app"
-DMG="$RELEASE_DIR/${APP_NAME}-${VERSION}.dmg"
+APP_NAME="minRender"
+APP="$BUILD_DIR/minRender.app"
+DMG="$RELEASE_DIR/${APP_NAME}-${VERSION}-macOS.dmg"
 
 echo "==> Release: ${APP_NAME} ${VERSION}"
 echo "    sign-id:        $SIGN_ID"
@@ -65,6 +69,11 @@ security find-identity -v -p codesigning | grep -q "$TEAM_ID" || {
 echo "==> [1/8] Building mr-agent (release)"
 ( cd mr-agent && cargo build --release )
 
+# Vendor Sparkle.framework (idempotent) so the Release build embeds the updater.
+# Without this the build still succeeds, but the .app ships without auto-update.
+echo "==> [1b/8] Ensuring Sparkle is vendored"
+"$REPO/scripts/fetch_sparkle.sh"
+
 # ---------------------------------------------------------------------------
 # 2. Configure + build the Qt UI as a Release .app bundle.
 # ---------------------------------------------------------------------------
@@ -75,7 +84,7 @@ cmake -S . -B "$BUILD_DIR" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
     > /dev/null
 
-echo "==> [3/8] Building minrender.app"
+echo "==> [3/8] Building minRender.app"
 cmake --build "$BUILD_DIR" --target minrender -j8
 
 # ---------------------------------------------------------------------------
@@ -121,6 +130,23 @@ find "$APP/Contents/PlugIns" -type f -name '*.dylib' \
 codesign --remove-signature "$APP/Contents/MacOS/mr-agent" 2>/dev/null || true
 
 echo "==> [6/8] Signing (inside-out)"
+# 6-pre. Sparkle.framework ships nested code — XPC services, Autoupdate, and
+#        Updater.app — that must be signed deepest-first or notarization rejects
+#        the unsigned helpers. Do this before the generic framework walk below.
+SPARKLE_FW="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+    echo "    signing Sparkle nested helpers"
+    while IFS= read -r x; do
+        codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$x"
+    done < <(find "$SPARKLE_FW"/Versions/*/XPCServices -maxdepth 1 -name '*.xpc' -type d 2>/dev/null)
+    while IFS= read -r a; do
+        codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$a"
+    done < <(find "$SPARKLE_FW"/Versions/* -maxdepth 1 -name 'Updater.app' -type d 2>/dev/null)
+    while IFS= read -r u; do
+        codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$u"
+    done < <(find "$SPARKLE_FW"/Versions/* -maxdepth 1 -name 'Autoupdate' -type f 2>/dev/null)
+fi
+
 # 6a. Qt frameworks: each Versions/A/QtXxx Mach-O gets signed.
 #     The .framework directory is then signed by the deep walk implied
 #     by signing the .app shell at the end.

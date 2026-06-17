@@ -1497,7 +1497,7 @@ std::string MonitorApp::trayIconName() const
 
 std::string MonitorApp::trayTooltip() const
 {
-    std::string tip = "MinRender";
+    std::string tip = "minRender";
     if (m_renderCoordinator.isRendering())
         tip += " - Rendering " + m_renderCoordinator.currentJobId();
     else if (m_nodeState == NodeState::Stopped)

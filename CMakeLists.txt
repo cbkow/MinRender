@@ -1,8 +1,16 @@
 cmake_minimum_required(VERSION 3.24)
-project(MinRender VERSION 0.4.7 LANGUAGES C CXX)
+project(MinRender VERSION 0.4.8 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Ed25519 public key for verifying signed updates. Shared with the sister apps
+# (minNotes / QCView) — one private key in the maintainer's Keychain signs every
+# release via external/Sparkle/bin/sign_update. Baked into the macOS Info.plist
+# (SUPublicEDKey) and the Windows updater (MINRENDER_UPDATE_PUBLIC_KEY) so both
+# platforms verify against the same key.
+set(MINRENDER_UPDATE_PUBLIC_KEY "+Xlrad3WswxIRTyzBTp8KaTEjyfPO5Ap4llmPdZf3RQ="
+    CACHE STRING "Ed25519 public key for Sparkle/WinSparkle update verification")
 
 # --- FetchContent dependencies (backend-only, no UI toolkit) ---
 include(FetchContent)
@@ -114,6 +122,7 @@ qt_add_executable(minrender
     src/ui/platform/accent_color.cpp
     src/ui/platform/title_bar.cpp
     src/ui/platform/tray.cpp
+    src/ui/updater/app_updater.h   # header-only Q_OBJECT — listed so AUTOMOC mocs it
     $<$<NOT:$<BOOL:${APPLE}>>:src/ui/platform/color_space.cpp>
     $<$<BOOL:${APPLE}>:src/ui/platform/color_space_mac.mm>
     $<$<BOOL:${WIN32}>:resources/minrender.rc>
@@ -121,6 +130,14 @@ qt_add_executable(minrender
 
 # QML-only UI — we never use QtDesigner .ui forms, so turn AUTOUIC off.
 set_target_properties(minrender PROPERTIES AUTOUIC OFF)
+
+# Shipped binary name is "minRender" (the product brand) on every platform,
+# while the CMake target stays "minrender" (lowercase) to avoid clashing with
+# the MinRenderUi QML module on case-insensitive filesystems. OUTPUT_NAME only
+# renames the emitted binary: minRender.app (macOS, exec Contents/MacOS/
+# minRender) and minRender.exe (Windows). The internal helpers
+# (minrender-headless, mr-agent, mr-restart) keep their lowercase names.
+set_target_properties(minrender PROPERTIES OUTPUT_NAME "minRender")
 
 target_include_directories(minrender PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -214,21 +231,84 @@ if(WIN32)
 endif()
 
 # ===========================================================================
+# Auto-update (Sparkle on macOS, WinSparkle on Windows) — GUI target only
+# ===========================================================================
+# Both updaters are vendored under external/ (gitignored) and OPTIONAL: when the
+# framework/lib is absent the bridge compiles to the header's inline no-ops and
+# the app still builds (dev builds without update support). The headless sidecar
+# and mr-agent never link the updater — only this `minrender` GUI target does,
+# so a render node can never interrupt a job with an update prompt.
+if(APPLE)
+    # Sparkle 2 — fetched via scripts/fetch_sparkle.sh into external/Sparkle.
+    # When present: compile the .mm bridge, define MINRENDER_HAVE_SPARKLE, link
+    # -framework Sparkle, and ditto the framework into Contents/Frameworks (ditto
+    # preserves the Versions symlink layout copy_directory would flatten + break
+    # signing). scripts/macos-release.sh re-signs the nested XPC/Autoupdate/
+    # Updater helpers before notarization.
+    set(MR_SPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/Sparkle")
+    if(EXISTS "${MR_SPARKLE_DIR}/Sparkle.framework")
+        target_sources(minrender PRIVATE src/ui/updater/sparkle_updater_macos.mm)
+        target_compile_definitions(minrender PRIVATE MINRENDER_HAVE_SPARKLE)
+        # -F at compile time so `#import <Sparkle/Sparkle.h>` resolves, and at
+        # link time so `-framework Sparkle` finds it.
+        target_compile_options(minrender PRIVATE "-F${MR_SPARKLE_DIR}")
+        target_link_options(minrender PRIVATE "-F${MR_SPARKLE_DIR}")
+        target_link_libraries(minrender PRIVATE "-framework Sparkle")
+        add_custom_command(TARGET minrender POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:minrender>/../Frameworks"
+            COMMAND ditto
+                "${MR_SPARKLE_DIR}/Sparkle.framework"
+                "$<TARGET_FILE_DIR:minrender>/../Frameworks/Sparkle.framework"
+            COMMENT "Embedding Sparkle.framework into minRender.app/Contents/Frameworks"
+            VERBATIM)
+        message(STATUS "minRender: Sparkle vendored — macOS auto-update enabled")
+    else()
+        message(STATUS "minRender: external/Sparkle absent — macOS auto-update disabled (no-op shim)")
+    endif()
+elseif(WIN32)
+    # WinSparkle — copy external/winsparkle from a sister project (ufb/minNotes:
+    # include/winsparkle.h, lib/WinSparkle.lib, bin/WinSparkle.dll). When present:
+    # compile the bridge, define MINRENDER_HAVE_WINSPARKLE + the app version (the
+    # updater's compare value) + the shared Ed25519 public key, link the import
+    # lib, and copy WinSparkle.dll next to the exe.
+    set(MR_WINSPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/winsparkle")
+    if(EXISTS "${MR_WINSPARKLE_DIR}/include/winsparkle.h")
+        target_sources(minrender PRIVATE src/ui/updater/winsparkle_updater_windows.cpp)
+        target_compile_definitions(minrender PRIVATE
+            MINRENDER_HAVE_WINSPARKLE
+            "MINRENDER_APP_VERSION=\"${PROJECT_VERSION}\""
+            "MINRENDER_UPDATE_PUBLIC_KEY=\"${MINRENDER_UPDATE_PUBLIC_KEY}\"")
+        target_include_directories(minrender PRIVATE "${MR_WINSPARKLE_DIR}/include")
+        target_link_libraries(minrender PRIVATE "${MR_WINSPARKLE_DIR}/lib/WinSparkle.lib")
+        add_custom_command(TARGET minrender POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MR_WINSPARKLE_DIR}/bin/WinSparkle.dll"
+                "$<TARGET_FILE_DIR:minrender>/WinSparkle.dll"
+            COMMENT "Sync WinSparkle.dll next to minRender.exe" VERBATIM)
+        message(STATUS "minRender: WinSparkle vendored — Windows auto-update enabled")
+    else()
+        message(STATUS "minRender: external/winsparkle absent — Windows auto-update disabled (no-op shim)")
+    endif()
+endif()
+
+# ===========================================================================
 # macOS .app bundle wiring
 # ===========================================================================
-# Without MACOSX_BUNDLE the build emits a bare Mach-O at build/minrender,
+# Without MACOSX_BUNDLE the build emits a bare Mach-O at build/minRender,
 # which inherits the launching shell, has no Dock icon, and confuses Qt's
 # native tray integration. With MACOSX_BUNDLE the same target produces
-# build/minrender.app — a directory that LaunchServices treats as a
+# build/minRender.app — a directory that LaunchServices treats as a
 # proper application: double-click works, dock icon renders, tray icon
-# survives between sessions.
+# survives between sessions. (OUTPUT_NAME above brands the binary minRender.)
 #
 # Resource layout in the bundle:
-#   Contents/MacOS/minrender             — Qt UI executable
+#   Contents/MacOS/minRender             — Qt UI executable
 #   Contents/MacOS/mr-agent              — Rust render agent (POST_BUILD copy)
-#   Contents/MacOS/resources/...         — fonts, templates, plugins, icons
-#                                           (matches applicationDirPath()
-#                                           lookups in C++ code, no #ifdef)
+#   Contents/Frameworks/Sparkle.framework — auto-updater (when vendored)
+#   Contents/Resources/...               — fonts, templates, plugins, icons
+#                                           (matches applicationDirPath()/..
+#                                           /Resources lookups in C++ code)
 #   Contents/Resources/minrender.icns    — bundle icon (CFBundleIconFile)
 #   Contents/Info.plist                  — generated from the template below
 if(APPLE)
@@ -236,12 +316,12 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST
             "${CMAKE_CURRENT_SOURCE_DIR}/cmake/MacOSXBundleInfo.plist.in"
-        MACOSX_BUNDLE_BUNDLE_NAME           "MinRender"
+        MACOSX_BUNDLE_BUNDLE_NAME           "minRender"
         MACOSX_BUNDLE_GUI_IDENTIFIER        "studio.bialkow.minrender"
         MACOSX_BUNDLE_BUNDLE_VERSION        "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING  "${PROJECT_VERSION}"
         MACOSX_BUNDLE_LONG_VERSION_STRING   "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_INFO_STRING           "MinRender ${PROJECT_VERSION}"
+        MACOSX_BUNDLE_INFO_STRING           "minRender ${PROJECT_VERSION}"
         MACOSX_BUNDLE_ICON_FILE             "minrender.icns"
         MACOSX_BUNDLE_COPYRIGHT             "Copyright © Chris Bialkowski"
     )
