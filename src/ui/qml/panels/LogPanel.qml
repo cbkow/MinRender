@@ -164,16 +164,25 @@ Item {
             reuseItems: true
             cacheBuffer: 400
 
+            // Autoscroll: stay pinned to the newest entry while the user
+            // is at the bottom. Re-pin on contentHeight changes (not just
+            // count) so variable-height/wrapping delegates and whole-model
+            // refreshes still reach the true end. atBottom is recomputed
+            // only on genuine user scrolling, so programmatic repositioning
+            // (or a model reset that jumps to the top) is never mistaken
+            // for the user scrolling away.
             property bool atBottom: true
-            onContentYChanged: {
-                atBottom = (contentHeight - (contentY + height)) < 40
-            }
-            onCountChanged: {
+            function pinToEnd() {
                 if (root.autoscroll && atBottom)
                     positionViewAtEnd()
             }
+            onCountChanged: pinToEnd()
+            onContentHeightChanged: pinToEnd()
+            onMovementEnded: atBottom = atYEnd
 
-            ScrollBar.vertical: MrScrollBar {}
+            ScrollBar.vertical: MrScrollBar {
+                onPressedChanged: if (!pressed) logList.atBottom = logList.atYEnd
+            }
 
             delegate: Rectangle {
                 required property var    timestamp
@@ -243,16 +252,23 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             reuseItems: true
 
+            // See logList above for the autoscroll rationale. Remote logs
+            // are refreshed as a whole QStringList every 3 s, so the line
+            // count often stays constant (capped at 500) while content
+            // scrolls — onContentHeightChanged is what keeps us pinned in
+            // that case; onCountChanged alone would never fire.
             property bool atBottom: true
-            onContentYChanged: {
-                atBottom = (contentHeight - (contentY + height)) < 40
-            }
-            onCountChanged: {
+            function pinToEnd() {
                 if (root.autoscroll && atBottom)
                     positionViewAtEnd()
             }
+            onCountChanged: pinToEnd()
+            onContentHeightChanged: pinToEnd()
+            onMovementEnded: atBottom = atYEnd
 
-            ScrollBar.vertical: MrScrollBar {}
+            ScrollBar.vertical: MrScrollBar {
+                onPressedChanged: if (!pressed) remoteList.atBottom = remoteList.atYEnd
+            }
 
             delegate: Rectangle {
                 required property string modelData
@@ -386,16 +402,22 @@ Item {
                     clip: true
                     model: appBridge.taskOutputLines
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: MrScrollBar {}
-
-                    property bool atBottom: true
-                    onContentYChanged: {
-                        atBottom = (contentHeight - (contentY + height)) < 40
+                    ScrollBar.vertical: MrScrollBar {
+                        onPressedChanged: if (!pressed) taskContentList.atBottom = taskContentList.atYEnd
                     }
-                    onCountChanged: {
+
+                    // See logList above for the autoscroll rationale. The
+                    // selected chunk's contents are reloaded as a whole
+                    // QStringList from a growing file every 3 s, so re-pin
+                    // on contentHeight (not just count) to follow the tail.
+                    property bool atBottom: true
+                    function pinToEnd() {
                         if (root.autoscroll && atBottom)
                             positionViewAtEnd()
                     }
+                    onCountChanged: pinToEnd()
+                    onContentHeightChanged: pinToEnd()
+                    onMovementEnded: atBottom = atYEnd
 
                     delegate: Rectangle {
                         required property string modelData
