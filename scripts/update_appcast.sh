@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-REPO="cbkow/minrender"
+REPO="cbkow/MinRender"
 APPCAST="$REPO_ROOT/docs/appcast.xml"
 SIGN_UPDATE="$REPO_ROOT/external/Sparkle/bin/sign_update"
 SENTINEL="<!-- @@APPCAST_INSERT@@ -->"
