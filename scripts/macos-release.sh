@@ -145,6 +145,10 @@ if [ -d "$SPARKLE_FW" ]; then
     while IFS= read -r u; do
         codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$u"
     done < <(find "$SPARKLE_FW"/Versions/* -maxdepth 1 -name 'Autoupdate' -type f 2>/dev/null)
+    # Finally the framework bundle itself — seals Versions/Current/Sparkle (the
+    # main binary), which the Versions/A-only Qt walk below would skip since
+    # Sparkle uses Versions/B. Must come AFTER its nested helpers (inside-out).
+    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$SPARKLE_FW"
 fi
 
 # 6a. Qt frameworks: each Versions/A/QtXxx Mach-O gets signed.
