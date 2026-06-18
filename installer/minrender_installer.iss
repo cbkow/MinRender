@@ -105,8 +105,10 @@ Source: "..\build\deploy\resources\plugins\blender\*";      DestDir: "{app}\reso
 Source: "..\build\deploy\resources\plugins\cinema4d\*";     DestDir: "{app}\resources\plugins\cinema4d";     Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins\cinema4d
 Source: "..\build\deploy\resources\plugins\afterEffects\*"; DestDir: "{app}\resources\plugins\afterEffects"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins\aftereffects
 
-; Documentation
+; Documentation + third-party license notices (MIT/BSD attribution for Qt,
+; Sparkle/WinSparkle, etc. must ship alongside the binaries).
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion; Components: core
+Source: "..\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion; Components: core
 
 [Icons]
 ; Start Menu shortcuts

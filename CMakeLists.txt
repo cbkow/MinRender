@@ -333,6 +333,12 @@ if(APPLE)
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     target_sources(minrender PRIVATE resources/icons/minrender.icns)
 
+    # Ship license attribution inside the bundle (Contents/Resources). The
+    # MIT/BSD notices for Sparkle, Qt, etc. must travel with the binary.
+    set_source_files_properties(THIRD_PARTY_NOTICES.txt LICENSE
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(minrender PRIVATE THIRD_PARTY_NOTICES.txt LICENSE)
+
     # Copy the Rust render agent into the bundle alongside the Qt binary.
     # AgentSupervisor on Unix spawns `applicationDirPath / "mr-agent"`,
     # so this lands it where the existing code already looks. CMake doesn't
