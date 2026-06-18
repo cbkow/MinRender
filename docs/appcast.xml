@@ -8,6 +8,22 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.4.9</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.4.9</sparkle:version>
+      <sparkle:shortVersionString>0.4.9</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+      <ul><li>See the release notes at https://github.com/cbkow/MinRender/releases/tag/v0.4.9</li></ul>
+      ]]></description>
+      <pubDate>Thu, 18 Jun 2026 17:00:15 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.4.9/minRender-0.4.9-macOS.dmg"
+        sparkle:edSignature="0eGPoKB7zmBN6PVGqzTr/Eo97MWM8a0uJrqg5rfsNdZZ4FuA2jQU0iu5gC+U2DMkzsT4PEwnF/4ux8aYkV94Cg=="
+        length="81791978"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.4.8</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.4.8</sparkle:version>
