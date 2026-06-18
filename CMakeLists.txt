@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MinRender VERSION 0.4.8 LANGUAGES C CXX)
+project(MinRender VERSION 0.4.9 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,6 +80,7 @@ set(MINRENDER_CORE_SOURCES
     src/monitor/peer_manager.cpp
     src/monitor/monitor_app.cpp
     src/monitor/agent_supervisor.cpp
+    src/monitor/rndr_supervisor.cpp
     src/monitor/template_manager.cpp
     src/monitor/render_coordinator.cpp
     src/monitor/database_manager.cpp

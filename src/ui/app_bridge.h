@@ -111,6 +111,12 @@ class AppBridge : public QObject
     Q_PROPERTY(int     udpPort            READ udpPort            WRITE setUdpPort            NOTIFY udpPortChanged)
     Q_PROPERTY(bool    showNotifications  READ showNotifications  WRITE setShowNotifications  NOTIFY showNotificationsChanged)
     Q_PROPERTY(bool    stagingEnabled     READ stagingEnabled     WRITE setStagingEnabled     NOTIFY stagingEnabledChanged)
+    Q_PROPERTY(bool    rndrDualMode       READ rndrDualMode       WRITE setRndrDualMode       NOTIFY rndrDualModeChanged)
+    // Read-only RNDR supervisor status, surfaced under the toggle in the
+    // Settings panel. rndrAvailable is constant for a session (binary
+    // present or not); rndrStatus is polled live by refresh().
+    Q_PROPERTY(bool    rndrAvailable      READ rndrAvailable      NOTIFY rndrAvailableChanged)
+    Q_PROPERTY(QString rndrStatus         READ rndrStatus         NOTIFY rndrStatusChanged)
 
 public:
     explicit AppBridge(MonitorApp* monitor, QObject* parent = nullptr);
@@ -263,6 +269,11 @@ public:
     bool stagingEnabled() const;
     void setStagingEnabled(bool v);
 
+    bool rndrDualMode() const;
+    void setRndrDualMode(bool v);
+    bool rndrAvailable() const;
+    QString rndrStatus() const;
+
     // Polled from main_qt.cpp's 50 ms tick. Emits *Changed signals only
     // when the underlying MonitorApp state actually shifted.
     void refresh();
@@ -305,6 +316,9 @@ signals:
     void udpPortChanged();
     void showNotificationsChanged();
     void stagingEnabledChanged();
+    void rndrDualModeChanged();
+    void rndrAvailableChanged();
+    void rndrStatusChanged();
     void currentJobIdChanged();
     void submissionModeChanged();
     void jobsRefreshPausedChanged();
@@ -373,6 +387,7 @@ private:
     bool m_lastFarmRunning  = false;
     bool m_lastIsLeader     = false;
     bool m_lastNodeActive   = true;
+    QString m_lastRndrStatus;
 };
 
 } // namespace MR

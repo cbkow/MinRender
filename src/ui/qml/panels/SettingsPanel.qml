@@ -144,6 +144,29 @@ Item {
             checked: appBridge.stagingEnabled
             onToggled: appBridge.stagingEnabled = checked
         }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            CheckBox {
+                id: rndrDualModeCheck
+                text: qsTr("RNDR dual mode")
+                checked: appBridge.rndrDualMode
+                onToggled: appBridge.rndrDualMode = checked
+            }
+            // Live supervisor status, indented under the toggle. Shows the
+            // current state (Inactive / Running / Cooldown (Ns) / etc.) when
+            // the RNDR client is present, or a hint when it isn't installed.
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 28
+                text: appBridge.rndrAvailable
+                      ? qsTr("Status: %1").arg(appBridge.rndrStatus)
+                      : qsTr("RNDR client not found on this machine.")
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+                wrapMode: Text.WordWrap
+            }
+        }
 
         // --- Path mappings ---
         SectionHeader { text: qsTr("Path mappings") }
