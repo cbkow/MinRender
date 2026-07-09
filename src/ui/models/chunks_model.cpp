@@ -2,6 +2,7 @@
 
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 namespace MR {
 
@@ -58,6 +59,11 @@ QVariant ChunksModel::data(const QModelIndex& index, int role) const
     case FrameEndRole:     return c.frame_end;
     case StateRole:        return QString::fromStdString(c.state);
     case AssignedNodeRole: return QString::fromStdString(c.assigned_to);
+    case AssignedNodeNameRole:
+    {
+        const QString id = QString::fromStdString(c.assigned_to);
+        return m_nodeNames.value(id, id);
+    }
     case ProgressRole:
     {
         const int total = c.frame_end - c.frame_start + 1;
@@ -89,6 +95,7 @@ QHash<int, QByteArray> ChunksModel::roleNames() const
         { FrameEndRole,     "frameEnd" },
         { StateRole,        "state" },
         { AssignedNodeRole, "assignedNode" },
+        { AssignedNodeNameRole, "assignedNodeName" },
         { ProgressRole,     "progress" },
         { AssignedAtRole,      "assignedAt" },
         { CompletedAtRole,     "completedAt" },
@@ -116,6 +123,42 @@ void ChunksModel::setChunks(const std::vector<ChunkRow>& incoming)
     beginResetModel();
     m_chunks = incoming;
     endResetModel();
+}
+
+QVariantMap ChunksModel::chunkForFrame(int frame) const
+{
+    QVariantMap out;
+    out["found"] = false;
+    for (size_t i = 0; i < m_chunks.size(); ++i)
+    {
+        const ChunkRow& c = m_chunks[i];
+        if (frame < c.frame_start || frame > c.frame_end)
+            continue;
+        const QString id = QString::fromStdString(c.assigned_to);
+        out["found"]       = true;
+        out["chunkNumber"] = static_cast<int>(i) + 1;
+        out["chunkId"]     = static_cast<qint64>(c.id);
+        out["frameStart"]  = c.frame_start;
+        out["frameEnd"]    = c.frame_end;
+        out["state"]       = QString::fromStdString(c.state);
+        out["node"]        = m_nodeNames.value(id, id);
+        out["retryCount"]  = c.retry_count;
+        break;
+    }
+    return out;
+}
+
+void ChunksModel::setNodeNames(const QHash<QString, QString>& names)
+{
+    if (m_nodeNames == names)
+        return;
+    m_nodeNames = names;
+    if (!m_chunks.empty())
+    {
+        emit dataChanged(index(0),
+                         index(static_cast<int>(m_chunks.size()) - 1),
+                         { AssignedNodeNameRole });
+    }
 }
 
 void ChunksModel::clear()

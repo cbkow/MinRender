@@ -2,6 +2,7 @@
 
 #include <QColor>
 #include <QPainter>
+#include <QPen>
 #include <QVariantList>
 
 #include <algorithm>
@@ -61,6 +62,7 @@ void FrameGrid::setFrameStart(int s)
     if (m_frameStart == s) return;
     m_frameStart = s;
     emit frameStartChanged();
+    updateImplicitHeight();
     update();
 }
 
@@ -69,6 +71,7 @@ void FrameGrid::setFrameEnd(int e)
     if (m_frameEnd == e) return;
     m_frameEnd = e;
     emit frameEndChanged();
+    updateImplicitHeight();
     update();
 }
 
@@ -77,7 +80,52 @@ void FrameGrid::setCellSize(int s)
     if (s <= 0 || m_cellSize == s) return;
     m_cellSize = s;
     emit cellSizeChanged();
+    updateImplicitHeight();
     update();
+}
+
+void FrameGrid::setSelectedFrame(int f)
+{
+    if (m_selectedFrame == f) return;
+    m_selectedFrame = f;
+    emit selectedFrameChanged();
+    update();
+}
+
+int FrameGrid::frameAtPosition(qreal x, qreal y) const
+{
+    const int totalFrames = m_frameEnd - m_frameStart + 1;
+    if (totalFrames <= 0 || m_cellSize <= 0 || x < 0 || y < 0)
+        return -1;
+    const int cellsPerRow = std::max(1, static_cast<int>(width()) / m_cellSize);
+    const int col = static_cast<int>(x) / m_cellSize;
+    const int row = static_cast<int>(y) / m_cellSize;
+    if (col >= cellsPerRow)
+        return -1;
+    const int idx = row * cellsPerRow + col;
+    if (idx < 0 || idx >= totalFrames)
+        return -1;
+    return m_frameStart + idx;
+}
+
+void FrameGrid::geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry)
+{
+    QQuickPaintedItem::geometryChange(newGeometry, oldGeometry);
+    if (!qFuzzyCompare(newGeometry.width(), oldGeometry.width()))
+        updateImplicitHeight();
+}
+
+void FrameGrid::updateImplicitHeight()
+{
+    const int totalFrames = m_frameEnd - m_frameStart + 1;
+    if (totalFrames <= 0 || m_cellSize <= 0)
+    {
+        setImplicitHeight(0);
+        return;
+    }
+    const int cols = std::max(1, std::max(1, static_cast<int>(width())) / m_cellSize);
+    const int rows = (totalFrames + cols - 1) / cols;
+    setImplicitHeight(rows * m_cellSize);
 }
 
 void FrameGrid::setBgColor(const QColor& c)
@@ -120,18 +168,19 @@ void FrameGrid::paint(QPainter* painter)
         return;
 
     const int totalFrames = m_frameEnd - m_frameStart + 1;
+    const int cell        = m_cellSize;
     const int cellsPerRow = std::max(
-        1, static_cast<int>(area.width()) / m_cellSize);
+        1, static_cast<int>(area.width()) / cell);
     const int padding     = 1;   // 1 px gap gives visible separation
-    const int drawSize    = m_cellSize - 2 * padding;
+    const int drawSize    = cell - 2 * padding;
     if (drawSize <= 0)
         return;
 
     auto cellRect = [&](int frameIdx) -> QRect {
         const int row = frameIdx / cellsPerRow;
         const int col = frameIdx % cellsPerRow;
-        return { col * m_cellSize + padding,
-                 row * m_cellSize + padding,
+        return { col * cell + padding,
+                 row * cell + padding,
                  drawSize, drawSize };
     };
 
@@ -193,6 +242,19 @@ void FrameGrid::paint(QPainter* painter)
                 continue;
             painter->fillRect(cellRect(i), frameDoneColor);
         }
+    }
+
+    // Selection outline (preview pin) — drawn last so it sits on top of
+    // every state colour. Covers the full cell including the gutter so
+    // it reads at 10px cells.
+    if (m_selectedFrame >= m_frameStart && m_selectedFrame <= m_frameEnd)
+    {
+        const int idx = m_selectedFrame - m_frameStart;
+        const int row = idx / cellsPerRow;
+        const int col = idx % cellsPerRow;
+        painter->setPen(QPen(QColor(0xff, 0xff, 0xff), 1));
+        painter->setBrush(Qt::NoBrush);
+        painter->drawRect(col * cell, row * cell, cell - 1, cell - 1);
     }
 }
 

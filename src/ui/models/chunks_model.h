@@ -25,6 +25,7 @@ public:
         FrameEndRole,
         StateRole,              // "pending" | "assigned" | "completed" | "failed"
         AssignedNodeRole,
+        AssignedNodeNameRole,   // hostname when the node is known, else the raw id
         ProgressRole,           // double in [0, 1] — completed_frames / total in chunk
         AssignedAtRole,         // qint64 ms since epoch
         CompletedAtRole,        // qint64 ms since epoch
@@ -41,8 +42,19 @@ public:
     void setChunks(const std::vector<ChunkRow>& chunks);
     void clear();
 
+    // node_id → hostname map used to resolve AssignedNodeNameRole.
+    // AppBridge rebuilds it from the peer snapshot on each chunk
+    // refresh, so names stay current as peers come and go.
+    void setNodeNames(const QHash<QString, QString>& names);
+
+    // Chunk owning a frame — for the frame grid's hover tooltip and
+    // click-to-pin. {found, chunkNumber (1-based), chunkId, frameStart,
+    // frameEnd, state, node, retryCount}.
+    Q_INVOKABLE QVariantMap chunkForFrame(int frame) const;
+
 private:
     std::vector<ChunkRow> m_chunks;
+    QHash<QString, QString> m_nodeNames;
 };
 
 } // namespace MR

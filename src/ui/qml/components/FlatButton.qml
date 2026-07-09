@@ -4,8 +4,11 @@ import QtQuick.Layouts
 import MinRenderUi 1.0
 
 // Flat squared-corner button matching ufb's visual vocabulary.
-// Three variants: "default" (transparent idle, surfaceHover on hover),
-// "primary" (accent-blue fill), "danger" (error-red fill).
+// Four variants: "default" (transparent idle, surfaceHover on hover),
+// "primary" (accent-blue fill), "danger" (error-red fill), and
+// "neutral" (subtle grey fill — for buttons that need visible weight
+// on raised surfaces like MrDialog cards, where transparent-idle
+// buttons disappear).
 //
 // Use:
 //   FlatButton { text: "Save"; variant: "primary"; onClicked: ... }
@@ -42,15 +45,21 @@ Button {
                 // still reads as "blue action, currently unavailable".
                 if (root.variant === "primary") return Theme.accentMuted
                 if (root.variant === "danger")  return Qt.darker(Theme.error, 2.2)
+                if (root.variant === "neutral") return Theme.toolbarAlt
                 return "transparent"
             }
             if (root.variant === "primary") return Theme.accent
             if (root.variant === "danger")  return Theme.error
+            // Neutral needs real distance from the surfaces it sits on
+            // (modalBg #202020 / toolbar #1f1f1f) — toolbarAlt-level
+            // greys read as "no background" there.
+            if (root.variant === "neutral") return Theme.borderStrong
             return "transparent"
         }
         readonly property color bgHover:
             root.variant === "primary" ? Theme.accentHover
           : root.variant === "danger"  ? Qt.lighter(Theme.error, 1.15)
+          : root.variant === "neutral" ? Qt.lighter(Theme.borderStrong, 1.25)
                                        : Theme.surfaceHover
         readonly property color fg: {
             if (!root.enabled) {

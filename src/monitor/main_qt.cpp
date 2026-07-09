@@ -16,6 +16,10 @@
 #include "ui/platform/tray.h"
 #include "ui/updater/app_updater.h"
 
+#ifdef MINRENDER_HAVE_PREVIEW
+#include "preview/thumbnail_image_provider.h"
+#endif
+
 #include <QtQml/qqml.h>
 
 #include <QApplication>
@@ -216,6 +220,14 @@ int main(int argc, char* argv[])
     if (!phosphorName.isEmpty()) bridge.setPhosphorFamily(phosphorName);
     engine.rootContext()->setContextProperty(
         QStringLiteral("appBridge"), &bridge);
+
+#ifdef MINRENDER_HAVE_PREVIEW
+    // Frame-preview thumbnails (vendored QCView provider). Engine takes
+    // ownership; serves image://thumb/<path>?layer=<name> asynchronously
+    // off its own thread pool.
+    engine.addImageProvider(QStringLiteral("thumb"),
+                            new qcv::ThumbnailImageProvider());
+#endif
 
     // "Check for Updates…" in the About menu drives this. The underlying
     // Sparkle/WinSparkle calls are inline no-ops unless the updater is vendored

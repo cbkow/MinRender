@@ -32,6 +32,13 @@ QtObject {
     readonly property color border:       "#2a2a2a"
     readonly property color borderStrong: "#333333"
     readonly property color divider:      "#2a2a2a"
+    // Modal layering: in a dark theme elevation goes lighter, so the
+    // dialog card sits a step above the page (modalBg > bg), the scrim
+    // drops the page back, and inputs recess into darker wells so
+    // fields keep visible edges on the raised card.
+    readonly property color modalBg:   "#202020"
+    readonly property color inputWell: "#141414"
+    readonly property color scrim:     Qt.rgba(0, 0, 0, 0.55)
     // Row-selection background — points at accentMuted so highlighted
     // rows read as a dimmed-cobalt fill (matches ufb).
     readonly property color selection:    accentMuted

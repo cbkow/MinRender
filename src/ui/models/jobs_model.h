@@ -34,6 +34,8 @@ public:
         RenderingChunksRole,
         CreatedAtRole,        // qint64 ms since epoch
         PriorityRole,
+        FirstAssignedAtRole,  // qint64 ms since epoch; 0 = no chunk assigned yet
+        LastCompletedAtRole,  // qint64 ms since epoch; 0 = no chunk completed yet
     };
 
     explicit JobsModel(QObject* parent = nullptr);

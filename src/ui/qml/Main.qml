@@ -52,14 +52,11 @@ ApplicationWindow {
 
         property real nodePanelWidth: window.width * 0.28
         property real jobListHeight: (window.height - menuBarArea.height) * 0.33
-        // 50/50 horizontal split for the bottom (JobDetail | Log) — the
-        // remaining width after NodePanel is divided evenly.
-        property real jobDetailWidth: (window.width - nodePanelWidth) * 0.5
+        // Active tab in the bottom pane: 0 = Job Detail, 1 = Logs.
+        property int detailTabIndex: 0
 
         property bool nodePanelVisible: true
         property bool jobListVisible: true
-        property bool jobDetailVisible: true
-        property bool logVisible: true
     }
 
     menuBar: MenuBar {
@@ -91,18 +88,6 @@ ApplicationWindow {
                 checkable: true
                 checked: panelSettings.jobListVisible
                 onToggled: panelSettings.jobListVisible = checked
-            }
-            MenuItem {
-                text: qsTr("Job Detail")
-                checkable: true
-                checked: panelSettings.jobDetailVisible
-                onToggled: panelSettings.jobDetailVisible = checked
-            }
-            MenuItem {
-                text: qsTr("Log")
-                checkable: true
-                checked: panelSettings.logVisible
-                onToggled: panelSettings.logVisible = checked
             }
         }
 
@@ -156,24 +141,90 @@ ApplicationWindow {
                 onNewJobRequested: appBridge.submissionMode = true
             }
 
-            // Bottom pane: horizontal split — JobDetail on left, Log on right.
-            SplitView {
-                orientation: Qt.Horizontal
+            // Bottom pane: tabbed — Job Detail and Logs share the full
+            // width. Both panels stay instantiated (StackLayout hides,
+            // never unloads), so log tailing and the 3 s chunk refresh
+            // keep running while the other tab is in front.
+            Rectangle {
                 SplitView.fillHeight: true
+                color: Theme.bg
 
-                JobDetailPanel {
-                    id: jobDetailInstance
-                    visible: panelSettings.jobDetailVisible
-                    SplitView.preferredWidth: panelSettings.jobDetailWidth
-                    SplitView.minimumWidth: 280
-                    onWidthChanged: if (SplitView.view) panelSettings.jobDetailWidth = width
-                }
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 0
 
-                LogPanel {
-                    id: logPanelInstance
-                    visible: panelSettings.logVisible
-                    SplitView.fillWidth: true
-                    SplitView.minimumWidth: 240
+                    // Tab strip — same toolbar idiom as PanelHeader: flat
+                    // bar, 1px bottom divider, accent underline on the
+                    // active tab.
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: Theme.toolStripHeight
+                        color: Theme.toolbar
+
+                        Rectangle {
+                            anchors.left:   parent.left
+                            anchors.right:  parent.right
+                            anchors.bottom: parent.bottom
+                            height: Theme.dividerWidth
+                            color: Theme.divider
+                        }
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.leftMargin: Theme.padding
+                            spacing: 0
+
+                            Repeater {
+                                model: [qsTr("Job Detail"), qsTr("Logs")]
+
+                                delegate: Item {
+                                    required property string modelData
+                                    required property int index
+
+                                    readonly property bool active:
+                                        panelSettings.detailTabIndex === index
+
+                                    width: tabLabel.implicitWidth + Theme.padding * 2
+                                    height: parent.height
+
+                                    Label {
+                                        id: tabLabel
+                                        anchors.centerIn: parent
+                                        text: modelData
+                                        color: active ? Theme.textBright
+                                             : tabMouse.containsMouse ? Theme.textPrimary
+                                             : Theme.textMuted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontSizeBase
+                                    }
+
+                                    Rectangle {
+                                        anchors.left:   parent.left
+                                        anchors.right:  parent.right
+                                        anchors.bottom: parent.bottom
+                                        height: 2
+                                        color: active ? Theme.accent : "transparent"
+                                    }
+
+                                    MouseArea {
+                                        id: tabMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onClicked: panelSettings.detailTabIndex = index
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    StackLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        currentIndex: panelSettings.detailTabIndex
+
+                        JobDetailPanel { id: jobDetailInstance }
+                        LogPanel { id: logPanelInstance }
+                    }
                 }
             }
         }
@@ -188,11 +239,9 @@ ApplicationWindow {
     // closePolicy is NoAutoClose — the panel's Save/Cancel are the only
     // exits, so we never leave the dialog with unsaved in-memory config
     // edits hanging on MonitorApp::config().
-    Dialog {
+    MrDialog {
         id: settingsDialog
         title: qsTr("Settings")
-        modal: true
-        anchors.centerIn: parent
         width: 600
         height: Math.min(760, window.height - 80)
         closePolicy: Popup.NoAutoClose
@@ -208,6 +257,73 @@ ApplicationWindow {
             SettingsPanel {
                 onAccepted: settingsDialog.close()
                 onRejected: settingsDialog.close()
+            }
+        }
+    }
+
+    // --- New Job (submission) modal ---
+    // visible binds to appBridge.submissionMode, so every entry point
+    // (Jobs menu, Job List's New Job button, the empty detail-tab CTA)
+    // opens the same dialog, and AppBridge::setCurrentJobId's
+    // "picking a job cancels submission" rule closes it for free.
+    // Loader re-creates the form each open so a cancelled draft never
+    // leaks into the next submission. NoAutoClose for parity with
+    // Settings: the form's Submit/Cancel are the only exits, which also
+    // keeps the visible binding intact (a self-close would break it).
+    MrDialog {
+        id: submissionDialog
+        title: qsTr("New Job")
+        width: 640
+        height: Math.min(720, window.height - 80)
+        closePolicy: Popup.NoAutoClose
+        visible: appBridge.submissionMode
+
+        Loader {
+            anchors.fill: parent
+            active: submissionDialog.visible
+            sourceComponent: submissionFormComponent
+        }
+
+        Component {
+            id: submissionFormComponent
+            SubmissionForm {
+                onSubmitted: (jobId) => {
+                    appBridge.submissionMode = false
+                    appBridge.currentJobId = jobId
+                }
+                onCancelled: appBridge.submissionMode = false
+                // failed: form's error banner shows the reason; the
+                // dialog stays open so the user can fix and retry.
+            }
+        }
+    }
+
+    // --- Edit Job modal ---
+    // Driven by appBridge.editJobId (set by openJobEditor from the job
+    // context menu, cleared by applyJobEdit/closeJobEditor). Loader
+    // re-creates the form each open so it always prefills from a fresh
+    // manifest fetch.
+    MrDialog {
+        id: editJobDialog
+        title: appBridge.editJobId.length > 0
+               ? qsTr("Edit Job — %1").arg(appBridge.editJobId)
+               : qsTr("Edit Job")
+        width: 640
+        height: Math.min(760, window.height - 80)
+        closePolicy: Popup.NoAutoClose
+        visible: appBridge.editJobId.length > 0
+
+        Loader {
+            anchors.fill: parent
+            active: editJobDialog.visible
+            sourceComponent: editJobFormComponent
+        }
+
+        Component {
+            id: editJobFormComponent
+            SubmissionForm {
+                editSeed: appBridge.editSeed
+                onCancelled: appBridge.closeJobEditor()
             }
         }
     }

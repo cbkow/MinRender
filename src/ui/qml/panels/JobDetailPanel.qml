@@ -1,31 +1,45 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import MinRenderUi 1.0   // FrameGrid (C++ QQuickPaintedItem) + Theme singleton
 
-// Three-state panel: Empty (nothing selected), Submission (user is
-// creating a new job), Detail (a real job is selected). submissionMode
-// takes precedence; otherwise we show Empty when currentJobId is blank,
-// Detail otherwise.
+// Two-state panel: Empty (nothing selected) or Detail (a real job is
+// selected). Job submission lives in Main.qml's New Job modal, driven
+// by appBridge.submissionMode.
 Item {
     id: root
 
-    readonly property string mode: {
-        if (appBridge.submissionMode)            return "submission"
-        if (appBridge.currentJobId.length === 0) return "empty"
-        return "detail"
+    readonly property string mode:
+        appBridge.currentJobId.length === 0 ? "empty" : "detail"
+
+    // Chunk-table column widths (px), persisted across launches. Lives
+    // at the panel root (not inside detailComponent) so it isn't
+    // re-created every time the detail view loads.
+    // Persisted height of the grid/preview row in the detail split.
+    Settings {
+        id: detailLayoutSettings
+        category: "jobDetailLayout"
+
+        property real gridRowHeight: 220
+    }
+
+    Settings {
+        id: chunkColSettings
+        category: "chunkTableColumns"
+
+        property int state:    80
+        property int frames:   120
+        property int node:     160
+        property int progress: 120
+        property int duration: 70
+        property int retries:  60
     }
 
     Loader {
         anchors.fill: parent
         active: root.mode === "empty"
         sourceComponent: emptyComponent
-    }
-
-    Loader {
-        anchors.fill: parent
-        active: root.mode === "submission"
-        sourceComponent: submissionComponent
     }
 
     Loader {
@@ -65,29 +79,23 @@ Item {
     }
 
     Component {
-        id: submissionComponent
-        Rectangle {
-            color: Theme.bg
-            SubmissionForm {
-                anchors.fill: parent
-                onSubmitted: (jobId) => {
-                    appBridge.submissionMode = false
-                    appBridge.currentJobId = jobId
-                }
-                onCancelled: appBridge.submissionMode = false
-                // failed: form's error banner shows the reason; panel
-                // stays in submission mode so the user can fix and retry.
-            }
-        }
-    }
-
-    Component {
         id: detailComponent
         Rectangle {
             id: detailRoot
             color: Theme.bg
 
             readonly property var job: appBridge.currentJob
+
+            // Selected chunk row (by chunk id, so the highlight survives
+            // model resets). -1 = nothing selected. Left- or right-click
+            // selects, so the context menu always fires on the
+            // highlighted row.
+            property var selectedChunkId: -1
+
+            Connections {
+                target: appBridge
+                function onCurrentJobIdChanged() { detailRoot.selectedChunkId = -1 }
+            }
 
             // Right-click menu on chunk rows. Lives at the panel level
             // so popup() coordinates make sense and the menu doesn't
@@ -130,7 +138,7 @@ Item {
                 anchors.fill: parent
                 spacing: 0
 
-                // --- Header ---
+                // --- Header (full width, fixed height) ---
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: headerColumn.implicitHeight + 16
@@ -290,38 +298,112 @@ Item {
                     }
                 }
 
-                // --- Content area (frame grid + chunk list) ---
+                // --- Content area (frame grid + preview | chunk list) ---
                 SplitView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     orientation: Qt.Vertical
 
-                    // Frame grid — one cell per frame, coloured by state.
+                    // Frame grid — full detail width (the latest-frame
+                    // preview lives under the node list). Height persists
+                    // via detailLayoutSettings; the drag handle below
+                    // trades grid room against the chunk table.
                     Rectangle {
                         color: Theme.frameBg
-                        SplitView.preferredHeight: 200
-                        SplitView.minimumHeight: 60
+                        SplitView.preferredHeight: detailLayoutSettings.gridRowHeight
+                        SplitView.minimumHeight: 100
+                        onHeightChanged: {
+                            if (SplitView.view)
+                                detailLayoutSettings.gridRowHeight = height
+                        }
 
-                        FrameGrid {
+                        Flickable {
+                            id: gridFlick
                             anchors.fill: parent
                             anchors.margins: 4
-                            model: appBridge.chunksModel
-                            frameStart: job.frameStart || 0
-                            frameEnd:   job.frameEnd   || 0
-                            cellSize:   10
-                            bgColor:        Theme.frameBg
-                            unclaimedColor: Theme.frameUnclaimed
-                            assignedColor:  Theme.frameAssigned
-                            renderedColor:  Theme.frameRendered
-                            completedColor: Theme.frameCompleted
-                            failedColor:    Theme.frameFailed
+                            clip: true
+                            contentWidth: width
+                            contentHeight: Math.max(frameGrid.implicitHeight, height)
+                            boundsBehavior: Flickable.StopAtBounds
+                            ScrollBar.vertical: MrScrollBar {}
+
+                            // Fixed 10px cells (stable hit targets for
+                            // upcoming per-frame selection); large ranges
+                            // scroll inside this Flickable.
+                            FrameGrid {
+                                id: frameGrid
+                                width: gridFlick.width
+                                height: Math.max(implicitHeight, gridFlick.height)
+                                model: appBridge.chunksModel
+                                frameStart: job.frameStart || 0
+                                frameEnd:   job.frameEnd   || 0
+                                cellSize:   10
+                                bgColor:        Theme.frameBg
+                                unclaimedColor: Theme.frameUnclaimed
+                                assignedColor:  Theme.frameAssigned
+                                renderedColor:  Theme.frameRendered
+                                completedColor: Theme.frameCompleted
+                                failedColor:    Theme.frameFailed
+                                // Outline only single-frame pins; chunk pins
+                                // highlight their row in the table instead.
+                                selectedFrame:
+                                    appBridge.previewPinStart >= 0
+                                    && appBridge.previewPinStart === appBridge.previewPinEnd
+                                    ? appBridge.previewPinStart : -1
+
+                                MouseArea {
+                                    id: gridMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+
+                                    property int hoverFrame: -1
+                                    property var hoverChunk: ({ found: false })
+
+                                    onPositionChanged: (mouse) => {
+                                        const f = frameGrid.frameAtPosition(mouse.x, mouse.y)
+                                        if (f === hoverFrame)
+                                            return
+                                        hoverFrame = f
+                                        hoverChunk = f >= 0
+                                            ? appBridge.chunksModel.chunkForFrame(f)
+                                            : { found: false }
+                                    }
+                                    onExited: { hoverFrame = -1 }
+
+                                    // Click pins the preview to this frame —
+                                    // refused (returns false) unless the frame's
+                                    // file is already on disk (rendered + copied).
+                                    onClicked: (mouse) => {
+                                        const f = frameGrid.frameAtPosition(mouse.x, mouse.y)
+                                        if (f >= 0)
+                                            appBridge.pinPreview(f, f)
+                                    }
+
+                                    ToolTip.visible: containsMouse && hoverFrame >= 0
+                                    ToolTip.delay: 300
+                                    ToolTip.text: {
+                                        if (hoverFrame < 0) return ""
+                                        let t = qsTr("Frame %1").arg(hoverFrame)
+                                        const c = hoverChunk
+                                        if (c && c.found === true) {
+                                            t += qsTr("\nChunk %1  (%2-%3)")
+                                                .arg(c.chunkNumber).arg(c.frameStart).arg(c.frameEnd)
+                                            t += "\n" + c.state
+                                            if (c.node && c.node.length > 0)
+                                                t += qsTr("  ·  %1").arg(c.node)
+                                        }
+                                        return t
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    // Chunk list — scrollable, read-only for now.
-                    // Step 6e adds the right-click context menu.
+                    // Chunk list — always visible: the minimum height
+                    // guarantees the grid row can't squeeze it away.
                     ColumnLayout {
                         SplitView.fillHeight: true
+                        SplitView.minimumHeight: 120
                         spacing: 0
 
                         // Column header row
@@ -335,30 +417,41 @@ Item {
                                 anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                                 spacing: 8
 
-                                Label {
+                                ResizableHeaderLabel {
                                     text: qsTr("State")
-                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
-                                    width: 80; anchors.verticalCenter: parent.verticalCenter
+                                    width: chunkColSettings.state
+                                    minWidth: 50; defaultWidth: 80
+                                    onResizeTo: (w) => chunkColSettings.state = w
                                 }
-                                Label {
+                                ResizableHeaderLabel {
                                     text: qsTr("Frames")
-                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
-                                    width: 120; anchors.verticalCenter: parent.verticalCenter
+                                    width: chunkColSettings.frames
+                                    minWidth: 60; defaultWidth: 120
+                                    onResizeTo: (w) => chunkColSettings.frames = w
                                 }
-                                Label {
+                                ResizableHeaderLabel {
                                     text: qsTr("Node")
-                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
-                                    width: 160; anchors.verticalCenter: parent.verticalCenter
+                                    width: chunkColSettings.node
+                                    minWidth: 60; defaultWidth: 160
+                                    onResizeTo: (w) => chunkColSettings.node = w
                                 }
-                                Label {
+                                ResizableHeaderLabel {
                                     text: qsTr("Progress")
-                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
-                                    width: 120; anchors.verticalCenter: parent.verticalCenter
+                                    width: chunkColSettings.progress
+                                    minWidth: 60; defaultWidth: 120
+                                    onResizeTo: (w) => chunkColSettings.progress = w
                                 }
-                                Label {
+                                ResizableHeaderLabel {
+                                    text: qsTr("Duration")
+                                    width: chunkColSettings.duration
+                                    minWidth: 50; defaultWidth: 70
+                                    onResizeTo: (w) => chunkColSettings.duration = w
+                                }
+                                ResizableHeaderLabel {
                                     text: qsTr("Retries")
-                                    color: Theme.textSecondary; font.pixelSize: Theme.fontSizeBase
-                                    width: 60; anchors.verticalCenter: parent.verticalCenter
+                                    width: chunkColSettings.retries
+                                    minWidth: 40; defaultWidth: 60
+                                    onResizeTo: (w) => chunkColSettings.retries = w
                                 }
                             }
                         }
@@ -373,27 +466,44 @@ Item {
                             ScrollBar.vertical: MrScrollBar {}
 
                             delegate: Rectangle {
+                                id: chunkRow
+
                                 required property var    chunkId
                                 required property int    frameStart
                                 required property int    frameEnd
                                 required property string state
                                 required property string assignedNode
+                                required property string assignedNodeName
                                 required property double progress
+                                required property double assignedAt
+                                required property double completedAt
                                 required property int    retryCount
                                 required property int    index
 
+                                readonly property bool selected:
+                                    detailRoot.selectedChunkId === chunkId
+
                                 width: chunksList.width
                                 height: 24
-                                color: index % 2 === 0 ? Theme.bg : Theme.bgAlt
+                                color: selected ? Theme.selection
+                                     : index % 2 === 0 ? Theme.bg : Theme.bgAlt
 
                                 MouseArea {
                                     anchors.fill: parent
-                                    acceptedButtons: Qt.RightButton
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: (mouse) => {
-                                        chunkMenu.targetChunkId = chunkId
-                                        chunkMenu.targetFrameStart = frameStart
-                                        chunkMenu.targetFrameEnd   = frameEnd
-                                        chunkMenu.popup()
+                                        detailRoot.selectedChunkId = chunkId
+                                        if (mouse.button === Qt.RightButton) {
+                                            chunkMenu.targetChunkId = chunkId
+                                            chunkMenu.targetFrameStart = frameStart
+                                            chunkMenu.targetFrameEnd   = frameEnd
+                                            chunkMenu.popup()
+                                            return
+                                        }
+                                        // Left-click: pin the preview to this
+                                        // chunk's newest on-disk frame. Refused
+                                        // silently when nothing is copied yet.
+                                        appBridge.pinPreview(frameStart, frameEnd)
                                     }
                                 }
 
@@ -408,7 +518,8 @@ Item {
                                         color: stateColor(state)
                                         font.pixelSize: Theme.fontSizeSmall
                                         font.bold: true
-                                        width: 80
+                                        width: chunkColSettings.state
+                                        elide: Text.ElideRight
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Label {
@@ -418,20 +529,32 @@ Item {
                                         color: Theme.textPrimary
                                         font.family: Theme.monoFamily
                                         font.pixelSize: Theme.fontSizeBase
-                                        width: 120
+                                        width: chunkColSettings.frames
+                                        elide: Text.ElideRight
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Label {
-                                        text: assignedNode.length > 0 ? assignedNode : "—"
+                                        text: assignedNodeName.length > 0 ? assignedNodeName : "—"
                                         color: Theme.textPrimary
                                         font.family: Theme.monoFamily
                                         font.pixelSize: Theme.fontSizeBase
-                                        width: 160
+                                        width: chunkColSettings.node
                                         elide: Text.ElideMiddle
                                         anchors.verticalCenter: parent.verticalCenter
+                                        // Hostname is the friendly face; the raw node id
+                                        // stays reachable for debugging.
+                                        ToolTip.text: assignedNode
+                                        ToolTip.visible: assignedNode.length > 0 && nodeNameHover.containsMouse
+                                        ToolTip.delay: 600
+                                        MouseArea {
+                                            id: nodeNameHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.NoButton
+                                        }
                                     }
                                     Item {
-                                        width: 120
+                                        width: chunkColSettings.progress
                                         height: parent.height
                                         Progress {
                                             anchors.verticalCenter: parent.verticalCenter
@@ -440,10 +563,23 @@ Item {
                                         }
                                     }
                                     Label {
+                                        // Wall-clock render time; only completed
+                                        // chunks carry a completedAt stamp.
+                                        text: completedAt > 0 && assignedAt > 0 && completedAt > assignedAt
+                                              ? Format.duration(completedAt - assignedAt)
+                                              : "—"
+                                        color: Theme.textPrimary
+                                        font.family: Theme.monoFamily
+                                        font.pixelSize: Theme.fontSizeBase
+                                        width: chunkColSettings.duration
+                                        elide: Text.ElideRight
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Label {
                                         text: retryCount
                                         color: retryCount > 0 ? Theme.warn : Theme.textMuted
                                         font.pixelSize: Theme.fontSizeBase
-                                        width: 60
+                                        width: chunkColSettings.retries
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }

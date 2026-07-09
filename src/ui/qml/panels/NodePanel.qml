@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -5,6 +6,14 @@ import MinRenderUi 1.0
 
 Item {
     id: root
+
+    // Persisted height of the preview section under the node list.
+    Settings {
+        id: nodePanelSettings
+        category: "nodePanel"
+
+        property real previewHeight: 240
+    }
 
     function agentHealthColor(h) {
         switch (h) {
@@ -271,6 +280,57 @@ Item {
                     onTriggered: appBridge.writePeerRestartSignal(deadPeerMenu.targetNodeId)
                 }
             }
+        }
+
+        // --- Latest-frame preview for the selected job ---
+        // Lives here (not in Job Detail) so the frame grid keeps the
+        // full detail width and the preview stays visible even when
+        // the Logs tab is in front. Hidden when nothing is selected or
+        // the build has no image libs — the node list reclaims the room.
+        Rectangle {
+            visible: appBridge.previewSupported
+                     && appBridge.currentJobId.length > 0
+            Layout.fillWidth: true
+            Layout.preferredHeight: Theme.toolStripHeight
+            color: Theme.toolbar
+
+            Rectangle {
+                anchors.left:   parent.left
+                anchors.right:  parent.right
+                anchors.top:    parent.top
+                height: Theme.dividerWidth
+                color: Theme.divider
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.padding
+                spacing: 6
+
+                Label {
+                    text: qsTr("Preview")
+                    color: Theme.textBright
+                    font.family: Theme.fontFamily
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeBase
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: "· " + appBridge.currentJobId
+                    color: Theme.textMuted
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.fontSizeBase
+                    elide: Text.ElideMiddle
+                }
+            }
+        }
+
+        JobPreview {
+            visible: appBridge.previewSupported
+                     && appBridge.currentJobId.length > 0
+            jobId: appBridge.currentJobId
+            Layout.fillWidth: true
+            Layout.preferredHeight: nodePanelSettings.previewHeight
         }
     }
 }

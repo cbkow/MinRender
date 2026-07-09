@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -143,13 +144,50 @@ Item {
         return Qt.formatDateTime(new Date(ms), "yyyy-MM-dd HH:mm")
     }
 
-    // Column widths (px).
-    // Handle | Pri | Name (fillRest) | State | Progress | Created
-    readonly property int colHandle:   22
-    readonly property int colPri:      36
-    readonly property int colState:    90
-    readonly property int colProgress: 280
-    readonly property int colCreated:  140
+    // 1 s heartbeat so active jobs' Duration cells tick live. Model
+    // dataChanged only fires when a job's fields move, which for a
+    // long chunk can be minutes — the timer keeps elapsed time honest.
+    property double nowMs: Date.now()
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.visible
+        onTriggered: root.nowMs = Date.now()
+    }
+
+    // Wall-clock job duration: first chunk assignment → last chunk
+    // completion. Active jobs tick against now; paused/cancelled/failed
+    // freeze at their last completion; untouched jobs show "—".
+    function jobDuration(state, startMs, endMs) {
+        if (startMs <= 0) return "—"
+        if (state === "active") return Format.duration(root.nowMs - startMs)
+        if (endMs > startMs)    return Format.duration(endMs - startMs)
+        return "—"
+    }
+
+    // Column widths (px), persisted across launches. Every column is
+    // fixed-width and left-aligned — no fill-remainder column, so a
+    // resize never shifts the columns to its left and the grip stays
+    // under the cursor. Leftover width is empty row background.
+    // Handle | Pri | Name | State | Progress | Duration | Created
+    Settings {
+        id: colSettings
+        category: "jobsTableColumns"
+
+        property int pri:      36
+        property int name:     300
+        property int state:    90
+        property int progress: 280
+        property int duration: 80
+        property int created:  140
+    }
+    readonly property int colHandle: 22
+    property alias colPri:      colSettings.pri
+    property alias colName:     colSettings.name
+    property alias colState:    colSettings.state
+    property alias colProgress: colSettings.progress
+    property alias colDuration: colSettings.duration
+    property alias colCreated:  colSettings.created
 
     function priorityAt(rowIdx) {
         return appBridge.jobsModel.data(
@@ -233,109 +271,6 @@ Item {
             }
         }
 
-        // --- Bulk-action strip (always present) ---
-        // Mirrors the right-click jobMenu for single jobs, but loops
-        // every action over every checked id and clears the selection
-        // afterwards. Always rendered so the available actions stay
-        // visible/discoverable; each button is disabled when no rows
-        // are checked instead of toggling the whole strip away.
-        // Destructive ops still route through bulkConfirmDialog so a
-        // stray click can't wipe N jobs.
-        Rectangle {
-            Layout.fillWidth: true
-            color: Theme.toolbar
-            implicitHeight: Theme.toolStripHeight
-
-            // 1px bottom divider to seat the strip cleanly under the header.
-            Rectangle {
-                anchors.left:   parent.left
-                anchors.right:  parent.right
-                anchors.bottom: parent.bottom
-                height: Theme.dividerWidth
-                color: Theme.divider
-            }
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: Theme.padding
-                anchors.rightMargin: Theme.spacingTight
-                spacing: 0
-
-                Label {
-                    text: root.checkedCount() > 0
-                        ? qsTr("%1 selected").arg(root.checkedCount())
-                        : qsTr("No selection")
-                    color: root.checkedCount() > 0
-                        ? Theme.textBright
-                        : Theme.textMuted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeBase
-                    Layout.rightMargin: Theme.padding
-                }
-                FlatButton {
-                    iconName: "pause"
-                    text: qsTr("Pause")
-                    enabled: root.checkedCount() > 0
-                    onClicked: root.applyToChecked(
-                        function(id) { appBridge.pauseJob(id) })
-                }
-                FlatButton {
-                    iconName: "play"
-                    text: qsTr("Resume")
-                    enabled: root.checkedCount() > 0
-                    onClicked: root.applyToChecked(
-                        function(id) { appBridge.resumeJob(id) })
-                }
-                FlatButton {
-                    iconName: "arrow-clockwise"
-                    text: qsTr("Retry failed")
-                    enabled: root.checkedCount() > 0
-                    onClicked: root.applyToChecked(
-                        function(id) { appBridge.retryFailedChunks(id) })
-                }
-                FlatButton {
-                    iconName: "arrows-counter-clockwise"
-                    text: qsTr("Requeue")
-                    enabled: root.checkedCount() > 0
-                    onClicked: root.applyToChecked(
-                        function(id) { appBridge.requeueJob(id) })
-                }
-                FlatButton {
-                    iconName: "archive"
-                    text: qsTr("Archive")
-                    enabled: root.checkedCount() > 0
-                    onClicked: root.applyToChecked(
-                        function(id) { appBridge.archiveJob(id) })
-                }
-                Item { Layout.fillWidth: true }
-                FlatButton {
-                    iconName: "x"
-                    text: qsTr("Cancel")
-                    enabled: root.checkedCount() > 0
-                    onClicked: bulkConfirmDialog.openWith(
-                        "cancel",
-                        qsTr("Cancel %1 job%2?")
-                            .arg(root.checkedCount())
-                            .arg(root.checkedCount() === 1 ? "" : "s"),
-                        qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
-                        function(id) { appBridge.cancelJob(id) })
-                }
-                FlatButton {
-                    iconName: "trash"
-                    text: qsTr("Delete")
-                    variant: "danger"
-                    enabled: root.checkedCount() > 0
-                    onClicked: bulkConfirmDialog.openWith(
-                        "delete",
-                        qsTr("Delete %1 job%2?")
-                            .arg(root.checkedCount())
-                            .arg(root.checkedCount() === 1 ? "" : "s"),
-                        qsTr("Removes job records and SQLite history. Output files on disk are NOT deleted. This cannot be undone."),
-                        function(id) { appBridge.deleteJob(id) })
-                }
-            }
-        }
-
         // --- Column headers ---
         Rectangle {
             Layout.fillWidth: true
@@ -350,44 +285,54 @@ Item {
 
                 Item { width: root.colHandle; height: 1 }
 
-                Label {
+                ResizableHeaderLabel {
                     text: qsTr("Pri")
-                    color: Theme.textSecondary
-                    font.pixelSize: 11
+                    pixelSize: 11
                     width: root.colPri
-                    anchors.verticalCenter: parent.verticalCenter
+                    minWidth: 28
+                    defaultWidth: 36
+                    onResizeTo: (w) => root.colPri = w
                 }
 
-                Label {
+                ResizableHeaderLabel {
                     text: qsTr("Name")
-                    color: Theme.textSecondary
-                    font.pixelSize: 11
-                    width: parent.width - root.colHandle - root.colPri
-                           - root.colState - root.colProgress
-                           - root.colCreated - 5 * 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    elide: Text.ElideRight
+                    pixelSize: 11
+                    width: root.colName
+                    minWidth: 100
+                    defaultWidth: 300
+                    onResizeTo: (w) => root.colName = w
                 }
-                Label {
+                ResizableHeaderLabel {
                     text: qsTr("State")
-                    color: Theme.textSecondary
-                    font.pixelSize: 11
+                    pixelSize: 11
                     width: root.colState
-                    anchors.verticalCenter: parent.verticalCenter
+                    minWidth: 50
+                    defaultWidth: 90
+                    onResizeTo: (w) => root.colState = w
                 }
-                Label {
+                ResizableHeaderLabel {
                     text: qsTr("Progress")
-                    color: Theme.textSecondary
-                    font.pixelSize: 11
+                    pixelSize: 11
                     width: root.colProgress
-                    anchors.verticalCenter: parent.verticalCenter
+                    minWidth: 80
+                    defaultWidth: 280
+                    onResizeTo: (w) => root.colProgress = w
                 }
-                Label {
+                ResizableHeaderLabel {
+                    text: qsTr("Duration")
+                    pixelSize: 11
+                    width: root.colDuration
+                    minWidth: 50
+                    defaultWidth: 80
+                    onResizeTo: (w) => root.colDuration = w
+                }
+                ResizableHeaderLabel {
                     text: qsTr("Created")
-                    color: Theme.textSecondary
-                    font.pixelSize: 11
+                    pixelSize: 11
                     width: root.colCreated
-                    anchors.verticalCenter: parent.verticalCenter
+                    minWidth: 60
+                    defaultWidth: 140
+                    onResizeTo: (w) => root.colCreated = w
                 }
             }
         }
@@ -412,6 +357,8 @@ Item {
                 required property int    failedChunks
                 required property var    createdAt
                 required property int    priority
+                required property double firstAssignedAt
+                required property double lastCompletedAt
                 required property int    index
 
                 width: jobList.width
@@ -466,9 +413,7 @@ Item {
                         color: Theme.textPrimary
                         font.pixelSize: Theme.fontSizeBase
                         font.family: Theme.monoFamily
-                        width: parent.width - root.colHandle - root.colPri
-                               - root.colState - root.colProgress
-                               - root.colCreated - 5 * 8
+                        width: root.colName
                         anchors.verticalCenter: parent.verticalCenter
                         elide: Text.ElideMiddle
                     }
@@ -479,6 +424,7 @@ Item {
                         font.pixelSize: 11
                         font.bold: true
                         width: root.colState
+                        elide: Text.ElideRight
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
@@ -500,10 +446,21 @@ Item {
                     }
 
                     Label {
+                        text: root.jobDuration(state, firstAssignedAt, lastCompletedAt)
+                        color: Theme.textSecondary
+                        font.pixelSize: 11
+                        font.family: Theme.monoFamily
+                        width: root.colDuration
+                        elide: Text.ElideRight
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Label {
                         text: root.formatTs(createdAt)
                         color: Theme.textSecondary
                         font.pixelSize: 11
                         width: root.colCreated
+                        elide: Text.ElideRight
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -571,6 +528,117 @@ Item {
                 z: 10
             }
         }
+
+        // --- Bulk-action strip (always present, seated under the table) ---
+        // Mirrors the right-click jobMenu for single jobs, but loops
+        // every action over every checked id and clears the selection
+        // afterwards. Always rendered so the available actions stay
+        // visible/discoverable; each button is disabled when no rows
+        // are checked instead of toggling the whole strip away.
+        // Destructive ops still route through bulkConfirmDialog so a
+        // stray click can't wipe N jobs.
+        Rectangle {
+            Layout.fillWidth: true
+            color: Theme.toolbar
+            implicitHeight: Theme.toolStripHeight
+
+            // 1px top divider to seat the strip cleanly under the table.
+            Rectangle {
+                anchors.left:   parent.left
+                anchors.right:  parent.right
+                anchors.top:    parent.top
+                height: Theme.dividerWidth
+                color: Theme.divider
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.padding
+                anchors.rightMargin: Theme.spacingTight
+                spacing: 0
+
+                Label {
+                    text: root.checkedCount() > 0
+                        ? qsTr("%1 selected").arg(root.checkedCount())
+                        : qsTr("No selection")
+                    color: root.checkedCount() > 0
+                        ? Theme.textBright
+                        : Theme.textMuted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeBase
+                    Layout.rightMargin: Theme.padding
+                }
+                FlatButton {
+                    iconName: "pencil-simple"
+                    text: qsTr("Edit")
+                    // The edit form is one manifest, one job — single
+                    // selection only.
+                    enabled: root.checkedCount() === 1
+                    onClicked: appBridge.openJobEditor(root.checkedJobIds()[0])
+                }
+                FlatButton {
+                    iconName: "pause"
+                    text: qsTr("Pause")
+                    enabled: root.checkedCount() > 0
+                    onClicked: root.applyToChecked(
+                        function(id) { appBridge.pauseJob(id) })
+                }
+                FlatButton {
+                    iconName: "play"
+                    text: qsTr("Resume")
+                    enabled: root.checkedCount() > 0
+                    onClicked: root.applyToChecked(
+                        function(id) { appBridge.resumeJob(id) })
+                }
+                FlatButton {
+                    iconName: "arrow-clockwise"
+                    text: qsTr("Retry failed")
+                    enabled: root.checkedCount() > 0
+                    onClicked: root.applyToChecked(
+                        function(id) { appBridge.retryFailedChunks(id) })
+                }
+                FlatButton {
+                    iconName: "arrows-counter-clockwise"
+                    text: qsTr("Requeue")
+                    enabled: root.checkedCount() > 0
+                    onClicked: root.applyToChecked(
+                        function(id) { appBridge.requeueJob(id) })
+                }
+                FlatButton {
+                    iconName: "archive"
+                    text: qsTr("Archive")
+                    enabled: root.checkedCount() > 0
+                    onClicked: root.applyToChecked(
+                        function(id) { appBridge.archiveJob(id) })
+                }
+                Item { Layout.fillWidth: true }
+                FlatButton {
+                    iconName: "x"
+                    text: qsTr("Cancel")
+                    enabled: root.checkedCount() > 0
+                    onClicked: bulkConfirmDialog.openWith(
+                        "cancel",
+                        qsTr("Cancel %1 job%2?")
+                            .arg(root.checkedCount())
+                            .arg(root.checkedCount() === 1 ? "" : "s"),
+                        qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
+                        function(id) { appBridge.cancelJob(id) })
+                }
+                FlatButton {
+                    iconName: "trash"
+                    text: qsTr("Delete")
+                    variant: "danger"
+                    enabled: root.checkedCount() > 0
+                    onClicked: bulkConfirmDialog.openWith(
+                        "delete",
+                        qsTr("Delete %1 job%2?")
+                            .arg(root.checkedCount())
+                            .arg(root.checkedCount() === 1 ? "" : "s"),
+                        qsTr("Removes job records and SQLite history. Output files on disk are NOT deleted. This cannot be undone."),
+                        function(id) { appBridge.deleteJob(id) })
+                }
+            }
+        }
     }
 
     // Right-click context menu. When more than one row is selected
@@ -609,6 +677,13 @@ Item {
                      || jobMenu.targetState === "paused"
             onTriggered: root.applyToChecked(
                 function(id) { appBridge.resumeJob(id) })
+        }
+        MenuSeparator {}
+        MenuItem {
+            // Single-job only: the edit form is one manifest, one job.
+            text: qsTr("Edit Job…")
+            enabled: root.checkedCount() <= 1
+            onTriggered: appBridge.openJobEditor(jobMenu.targetId)
         }
         MenuSeparator {}
         MenuItem {

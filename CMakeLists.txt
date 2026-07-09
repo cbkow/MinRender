@@ -63,6 +63,32 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
 )
 qt_standard_project_setup(REQUIRES 6.8)
 
+# --- Frame-preview image libraries (GUI target only, OPTIONAL) ---
+# Vendored prefix at external/install (decode libs copied from the
+# QCView-Player sister project: OpenEXR/Imath + libpng/libjpeg-turbo/
+# libtiff). When every package resolves, the minrender target compiles
+# src/preview/ (also vendored from QCView) and defines
+# MINRENDER_HAVE_PREVIEW; otherwise the preview pane is absent and the
+# build proceeds — same optional pattern as Sparkle/WinSparkle, so the
+# Windows build keeps working until its libs land (vcpkg: openexr
+# libpng libjpeg-turbo tiff, or a populated external/install).
+set(MR_VENDOR_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/external/install")
+if(EXISTS "${MR_VENDOR_PREFIX}/lib")
+    list(PREPEND CMAKE_PREFIX_PATH "${MR_VENDOR_PREFIX}")
+endif()
+find_package(OpenEXR 3.1 QUIET)
+find_package(Imath QUIET)
+find_package(PNG QUIET)
+find_package(JPEG QUIET)
+find_package(TIFF QUIET)
+if(OpenEXR_FOUND AND Imath_FOUND AND PNG_FOUND AND JPEG_FOUND AND TIFF_FOUND)
+    set(MR_HAVE_PREVIEW TRUE)
+    message(STATUS "minRender: image libs found — frame preview enabled")
+else()
+    set(MR_HAVE_PREVIEW FALSE)
+    message(STATUS "minRender: image libs missing (OpenEXR=${OpenEXR_FOUND} PNG=${PNG_FOUND} JPEG=${JPEG_FOUND} TIFF=${TIFF_FOUND}) — frame preview disabled")
+endif()
+
 # --- Core sources (shared between GUI and headless) ---
 # NOTE: main_qt.cpp and main_headless.cpp are NOT in this list —
 # each is added to exactly one target below. Same for tray: the GUI
@@ -149,11 +175,32 @@ target_compile_definitions(minrender PRIVATE
     CPPHTTPLIB_THREAD_POOL_COUNT=4
 )
 
+# --- Frame preview (optional; see the image-libs block above) ---
+if(MR_HAVE_PREVIEW)
+    target_sources(minrender PRIVATE
+        src/preview/image_loader.cpp
+        src/preview/exr_image_loader.cpp
+        src/preview/png_image_loader.cpp
+        src/preview/jpeg_image_loader.cpp
+        src/preview/tiff_image_loader.cpp
+        src/preview/memory_mapped_istream.cpp
+        src/preview/thumbnail_image_provider.cpp
+    )
+    target_compile_definitions(minrender PRIVATE MINRENDER_HAVE_PREVIEW)
+    target_link_libraries(minrender PRIVATE
+        OpenEXR::OpenEXR
+        Imath::Imath
+        PNG::PNG
+        JPEG::JPEG
+        TIFF::TIFF
+    )
+endif()
+
 # Mark Theme.qml as a QML singleton explicitly — Qt 6.11's auto-detection
 # of `pragma Singleton` doesn't always produce the right qmldir entry,
 # which leaves Theme resolving to undefined inside delegates.
-set_source_files_properties(src/ui/qml/Theme.qml PROPERTIES
-    QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(src/ui/qml/Theme.qml src/ui/qml/Format.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 # QML module — compiled ahead-of-time into the binary via qmlsc.
 qt_add_qml_module(minrender
@@ -162,17 +209,21 @@ qt_add_qml_module(minrender
     QML_FILES
         src/ui/qml/Main.qml
         src/ui/qml/Theme.qml
+        src/ui/qml/Format.qml
         src/ui/qml/components/FlatButton.qml
         src/ui/qml/components/Icon.qml
+        src/ui/qml/components/MrDialog.qml
         src/ui/qml/components/MrScrollBar.qml
         src/ui/qml/components/PanelHeader.qml
         src/ui/qml/components/Progress.qml
+        src/ui/qml/components/ResizableHeaderLabel.qml
         src/ui/qml/components/SectionHeader.qml
         src/ui/qml/components/StatusBadge.qml
         src/ui/qml/components/ToolStrip.qml
         src/ui/qml/panels/FarmCleanupDialog.qml
         src/ui/qml/panels/JobDetailPanel.qml
         src/ui/qml/panels/JobListPanel.qml
+        src/ui/qml/panels/JobPreview.qml
         src/ui/qml/panels/LogPanel.qml
         src/ui/qml/panels/NodePanel.qml
         src/ui/qml/panels/PathMappingsDialog.qml
@@ -263,6 +314,12 @@ if(APPLE)
                 "$<TARGET_FILE_DIR:minrender>/../Frameworks/Sparkle.framework"
             COMMENT "Embedding Sparkle.framework into minRender.app/Contents/Frameworks"
             VERBATIM)
+        # Sparkle's install name is @rpath/Sparkle.framework/…, so dev builds
+        # need an rpath at the bundle's Frameworks dir or dyld aborts at
+        # launch (release bundles get this rpath from macdeployqt, which
+        # tolerates it already existing).
+        set_target_properties(minrender PROPERTIES
+            BUILD_RPATH "@executable_path/../Frameworks")
         message(STATUS "minRender: Sparkle vendored — macOS auto-update enabled")
     else()
         message(STATUS "minRender: external/Sparkle absent — macOS auto-update disabled (no-op shim)")

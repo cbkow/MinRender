@@ -15,6 +15,10 @@
 #include "ui/models/templates_model.h"
 #include "ui/platform/accent_color.h"
 
+#ifdef MINRENDER_HAVE_PREVIEW
+#include "preview/exr_image_loader.h"
+#endif
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -25,8 +29,12 @@
 
 #include <algorithm>
 #include <ctime>
+#include <deque>
+#include <regex>
+#include <set>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <nlohmann/json.hpp>
 
 namespace MR {
@@ -279,6 +287,9 @@ void AppBridge::setCurrentJobId(const QString& jobId)
     if (!jobId.isEmpty() && m_submissionMode)
         setSubmissionMode(false);
 
+    // A pinned preview frame belongs to the previous job.
+    clearPreviewPin();
+
     // Keep MonitorApp's selected-job state in sync — HTTP handlers
     // and render logic key off selectedJobId() for some behavior.
     if (m_monitor)
@@ -365,6 +376,21 @@ void AppBridge::refreshChunks()
 {
     if (!m_monitor || m_currentJobId.isEmpty())
         return;
+
+    // Resolve node ids to hostnames for the chunk table's Node column.
+    // Ids missing from the map (peer since forgotten / offline) fall
+    // back to the raw id inside the model.
+    QHash<QString, QString> names;
+    if (!thisNodeHostname().isEmpty())
+        names.insert(thisNodeId(), thisNodeHostname());
+    for (const auto& p : m_monitor->peerManager().getPeerSnapshot())
+    {
+        const QString host = QString::fromStdString(p.hostname);
+        if (!host.isEmpty())
+            names.insert(QString::fromStdString(p.node_id), host);
+    }
+    m_chunksModel->setNodeNames(names);
+
     // On workers this is a blocking HTTP GET to the leader (~1.5 s
     // worst case). Phase 5's frame grid may promote this to the async
     // postToLeaderAsync path if the UI stalls become noticeable.
@@ -707,7 +733,16 @@ void AppBridge::refresh()
     // Template cache is refreshed alongside jobs (every 2 s in
     // MonitorApp::update). TemplatesModel short-circuits when the set
     // is equivalent, so polling here at 20 Hz is essentially free.
-    m_templatesModel->setTemplates(m_monitor->cachedTemplates());
+    // DCC plugin templates stay out of the New Job picker — they're in
+    // the cache only so templateById can resolve them for job editing.
+    {
+        auto templates = m_monitor->cachedTemplates();
+        templates.erase(
+            std::remove_if(templates.begin(), templates.end(),
+                           [](const JobTemplate& t) { return t.isPlugin; }),
+            templates.end());
+        m_templatesModel->setTemplates(templates);
+    }
 
     // Keep the log-source dropdown in sync with the peer list. The
     // rebuild short-circuits when nothing changed, so this is cheap.
@@ -1191,6 +1226,522 @@ void AppBridge::submitJob(const QString& templateId,
                 },
                 Qt::QueuedConnection);
         });
+}
+
+bool AppBridge::previewSupported() const
+{
+#ifdef MINRENDER_HAVE_PREVIEW
+    return true;
+#else
+    return false;
+#endif
+}
+
+QVariantMap AppBridge::previewInfoForRange(const QString& jobId,
+                                           int frameStart, int frameEnd)
+{
+    QVariantMap out;
+    out["found"] = false;
+    if (!m_monitor || jobId.isEmpty())
+        return out;
+
+    // Locate the job + its output pattern in the cached list.
+    const JobInfo* job = nullptr;
+    for (const auto& info : m_monitor->cachedJobs())
+    {
+        if (info.manifest.job_id == jobId.toStdString())
+        {
+            job = &info;
+            break;
+        }
+    }
+    if (!job || !job->manifest.output_dir.has_value()
+        || job->manifest.output_dir->empty())
+        return out;
+
+    const auto& mappings = m_monitor->config().path_mappings;
+    const std::string nativeDir =
+        MR::fromCanonicalPath(*job->manifest.output_dir, mappings);
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(nativeDir, ec))
+        return out;
+
+    // Filename filter from the output flag's pattern: escape it as a
+    // regex, then let each `#` run match digits. DCCs replace the
+    // padding themselves (Blender ####, AE [####] — brackets are
+    // escaped literally so they simply don't match and we fall back).
+    std::string stemRegex;
+    for (const auto& f : job->manifest.flags)
+    {
+        if (!f.is_output || !f.value.has_value() || f.value->empty())
+            continue;
+        const std::string& v = *f.value;
+        const size_t sep = v.find_last_of("/\\");
+        const std::string base = sep == std::string::npos ? v : v.substr(sep + 1);
+        std::string rx;
+        bool inPad = false;
+        for (char c : base)
+        {
+            if (c == '#')
+            {
+                if (!inPad) { rx += "(\\d+)"; inPad = true; }
+                continue;
+            }
+            inPad = false;
+            static const std::string special = R"(\.^$|()[]{}*+?)";
+            if (special.find(c) != std::string::npos) rx += '\\';
+            rx += c;
+        }
+        stemRegex = rx;
+        break;
+    }
+
+    // Sweep the directory: prefer the highest frame number matched by
+    // the pattern; fall back to newest mtime among image files.
+    // EXR/PNG/JPEG/TIFF decode through the vendored QCView loaders;
+    // the rest go through Qt's own image readers (same fallback QCView
+    // uses), so the set matches QCView's still-image coverage.
+    static const std::set<std::string> kImageExts =
+        {".exr", ".png", ".jpg", ".jpeg", ".tif", ".tiff",
+         ".bmp", ".webp", ".gif", ".tga"};
+
+    std::optional<std::regex> pattern;
+    if (!stemRegex.empty() && stemRegex.find("(\\d+)") != std::string::npos)
+    {
+        try { pattern = std::regex(stemRegex, std::regex::icase); }
+        catch (...) {}
+    }
+
+    // A restricted range (pin) is only resolvable through the pattern —
+    // the mtime fallback can't attribute a frame number to a file.
+    const bool ranged = frameStart >= 0;
+    if (ranged && !pattern)
+        return out;
+
+    std::string bestFile;
+    long long bestFrame = -1;
+    std::filesystem::file_time_type bestTime{};
+
+    for (const auto& entry : std::filesystem::directory_iterator(nativeDir, ec))
+    {
+        if (!entry.is_regular_file(ec))
+            continue;
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        if (!kImageExts.count(ext))
+            continue;
+
+        const std::string name = entry.path().filename().string();
+        if (pattern)
+        {
+            std::smatch m;
+            if (std::regex_match(name, m, *pattern) && m.size() > 1)
+            {
+                const long long frame = std::atoll(m[1].str().c_str());
+                if (ranged && (frame < frameStart || frame > frameEnd))
+                    continue;
+                if (frame > bestFrame)
+                {
+                    bestFrame = frame;
+                    bestFile = entry.path().string();
+                }
+                continue;
+            }
+            // Pattern exists but this file doesn't match — only use it
+            // for the mtime fallback if nothing matched at all.
+        }
+        if (!ranged && bestFrame < 0)
+        {
+            const auto t = entry.last_write_time(ec);
+            if (bestFile.empty() || t > bestTime)
+            {
+                bestTime = t;
+                bestFile = entry.path().string();
+            }
+        }
+    }
+
+    if (bestFile.empty())
+        return out;
+
+    std::string ext = std::filesystem::path(bestFile).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+    out["found"] = true;
+    out["file"]  = QString::fromStdString(bestFile);
+    out["frame"] = bestFrame >= 0 ? QVariant::fromValue(bestFrame) : QVariant();
+    out["isExr"] = (ext == ".exr");
+    return out;
+}
+
+QVariantMap AppBridge::jobPreviewInfo(const QString& jobId)
+{
+    return previewInfoForRange(jobId, -1, -1);
+}
+
+QVariantMap AppBridge::rangePreviewInfo(const QString& jobId,
+                                        int frameStart, int frameEnd)
+{
+    return previewInfoForRange(jobId, frameStart, frameEnd);
+}
+
+bool AppBridge::pinPreview(int frameStart, int frameEnd)
+{
+    if (m_currentJobId.isEmpty() || frameStart < 0 || frameEnd < frameStart)
+        return false;
+
+    // The file on disk is the ground truth for "rendered AND copied":
+    // staged-but-uncopied frames aren't in the output dir yet, so the
+    // pin is refused and the preview keeps following latest.
+    const QVariantMap info =
+        previewInfoForRange(m_currentJobId, frameStart, frameEnd);
+    if (!info.value("found").toBool())
+        return false;
+
+    if (m_previewPinStart != frameStart || m_previewPinEnd != frameEnd)
+    {
+        m_previewPinStart = frameStart;
+        m_previewPinEnd   = frameEnd;
+        emit previewPinChanged();
+    }
+    else
+    {
+        // Re-pinning the same range still restarts the auto-return
+        // timer on the QML side.
+        emit previewPinChanged();
+    }
+    return true;
+}
+
+void AppBridge::clearPreviewPin()
+{
+    if (m_previewPinStart < 0 && m_previewPinEnd < 0)
+        return;
+    m_previewPinStart = -1;
+    m_previewPinEnd   = -1;
+    emit previewPinChanged();
+}
+
+QStringList AppBridge::exrLayers(const QString& filePath)
+{
+    QStringList out;
+#ifdef MINRENDER_HAVE_PREVIEW
+    if (filePath.isEmpty())
+        return out;
+    const auto layers = qcv::EXRImageLoader::discoverLayers(filePath.toStdString());
+    out.reserve(static_cast<int>(layers.size()));
+    for (const auto& l : layers)
+        out.push_back(QString::fromStdString(l));
+#else
+    Q_UNUSED(filePath)
+#endif
+    return out;
+}
+
+bool AppBridge::openJobEditor(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty())
+        return false;
+
+    const std::string manifestJson =
+        m_monitor->getJobManifestJson(jobId.toStdString());
+    if (manifestJson.empty())
+    {
+        MonitorLog::instance().warn("job",
+            "openJobEditor: no manifest for " + jobId.toStdString());
+        return false;
+    }
+
+    JobManifest manifest;
+    try
+    {
+        manifest = nlohmann::json::parse(manifestJson).get<JobManifest>();
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().warn("job",
+            std::string("openJobEditor: bad manifest: ") + e.what());
+        return false;
+    }
+
+#ifdef Q_OS_MACOS
+    // Same display translation as templateById: manifests store
+    // canonical Windows paths; show native ones, re-canonicalize on
+    // apply.
+    const auto& mappingsForUi = m_monitor->config().path_mappings;
+    auto display = [&](const std::string& v) {
+        return QString::fromStdString(MR::fromCanonicalPath(v, mappingsForUi));
+    };
+#else
+    auto display = [](const std::string& v) {
+        return QString::fromStdString(v);
+    };
+#endif
+
+    const auto& tmpls = m_monitor->cachedTemplates();
+    auto it = std::find_if(tmpls.begin(), tmpls.end(),
+        [&](const JobTemplate& t) { return t.template_id == manifest.template_id; });
+    const bool templateFound = (it != tmpls.end() && it->valid);
+
+    QVariantList flags;
+    if (templateFound)
+    {
+        // Overlay manifest values onto the template's flags. Baking may
+        // have dropped empty optional positionals, so match by flag
+        // string and consume the manifest's entries per name in order —
+        // a flag with no manifest entry was empty at submit time.
+        std::map<std::string, std::deque<std::string>> valuesByFlag;
+        for (const auto& mf : manifest.flags)
+            valuesByFlag[mf.flag].push_back(mf.value.value_or(""));
+
+        for (const auto& tf : it->flags)
+        {
+            QVariantMap fm;
+            fm["flag"]     = QString::fromStdString(tf.flag);
+            fm["info"]     = QString::fromStdString(tf.info);
+            fm["help"]     = QString::fromStdString(tf.help);
+            fm["editable"] = tf.editable;
+            fm["required"] = tf.required;
+            fm["type"]     = QString::fromStdString(tf.type);
+            fm["filter"]   = QString::fromStdString(tf.filter);
+            fm["id"]       = QString::fromStdString(tf.id);
+
+            auto& dq = valuesByFlag[tf.flag];
+            if (!dq.empty())
+            {
+                fm["value"] = display(dq.front());
+                dq.pop_front();
+            }
+            else
+            {
+                fm["value"] = QString();
+            }
+            flags.push_back(fm);
+        }
+    }
+    else
+    {
+        // Template gone (deleted or renamed): edit the manifest's flags
+        // raw, 1:1 with manifest.flags order — applyJobEdit's mutate
+        // path relies on that alignment.
+        for (const auto& mf : manifest.flags)
+        {
+            QVariantMap fm;
+            fm["flag"]     = QString::fromStdString(mf.flag);
+            fm["value"]    = display(mf.value.value_or(""));
+            fm["info"]     = mf.flag.empty() ? tr("(positional)")
+                                             : QString::fromStdString(mf.flag);
+            fm["help"]     = QString();
+            fm["editable"] = true;
+            fm["required"] = false;
+            fm["type"]     = QString();
+            fm["filter"]   = QString();
+            fm["id"]       = QString();
+            flags.push_back(fm);
+        }
+    }
+
+    int priority = 50;
+    for (const auto& info : m_monitor->cachedJobs())
+    {
+        if (info.manifest.job_id == jobId.toStdString())
+        {
+            priority = info.current_priority;
+            break;
+        }
+    }
+
+    QVariantMap seed;
+    seed["jobId"]          = jobId;
+    seed["templateId"]     = QString::fromStdString(manifest.template_id);
+    seed["templateName"]   = templateFound
+                             ? QString::fromStdString(it->name)
+                             : QString::fromStdString(manifest.template_id);
+    seed["templateFound"]  = templateFound;
+    seed["flags"]          = flags;
+    seed["frameStart"]     = manifest.frame_start;
+    seed["frameEnd"]       = manifest.frame_end;
+    seed["chunkSize"]      = manifest.chunk_size;
+    seed["priority"]       = priority;
+    seed["maxRetries"]     = manifest.max_retries;
+    seed["timeoutSeconds"] = manifest.timeout_seconds.value_or(0);
+
+    m_editJobId = jobId;
+    m_editSeed  = seed;
+    emit editJobChanged();
+    return true;
+}
+
+void AppBridge::closeJobEditor()
+{
+    if (m_editJobId.isEmpty() && m_editSeed.isEmpty())
+        return;
+    m_editJobId.clear();
+    m_editSeed.clear();
+    emit editJobChanged();
+}
+
+void AppBridge::applyJobEdit(const QStringList& flagValues,
+                             int frameStart, int frameEnd,
+                             int chunkSize, int priority,
+                             int maxRetries, int timeoutSeconds,
+                             const QString& mode)
+{
+    if (!m_monitor || m_editJobId.isEmpty())
+    {
+        emit submissionFailed(tr("No job is being edited"));
+        return;
+    }
+    if (frameStart > frameEnd)
+    {
+        emit submissionFailed(tr("Frame start must be <= frame end"));
+        return;
+    }
+    if (chunkSize < 1)
+    {
+        emit submissionFailed(tr("Chunk size must be at least 1"));
+        return;
+    }
+
+    const std::string jobId = m_editJobId.toStdString();
+
+    // Re-fetch the stored manifest rather than trusting the seed — the
+    // job may have been edited elsewhere since the dialog opened.
+    const std::string storedJson = m_monitor->getJobManifestJson(jobId);
+    if (storedJson.empty())
+    {
+        emit submissionFailed(tr("Job manifest unavailable (leader unreachable?)"));
+        return;
+    }
+    JobManifest manifest;
+    try
+    {
+        manifest = nlohmann::json::parse(storedJson).get<JobManifest>();
+    }
+    catch (const std::exception& e)
+    {
+        emit submissionFailed(tr("Stored manifest is invalid: %1").arg(e.what()));
+        return;
+    }
+
+    std::vector<std::string> fvs;
+    fvs.reserve(static_cast<size_t>(flagValues.size()));
+    for (const auto& v : flagValues)
+        fvs.push_back(v.toStdString());
+
+    const bool templateFound = m_editSeed.value("templateFound").toBool();
+    if (templateFound)
+    {
+        // Re-bake through the template, exactly like a fresh submission,
+        // then restore the job's identity/provenance fields.
+        const std::string tid = m_editSeed.value("templateId").toString().toStdString();
+        const auto& tmpls = m_monitor->cachedTemplates();
+        auto it = std::find_if(tmpls.begin(), tmpls.end(),
+            [&](const JobTemplate& t) { return t.template_id == tid; });
+        if (it == tmpls.end())
+        {
+            emit submissionFailed(tr("Template no longer available: %1")
+                .arg(QString::fromStdString(tid)));
+            return;
+        }
+        const JobTemplate& tmpl = *it;
+
+        if (fvs.size() != tmpl.flags.size())
+        {
+            emit submissionFailed(tr("Template changed while editing — reopen the editor"));
+            return;
+        }
+        for (size_t i = 0; i < tmpl.flags.size(); ++i)
+        {
+            if (tmpl.flags[i].required && tmpl.flags[i].editable && fvs[i].empty())
+            {
+                emit submissionFailed(tr("Required flag is empty: %1")
+                    .arg(QString::fromStdString(
+                        tmpl.flags[i].info.empty() ? tmpl.flags[i].flag
+                                                   : tmpl.flags[i].info)));
+                return;
+            }
+        }
+
+        const std::string os  = MR::getOS();
+        const std::string cmd = MR::getCmdForOS(tmpl.cmd, os);
+        if (cmd.empty())
+        {
+            emit submissionFailed(tr("Template has no executable for this OS"));
+            return;
+        }
+
+        JobManifest baked = TemplateManager::bakeManifestStatic(
+            tmpl, fvs, cmd, jobId,
+            frameStart, frameEnd, chunkSize,
+            maxRetries,
+            timeoutSeconds > 0 ? std::optional<int>(timeoutSeconds) : std::nullopt,
+            m_monitor->identity().nodeId(), os);
+
+        baked.submitted_by    = manifest.submitted_by;
+        baked.submitted_at_ms = manifest.submitted_at_ms;
+        baked.submitted_os    = manifest.submitted_os;
+        manifest = std::move(baked);
+    }
+    else
+    {
+        // Mutate the stored manifest in place — the edit form's rows
+        // were built 1:1 from manifest.flags.
+        if (fvs.size() != manifest.flags.size())
+        {
+            emit submissionFailed(tr("Job changed while editing — reopen the editor"));
+            return;
+        }
+        for (size_t i = 0; i < fvs.size(); ++i)
+            manifest.flags[i].value = fvs[i];
+
+        manifest.frame_start = frameStart;
+        manifest.frame_end   = frameEnd;
+        manifest.chunk_size  = chunkSize;
+        manifest.max_retries = maxRetries;
+        manifest.timeout_seconds =
+            timeoutSeconds > 0 ? std::optional<int>(timeoutSeconds) : std::nullopt;
+
+        // Re-derive output_dir from the first output flag. Manual
+        // separator scan instead of fs::path so canonical Windows paths
+        // parse on macOS too; keep the old value if nothing derivable.
+        for (const auto& f : manifest.flags)
+        {
+            if (!f.is_output || !f.value.has_value() || f.value->empty())
+                continue;
+            const std::string& v = *f.value;
+            const size_t sep = v.find_last_of("/\\");
+            if (sep != std::string::npos && sep > 0)
+                manifest.output_dir = v.substr(0, sep);
+            break;
+        }
+    }
+
+#ifdef Q_OS_MACOS
+    // Same canonicalization boundary as submitJob — see the comment
+    // there. Native mac paths go back to canonical Windows form.
+    if (MR::currentOsTag() == "mac")
+    {
+        const auto& mappings = m_monitor->config().path_mappings;
+        for (auto& flag : manifest.flags)
+        {
+            if (flag.value.has_value() && !flag.value->empty())
+                flag.value = MR::toCanonicalPath(*flag.value, mappings);
+        }
+        if (manifest.output_dir.has_value() && !manifest.output_dir->empty())
+            manifest.output_dir = MR::toCanonicalPath(*manifest.output_dir, mappings);
+        manifest.submitted_os = "windows";
+    }
+#endif
+
+    manifest.job_id = jobId;
+
+    nlohmann::json mj = manifest;
+    m_monitor->editJob(jobId, mj.dump(), mode.toStdString(), priority);
+
+    emit editApplied();
+    closeJobEditor();
 }
 
 void AppBridge::requestRestart()

@@ -60,6 +60,8 @@ class AppBridge : public QObject
     // or by selecting an existing job.
     Q_PROPERTY(bool submissionMode READ submissionMode WRITE setSubmissionMode
                NOTIFY submissionModeChanged)
+    Q_PROPERTY(QString editJobId READ editJobId NOTIFY editJobChanged)
+    Q_PROPERTY(QVariantMap editSeed READ editSeed NOTIFY editJobChanged)
 
     // Full snapshot of the currently-selected job as a QVariantMap:
     // {jobId, name, state, progress, totalChunks, doneChunks,
@@ -148,6 +150,8 @@ public:
     void setCurrentJobId(const QString& jobId);
 
     bool submissionMode() const { return m_submissionMode; }
+    QString editJobId() const { return m_editJobId; }
+    QVariantMap editSeed() const { return m_editSeed; }
     void setSubmissionMode(bool on);
 
     bool jobsRefreshPaused() const { return m_jobsRefreshPaused; }
@@ -245,6 +249,53 @@ public:
                                int frameStart, int frameEnd,
                                int chunkSize, int priority);
 
+    // --- Job editing ---
+    // openJobEditor fetches the job's manifest (blocking HTTP on
+    // workers), resolves its template, and exposes an edit seed for the
+    // form via editSeed/editJobId. applyJobEdit re-bakes (or, when the
+    // template is gone, mutates) the manifest and hands it to
+    // MonitorApp::editJob with the chosen mode:
+    // "continue" | "restart" | "startover". editApplied fires on
+    // success; submissionFailed carries validation errors (reusing the
+    // form's error banner).
+    // --- Frame preview ---
+    // previewSupported: compiled with the vendored image libs?
+    // jobPreviewInfo: resolve the selected job's newest rendered frame
+    // to a local file ({found, file, frame, isExr}) by globbing the
+    // path-mapped output_dir against the output flag's padded pattern.
+    // exrLayers: layer names for the contact sheet.
+    Q_PROPERTY(bool previewSupported READ previewSupported CONSTANT)
+    bool previewSupported() const;
+    Q_INVOKABLE QVariantMap jobPreviewInfo(const QString& jobId);
+    // Same resolution restricted to a frame range (frame pin: fs==fe,
+    // chunk pin: chunk bounds). Needs a #-padded output pattern; jobs
+    // without one can only follow "latest".
+    Q_INVOKABLE QVariantMap rangePreviewInfo(const QString& jobId,
+                                             int frameStart, int frameEnd);
+    Q_INVOKABLE QStringList exrLayers(const QString& filePath);
+
+    // --- Preview pin ---
+    // The grid / chunk table (Job Detail) pin the preview (Node panel)
+    // through here. pinPreview refuses — returns false, state unchanged
+    // — when no file for the range exists on disk yet (not rendered, or
+    // rendered but still in a node's local staging). -1/-1 = follow
+    // latest. Cleared on job switch, by the preview's Latest button, and
+    // by its 60 s auto-return timer.
+    Q_PROPERTY(int previewPinStart READ previewPinStart NOTIFY previewPinChanged)
+    Q_PROPERTY(int previewPinEnd   READ previewPinEnd   NOTIFY previewPinChanged)
+    int previewPinStart() const { return m_previewPinStart; }
+    int previewPinEnd() const { return m_previewPinEnd; }
+    Q_INVOKABLE bool pinPreview(int frameStart, int frameEnd);
+    Q_INVOKABLE void clearPreviewPin();
+
+    Q_INVOKABLE bool openJobEditor(const QString& jobId);
+    Q_INVOKABLE void closeJobEditor();
+    Q_INVOKABLE void applyJobEdit(const QStringList& flagValues,
+                                  int frameStart, int frameEnd,
+                                  int chunkSize, int priority,
+                                  int maxRetries, int timeoutSeconds,
+                                  const QString& mode);
+
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
 
@@ -334,10 +385,16 @@ signals:
 
     void submissionSucceeded(const QString& jobId);
     void submissionFailed(const QString& reason);
+    void editApplied();
+    void editJobChanged();
+    void previewPinChanged();
 
     void pathMappingsChanged();
 
 private:
+    QVariantMap previewInfoForRange(const QString& jobId,
+                                    int frameStart, int frameEnd);
+
     // Snapshot of MonitorApp::config() taken at construction and after each
     // saveSettings(). revertSettings() copies this back, emitting *Changed
     // for every property so bound QML rebinds.
@@ -383,6 +440,10 @@ private:
     QStringList                     m_taskOutputLines;  // task mode selected chunk contents
 
     bool m_submissionMode   = false;
+    QString m_editJobId;
+    QVariantMap m_editSeed;
+    int m_previewPinStart = -1;
+    int m_previewPinEnd   = -1;
     bool m_jobsRefreshPaused = false;
     bool m_lastFarmRunning  = false;
     bool m_lastIsLeader     = false;
