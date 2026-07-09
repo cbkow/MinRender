@@ -174,6 +174,31 @@ void HttpServer::setupRoutes()
         }
     });
 
+    // POST /api/render/abort -- leader push after a job edit reset this
+    // node's in-flight chunk: abandon the render (no failure bookkeeping)
+    // and drop any queued dispatches for the job.
+    m_server.Post("/api/render/abort", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!m_app)
+        {
+            res.status = 503;
+            return;
+        }
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            const std::string jobId = body.at("job_id").get<std::string>();
+            m_app->abandonJobRender(jobId, "job edited");
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
     // --- Leader-only endpoints ---
 
     // POST /api/jobs -- submit a new job
@@ -339,6 +364,55 @@ void HttpServer::setupRoutes()
         std::string jobId = req.matches[1];
         m_app->requeueJob(jobId);
         res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
+    // GET /api/jobs/:id/manifest -- full stored manifest (for job editing
+    // from worker nodes)
+    m_server.Get(R"(/api/jobs/([^/]+)/manifest)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+        std::string jobId = req.matches[1];
+        const std::string manifest = m_app->getJobManifestJson(jobId);
+        if (manifest.empty())
+        {
+            res.status = 404;
+            res.set_content(R"({"error":"not_found"})", "application/json");
+            return;
+        }
+        try
+        {
+            nlohmann::json resp = {{"manifest", nlohmann::json::parse(manifest)}};
+            res.set_content(resp.dump(), "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 500;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
+    // POST /api/jobs/:id/edit -- apply an edited manifest to an existing job.
+    // Body: {manifest: {...}, mode: "continue"|"restart"|"startover", priority: N}
+    m_server.Post(R"(/api/jobs/([^/]+)/edit)", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+        std::string jobId = req.matches[1];
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            const std::string manifest = body.at("manifest").dump();
+            const std::string mode     = body.value("mode", "continue");
+            const int priority         = body.value("priority", 50);
+            m_app->editJob(jobId, manifest, mode, priority);
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
     });
 
     // POST /api/jobs/:id/resubmit -- create new job from existing manifest

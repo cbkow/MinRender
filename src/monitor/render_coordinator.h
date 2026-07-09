@@ -43,6 +43,11 @@ public:
 
     // Abort (kill-only — no drain concept)
     void abortCurrentRender(const std::string& reason);
+    // Abort without failure bookkeeping: reports the chunk "abandoned"
+    // (leader ignores it) instead of "failed" (which blacklists this
+    // node on the chunk and burns a retry). Used for administrative
+    // aborts — job edits — where the leader already reset the chunk.
+    void abandonCurrentRender(const std::string& reason);
     void purgeJob(const std::string& jobId);  // Remove queued (not yet active) chunks for a job
 
     // Mark a job as deleted so post-cancel stdout from the agent is

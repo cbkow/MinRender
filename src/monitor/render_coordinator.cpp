@@ -221,6 +221,28 @@ void RenderCoordinator::abortCurrentRender(const std::string& reason)
     failChunk(reason);
 }
 
+void RenderCoordinator::abandonCurrentRender(const std::string& reason)
+{
+    if (!m_activeRender.has_value())
+        return;
+
+    auto& ar = m_activeRender.value();
+    const std::string jobId = ar.manifest.job_id;
+    const ChunkRange chunk = ar.chunk;
+
+    MonitorLog::instance().warn("render", "Abandoning render: job=" + jobId
+        + " chunk=" + chunk.rangeStr() + " reason=" + reason);
+
+    if (m_supervisor)
+        m_supervisor->sendAbort(reason);
+
+    flushStdout();
+    m_disconnectGraceActive = false;
+    m_activeRender.reset();
+    if (m_completionFn)
+        m_completionFn(jobId, chunk, "abandoned");
+}
+
 void RenderCoordinator::purgeJob(const std::string& jobId)
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);

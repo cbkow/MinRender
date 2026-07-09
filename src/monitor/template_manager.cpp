@@ -81,22 +81,25 @@ std::vector<JobTemplate> TemplateManager::doScan()
 {
     std::vector<JobTemplate> templates;
 
-    // Load examples first, then user templates
-    loadTemplatesFromDir(m_farmPath / "templates" / "examples", true, templates);
-    loadTemplatesFromDir(m_farmPath / "templates", false, templates);
+    // Load examples and DCC plugin templates first, then user templates.
+    // Plugin templates are cached so job editing can resolve a
+    // DCC-submitted job's template_id; the New Job picker filters them.
+    loadTemplatesFromDir(m_farmPath / "templates" / "examples", true, false, templates);
+    loadTemplatesFromDir(m_farmPath / "templates" / "plugins", false, true, templates);
+    loadTemplatesFromDir(m_farmPath / "templates", false, false, templates);
 
-    // User templates with same template_id override examples
+    // User templates with same template_id override examples/plugins
     std::set<std::string> userIds;
     for (const auto& t : templates)
     {
-        if (!t.isExample)
+        if (!t.isExample && !t.isPlugin)
             userIds.insert(t.template_id);
     }
 
     templates.erase(
         std::remove_if(templates.begin(), templates.end(),
             [&](const JobTemplate& t) {
-                return t.isExample && userIds.count(t.template_id) > 0;
+                return (t.isExample || t.isPlugin) && userIds.count(t.template_id) > 0;
             }),
         templates.end());
 
@@ -109,7 +112,7 @@ std::vector<JobTemplate> TemplateManager::getTemplateSnapshot() const
     return m_templates;
 }
 
-void TemplateManager::loadTemplatesFromDir(const std::filesystem::path& dir, bool isExample,
+void TemplateManager::loadTemplatesFromDir(const std::filesystem::path& dir, bool isExample, bool isPlugin,
                                             std::vector<JobTemplate>& out)
 {
     namespace fs = std::filesystem;
@@ -155,6 +158,7 @@ void TemplateManager::loadTemplatesFromDir(const std::filesystem::path& dir, boo
             invalid.valid = false;
             invalid.validation_error = "Failed to parse JSON";
             invalid.isExample = isExample;
+            invalid.isPlugin = isPlugin;
             out.push_back(std::move(invalid));
             continue;
         }
@@ -163,6 +167,7 @@ void TemplateManager::loadTemplatesFromDir(const std::filesystem::path& dir, boo
         {
             auto tmpl = data.value().get<JobTemplate>();
             tmpl.isExample = isExample;
+            tmpl.isPlugin = isPlugin;
             validateTemplate(tmpl);
             out.push_back(std::move(tmpl));
         }
@@ -174,6 +179,7 @@ void TemplateManager::loadTemplatesFromDir(const std::filesystem::path& dir, boo
             invalid.valid = false;
             invalid.validation_error = std::string("Parse error: ") + e.what();
             invalid.isExample = isExample;
+            invalid.isPlugin = isPlugin;
             out.push_back(std::move(invalid));
         }
     }

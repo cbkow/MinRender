@@ -39,6 +39,10 @@ struct JobRow
 struct JobProgress
 {
     int total = 0, completed = 0, failed = 0, rendering = 0, pending = 0;
+    // Wall-clock duration endpoints, aggregated over the job's chunks.
+    // 0 = no chunk assigned / completed yet.
+    int64_t first_assigned_ms = 0;
+    int64_t last_completed_ms = 0;
 };
 
 struct JobSummary
@@ -83,6 +87,18 @@ public:
     int reassignDeadWorkerChunks(const std::string& deadNodeId);
     std::string getJobCompletionState(const std::string& jobId);
     bool resetAllChunks(const std::string& jobId);
+
+    // --- Job editing ---
+    bool updateJobManifest(const std::string& jobId, const std::string& manifestJson);
+    // Nodes currently rendering this job (distinct assigned_to of
+    // 'assigned' chunks) — collected before a reset so the caller can
+    // push aborts to them.
+    std::vector<std::string> getAssignedNodes(const std::string& jobId);
+    // Return in-flight chunks to the pool; completed/failed are untouched.
+    bool resetAssignedChunks(const std::string& jobId);
+    // Drop every chunk row and insert a fresh set (start over with a
+    // new frame range / chunk size).
+    bool rebuildChunks(const std::string& jobId, const std::vector<ChunkRange>& chunks);
     bool retryFailedChunks(const std::string& jobId);
     bool reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
     void markChunksCompleted(const std::string& jobId, const std::vector<ChunkRange>& ranges);

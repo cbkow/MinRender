@@ -111,6 +111,9 @@ struct JobTemplate
     bool valid = false;
     std::string validation_error;
     bool isExample = false;
+    bool isPlugin  = false;   // lives in templates/plugins/ (DCC submission
+                              // templates) — resolvable for job editing but
+                              // hidden from the New Job picker
 };
 
 // ─── Manifest-specific structs ──────────────────────────────────────────────
@@ -169,6 +172,10 @@ struct JobInfo
     int completed_chunks = 0;
     int failed_chunks = 0;
     int rendering_chunks = 0;
+    // Wall-clock duration endpoints (earliest chunk assignment /
+    // latest chunk completion); 0 = not yet.
+    int64_t first_assigned_ms = 0;
+    int64_t last_completed_ms = 0;
 };
 
 // ─── Chunk structs ──────────────────────────────────────────────────────────

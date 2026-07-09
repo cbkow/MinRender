@@ -596,6 +596,8 @@ void MonitorApp::refreshCachedJobs()
             info.completed_chunks = s.progress.completed;
             info.failed_chunks = s.progress.failed;
             info.rendering_chunks = s.progress.rendering;
+            info.first_assigned_ms = s.progress.first_assigned_ms;
+            info.last_completed_ms = s.progress.last_completed_ms;
 
             // Build JSON for HTTP cache BEFORE moving info
             nlohmann::json jj = {
@@ -613,6 +615,8 @@ void MonitorApp::refreshCachedJobs()
                 {"failed_chunks", s.progress.failed},
                 {"rendering_chunks", s.progress.rendering},
                 {"pending_chunks", s.progress.pending},
+                {"first_assigned_ms", s.progress.first_assigned_ms},
+                {"last_completed_ms", s.progress.last_completed_ms},
             };
             if (info.manifest.output_dir.has_value())
                 jj["output_dir"] = info.manifest.output_dir.value();
@@ -669,6 +673,8 @@ void MonitorApp::refreshCachedJobs()
                                 info.completed_chunks = jj.value("completed_chunks", 0);
                                 info.failed_chunks = jj.value("failed_chunks", 0);
                                 info.rendering_chunks = jj.value("rendering_chunks", 0);
+                                info.first_assigned_ms = jj.value("first_assigned_ms", int64_t(0));
+                                info.last_completed_ms = jj.value("last_completed_ms", int64_t(0));
                                 if (jj.contains("output_dir") && jj["output_dir"].is_string())
                                     info.manifest.output_dir = jj["output_dir"].get<std::string>();
                                 jobs.push_back(std::move(info));
@@ -1191,6 +1197,159 @@ void MonitorApp::restartPeerApp(const std::string& nodeId)
     {
         std::lock_guard<std::mutex> lock(m_httpQueueMutex);
         m_httpQueue.push(std::move(req));
+    }
+}
+
+void MonitorApp::editJob(const std::string& jobId, const std::string& manifestJson,
+                          const std::string& mode, int priority)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        JobManifest manifest;
+        try
+        {
+            manifest = nlohmann::json::parse(manifestJson).get<JobManifest>();
+        }
+        catch (const std::exception& e)
+        {
+            MonitorLog::instance().error("job",
+                "editJob: invalid manifest for " + jobId + ": " + e.what());
+            return;
+        }
+        if (manifest.job_id != jobId)
+        {
+            MonitorLog::instance().error("job",
+                "editJob: manifest job_id mismatch (" + manifest.job_id + " vs " + jobId + ")");
+            return;
+        }
+
+        m_databaseManager.updateJobPriority(jobId, priority);
+        m_databaseManager.updateJobManifest(jobId, manifestJson);
+
+        if (mode == "restart" || mode == "startover")
+        {
+            // Snapshot who is rendering this job before the reset — they
+            // get an abort push below. A node that misses the push just
+            // finishes a wasted render; its stale report bounces off the
+            // chunk-state guards.
+            const auto nodes = m_databaseManager.getAssignedNodes(jobId);
+
+            if (mode == "restart")
+            {
+                m_databaseManager.resetAssignedChunks(jobId);
+            }
+            else
+            {
+                m_databaseManager.rebuildChunks(jobId,
+                    computeChunks(manifest.frame_start, manifest.frame_end,
+                                  manifest.chunk_size));
+            }
+            m_databaseManager.updateJobState(jobId, "active");
+
+            const nlohmann::json abortBody = {{"job_id", jobId}};
+            for (const auto& nodeId : nodes)
+            {
+                if (nodeId == m_identity.nodeId())
+                    continue;
+                const std::string ep = peerEndpointFor(m_peerManager.getPeerSnapshot(), nodeId);
+                if (ep.empty())
+                    continue;   // offline — dead-worker reclaim covers it
+                auto [host, port] = parseEndpoint(ep);
+                if (host.empty())
+                    continue;
+
+                HttpRequest req;
+                req.host     = host;
+                req.port     = port;
+                req.method   = "POST";
+                req.endpoint = "/api/render/abort";
+                req.body     = abortBody.dump();
+                req.callback = [nodeId](bool ok, const std::string& resp) {
+                    logPeerResult("render abort", nodeId, ok, resp);
+                };
+                {
+                    std::lock_guard<std::mutex> lock(m_httpQueueMutex);
+                    m_httpQueue.push(std::move(req));
+                }
+            }
+            abandonJobRender(jobId, "job edited");
+        }
+
+        MonitorLog::instance().info("job", "Edited job " + jobId + " (mode=" + mode + ")");
+        refreshCachedJobs();
+    }
+    else
+    {
+        nlohmann::json body;
+        try
+        {
+            body = {{"manifest", nlohmann::json::parse(manifestJson)},
+                    {"mode", mode},
+                    {"priority", priority}};
+        }
+        catch (const std::exception& e)
+        {
+            MonitorLog::instance().error("job",
+                "editJob: invalid manifest for " + jobId + ": " + e.what());
+            return;
+        }
+        postToLeaderAsync("/api/jobs/" + jobId + "/edit", body.dump(),
+            [jobId, this](bool ok, const std::string& resp) {
+                if (ok)
+                {
+                    MonitorLog::instance().info("job", "Edited job " + jobId);
+                    m_forceJobsRefresh.store(true);
+                }
+                else
+                {
+                    std::string msg = "Edit failed for " + jobId;
+                    if (!resp.empty()) msg += " — leader responded: " + resp;
+                    else               msg += " — no response (leader unreachable or missing endpoint)";
+                    MonitorLog::instance().warn("job", msg);
+                }
+            });
+    }
+}
+
+void MonitorApp::abandonJobRender(const std::string& jobId, const std::string& reason)
+{
+    if (m_renderCoordinator.isRendering() && m_renderCoordinator.currentJobId() == jobId)
+        m_renderCoordinator.abandonCurrentRender(reason);
+    m_renderCoordinator.purgeJob(jobId);
+}
+
+std::string MonitorApp::getJobManifestJson(const std::string& jobId)
+{
+    if (isLeader() && m_leaderDbReady.load() && m_databaseManager.isOpen())
+    {
+        auto jobOpt = m_databaseManager.getJob(jobId);
+        return jobOpt.has_value() ? jobOpt->manifest_json : std::string{};
+    }
+
+    std::string leaderEp = getLeaderEndpoint();
+    if (leaderEp.empty())
+        return {};
+    auto [host, port] = parseEndpoint(leaderEp);
+    if (host.empty())
+        return {};
+
+    try
+    {
+        httplib::Client cli(host, port);
+        cli.set_connection_timeout(0, 500000); // 500ms
+        cli.set_read_timeout(2);
+
+        auto res = cli.Get("/api/jobs/" + jobId + "/manifest", authHeaders(m_farmSecret));
+        if (!res || res->status != 200)
+            return {};
+        auto body = nlohmann::json::parse(res->body);
+        if (!body.contains("manifest"))
+            return {};
+        return body["manifest"].dump();
+    }
+    catch (...)
+    {
+        return {};
     }
 }
 

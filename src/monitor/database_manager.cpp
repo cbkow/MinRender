@@ -191,6 +191,20 @@ std::vector<JobSummary> DatabaseManager::getAllJobs()
                 else if (state == "pending")   s.progress.pending = count;
             }
 
+            // Duration endpoints — MIN/MAX skip NULLs, so unassigned
+            // chunks don't drag first_assigned to zero.
+            SQLite::Statement tq(*m_db,
+                "SELECT MIN(assigned_at_ms), MAX(completed_at_ms) "
+                "FROM chunks WHERE job_id = ?");
+            tq.bind(1, s.job.job_id);
+            if (tq.executeStep())
+            {
+                if (!tq.getColumn(0).isNull())
+                    s.progress.first_assigned_ms = tq.getColumn(0).getInt64();
+                if (!tq.getColumn(1).isNull())
+                    s.progress.last_completed_ms = tq.getColumn(1).getInt64();
+            }
+
             result.push_back(std::move(s));
         }
     }
@@ -726,6 +740,82 @@ bool DatabaseManager::resetAllChunks(const std::string& jobId)
         MonitorLog::instance().error("db", std::string("resetAllChunks failed: ") + e.what());
         return false;
     }
+}
+
+bool DatabaseManager::updateJobManifest(const std::string& jobId, const std::string& manifestJson)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "UPDATE jobs SET manifest_json = ? WHERE job_id = ?");
+        q.bind(1, manifestJson);
+        q.bind(2, jobId);
+        return q.exec() > 0;
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("updateJobManifest failed: ") + e.what());
+        return false;
+    }
+}
+
+std::vector<std::string> DatabaseManager::getAssignedNodes(const std::string& jobId)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::vector<std::string> nodes;
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "SELECT DISTINCT assigned_to FROM chunks "
+            "WHERE job_id = ? AND state = 'assigned' AND assigned_to IS NOT NULL");
+        q.bind(1, jobId);
+        while (q.executeStep())
+            nodes.push_back(q.getColumn(0).getString());
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("getAssignedNodes failed: ") + e.what());
+    }
+    return nodes;
+}
+
+bool DatabaseManager::resetAssignedChunks(const std::string& jobId)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "UPDATE chunks SET state = 'pending', assigned_to = NULL, assigned_at_ms = NULL "
+            "WHERE job_id = ? AND state = 'assigned'");
+        q.bind(1, jobId);
+        q.exec();
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("resetAssignedChunks failed: ") + e.what());
+        return false;
+    }
+}
+
+bool DatabaseManager::rebuildChunks(const std::string& jobId, const std::vector<ChunkRange>& chunks)
+{
+    // The recursive mutex stays held across delete + insert, so dispatch
+    // (same-thread) can never observe the empty in-between state.
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        SQLite::Statement q(*m_db, "DELETE FROM chunks WHERE job_id = ?");
+        q.bind(1, jobId);
+        q.exec();
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("rebuildChunks delete failed: ") + e.what());
+        return false;
+    }
+    return insertChunks(jobId, chunks);
 }
 
 bool DatabaseManager::retryFailedChunks(const std::string& jobId)

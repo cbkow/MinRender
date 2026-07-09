@@ -69,6 +69,21 @@ public:
     // worker-side forwards always return true (result arrives async).
     bool moveJob(const std::string& jobId, const std::string& targetJobId, bool before);
     void setJobPriority(const std::string& jobId, int priority);
+    // Apply an edited manifest to an existing job. mode:
+    //   "continue"  — manifest UPDATE only; next dispatches pick it up
+    //   "restart"   — also return in-flight chunks to pending + abort them
+    //   "startover" — also drop and recompute ALL chunks from the new
+    //                 frame range / chunk size
+    void editJob(const std::string& jobId, const std::string& manifestJson,
+                 const std::string& mode, int priority);
+    // Abort a local in-flight render of this job without failure
+    // bookkeeping (see RenderCoordinator::abandonCurrentRender). Called
+    // by the leader's edit push via POST /api/render/abort.
+    void abandonJobRender(const std::string& jobId, const std::string& reason);
+    // Full manifest JSON for a job — from the DB on the leader, via a
+    // blocking HTTP GET to the leader on workers (same pattern as
+    // getChunksForJob). Empty string when unavailable.
+    std::string getJobManifestJson(const std::string& jobId);
     void cancelJob(const std::string& jobId);
     void requeueJob(const std::string& jobId);
     void deleteJob(const std::string& jobId);

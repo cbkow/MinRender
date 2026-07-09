@@ -72,7 +72,7 @@ public:
 private:
     void threadFunc();
     std::vector<JobTemplate> doScan();
-    void loadTemplatesFromDir(const std::filesystem::path& dir, bool isExample,
+    void loadTemplatesFromDir(const std::filesystem::path& dir, bool isExample, bool isPlugin,
                               std::vector<JobTemplate>& out);
 
     std::filesystem::path m_farmPath;
