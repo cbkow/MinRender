@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <map>
 #include <filesystem>
 #include <thread>
 #include <unordered_map>
@@ -172,7 +173,8 @@ void DispatchManager::processReports()
         auto& r = completions.front();
         auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
-        m_db->completeChunk(r.job_id, r.frame_start, r.frame_end, nowMs);
+        m_db->completeChunk(r.job_id, r.frame_start, r.frame_end, nowMs,
+                            r.node_id, r.edit_epoch);
         MonitorLog::instance().info("dispatch",
             "Chunk completed: " + r.job_id + " f" + std::to_string(r.frame_start) +
             "-" + std::to_string(r.frame_end) + " by " + r.node_id);
@@ -195,7 +197,8 @@ void DispatchManager::processReports()
             catch (...) {}
         }
 
-        m_db->failChunk(r.job_id, r.frame_start, r.frame_end, maxRetries, r.node_id);
+        m_db->failChunk(r.job_id, r.frame_start, r.frame_end, maxRetries,
+                        r.node_id, r.edit_epoch);
 
         // Record in machine-level failure tracker
         if (!r.node_id.empty())
@@ -228,19 +231,24 @@ void DispatchManager::processReports()
         reverts.pop();
     }
 
-    // Drain frame completions — batch by job_id for efficiency
+    // Drain frame completions — batch by (job_id, epoch) so a batch
+    // from before an edit can be dropped whole. The HTTP handler
+    // already answers stale pushes, but the epoch can move between
+    // queue and drain.
     if (!frameReports.empty())
     {
-        std::unordered_map<std::string, std::vector<int>> byJob;
+        std::map<std::pair<std::string, int64_t>, std::vector<int>> byJob;
         while (!frameReports.empty())
         {
             auto& fr = frameReports.front();
-            byJob[fr.job_id].push_back(fr.frame);
+            byJob[{fr.job_id, fr.edit_epoch}].push_back(fr.frame);
             frameReports.pop();
         }
-        for (auto& [jobId, frames] : byJob)
+        for (auto& [key, frames] : byJob)
         {
-            m_db->addCompletedFramesBatch(jobId, frames);
+            if (!m_db->isJobEpochCurrent(key.first, key.second))
+                continue;
+            m_db->addCompletedFramesBatch(key.first, frames);
         }
     }
 }
@@ -373,8 +381,10 @@ void DispatchManager::assignWork()
         auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 
-        // Assign in DB
-        if (!m_db->assignChunk(chunk.id, peer.node_id, nowMs))
+        // Assign in DB, stamping the job's current edit epoch onto the
+        // chunk — reports echo it back so pre-edit renders are fenced.
+        const int64_t editEpoch = m_db->getJobEditEpoch(chunk.job_id);
+        if (!m_db->assignChunk(chunk.id, peer.node_id, nowMs, editEpoch))
             continue;
 
         // Dispatch to worker
@@ -385,7 +395,7 @@ void DispatchManager::assignWork()
             {
                 auto manifest = nlohmann::json::parse(manifestJson).get<JobManifest>();
                 ChunkRange cr{chunk.frame_start, chunk.frame_end};
-                m_app->renderCoordinator().queueDispatch(manifest, cr);
+                m_app->renderCoordinator().queueDispatch(manifest, cr, editEpoch);
                 m_dispatchedNodes[peer.node_id] = std::chrono::steady_clock::now();
                 MonitorLog::instance().info("dispatch",
                     "Self-assigned: " + chunk.job_id + " f" + std::to_string(chunk.frame_start) +
@@ -462,6 +472,7 @@ void DispatchManager::assignWork()
                 {"manifest", manifestData},
                 {"frame_start", chunk.frame_start},
                 {"frame_end", chunk.frame_end},
+                {"edit_epoch", editEpoch},   // old workers ignore this
             };
             std::string bodyStr = body.dump();
             std::string jobId = chunk.job_id;

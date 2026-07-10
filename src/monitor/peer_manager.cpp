@@ -19,7 +19,6 @@ static int64_t nowMs()
 void PeerManager::start(const std::filesystem::path& farmPath,
                         const std::string& nodeId,
                         const std::string& localEndpoint,
-                        int localPriority,
                         const std::vector<std::string>& localTags)
 {
     if (m_running.load())
@@ -28,7 +27,6 @@ void PeerManager::start(const std::filesystem::path& farmPath,
     m_farmPath = farmPath;
     m_nodeId = nodeId;
     m_localEndpoint = localEndpoint;
-    m_localPriority = localPriority;
     m_localTags = localTags;
 
     // Write initial endpoint immediately
@@ -80,11 +78,6 @@ void PeerManager::setNodeState(const std::string& state)
 {
     std::lock_guard<std::mutex> lock(m_stateMutex);
     m_nodeState = state;
-}
-
-void PeerManager::setLocalPriority(int priority)
-{
-    m_localPriority = priority;
 }
 
 void PeerManager::setPeerNodeState(const std::string& nodeId, const std::string& state)
@@ -327,7 +320,7 @@ void PeerManager::pollPeers()
 
     // Take a snapshot of peers to poll (avoid holding lock during HTTP calls)
     // Adaptive: peers with UDP contact get polled every ~9s (skip 2 out of 3 cycles)
-    std::vector<std::pair<std::string, std::string>> toCheck;  // nodeId, endpoint
+    std::vector<std::tuple<std::string, std::string, double>> toCheck;  // nodeId, endpoint, rtt EWMA ms
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         for (const auto& [id, info] : m_peers)
@@ -339,11 +332,11 @@ void PeerManager::pollPeers()
                 if (info.last_seen_ms > 0 && (now - info.last_seen_ms < 9000))
                     continue;
             }
-            toCheck.emplace_back(id, info.endpoint);
+            toCheck.emplace_back(id, info.endpoint, info.poll_rtt_ewma_ms);
         }
     }
 
-    for (const auto& [nodeId, endpoint] : toCheck)
+    for (const auto& [nodeId, endpoint, rttEwma] : toCheck)
     {
         if (!m_running.load())
             return;
@@ -359,11 +352,22 @@ void PeerManager::pollPeers()
         }
 
         // Fresh client per call (httplib::Client is not safe for concurrent reuse)
+        // Timeouts adapt to the peer's observed RTT so a slow home-VPN
+        // node isn't declared dead by LAN-tuned limits: 4× the smoothed
+        // RTT, floored at the old LAN values (2s/3s), capped at 8s so a
+        // truly dead peer still resolves in ~3 polls.
+        const int64_t connectMs = std::clamp<int64_t>(
+            static_cast<int64_t>(rttEwma * 4.0), 2000, 8000);
         httplib::Client cli(host, port);
-        cli.set_connection_timeout(2);
-        cli.set_read_timeout(3);
+        cli.set_connection_timeout(connectMs / 1000,
+                                   (connectMs % 1000) * 1000);
+        cli.set_read_timeout((connectMs + 1000) / 1000,
+                             ((connectMs + 1000) % 1000) * 1000);
 
+        const auto pollStart = std::chrono::steady_clock::now();
         auto res = cli.Get("/api/status");
+        const double rttMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - pollStart).count();
 
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_peers.find(nodeId);
@@ -398,6 +402,12 @@ void PeerManager::pollPeers()
                 if (it->second.has_udp_contact)
                     updated.ready_for_work = it->second.ready_for_work;
 
+                // Smooth the poll RTT (only successful polls sample it —
+                // a timeout would just echo the timeout back).
+                updated.poll_rtt_ewma_ms = it->second.poll_rtt_ewma_ms <= 0.0
+                    ? rttMs
+                    : it->second.poll_rtt_ewma_ms * 0.7 + rttMs * 0.3;
+
                 it->second = updated;
             }
             catch (const std::exception&)
@@ -411,8 +421,13 @@ void PeerManager::pollPeers()
             it->second.failed_polls++;
         }
 
-        // 3 consecutive failures = dead
-        if (it->second.failed_polls >= 3 && it->second.is_alive)
+        // 3 consecutive failures = dead — but recent UDP contact vetoes
+        // the verdict: the node is provably alive, its HTTP path is
+        // just slow/blocked (typical for home-VPN peers), and killing
+        // it here would trigger chunk reclaim under an active render.
+        const bool recentUdp = it->second.last_udp_contact_ms > 0
+            && (nowMs() - it->second.last_udp_contact_ms) < 10000;
+        if (it->second.failed_polls >= 3 && it->second.is_alive && !recentUdp)
         {
             it->second.is_alive = false;
             MonitorLog::instance().warn("peer", "Peer dead: " + nodeId +

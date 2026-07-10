@@ -155,6 +155,11 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: MrScrollBar {}
 
+            // Click-to-select (single). Purely visual — actions still
+            // come from the context menu — but anchors the menu to a
+            // visibly selected row.
+            property string selectedNodeId: ""
+
             delegate: Rectangle {
                 required property string nodeId
                 required property string hostname
@@ -170,7 +175,9 @@ Item {
 
                 width: peerList.width
                 height: 52
-                color: index % 2 === 0 ? Theme.bgAlt : Theme.surface
+                color: peerList.selectedNodeId === nodeId
+                       ? Theme.selection
+                       : (index % 2 === 0 ? Theme.bgAlt : Theme.surface)
 
                 RowLayout {
                     anchors.fill: parent
@@ -228,8 +235,11 @@ Item {
 
                 MouseArea {
                     anchors.fill: parent
-                    acceptedButtons: Qt.RightButton
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (mouse) => {
+                        peerList.selectedNodeId = nodeId
+                        if (mouse.button !== Qt.RightButton)
+                            return
                         if (isAlive)
                         {
                             livePeerMenu.targetNodeId   = nodeId
@@ -253,6 +263,14 @@ Item {
                 property string targetNodeId:   ""
                 property bool   targetIsActive: false
 
+                // Non-interactive header naming the target node.
+                MenuItem {
+                    enabled: false
+                    text: livePeerMenu.targetNodeId
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.fontSizeSmall
+                }
+                MenuSeparator {}
                 MenuItem {
                     text: livePeerMenu.targetIsActive ? qsTr("Stop") : qsTr("Start")
                     onTriggered: appBridge.setPeerNodeActive(
@@ -272,6 +290,13 @@ Item {
                 id: deadPeerMenu
                 property string targetNodeId: ""
 
+                MenuItem {
+                    enabled: false
+                    text: deadPeerMenu.targetNodeId
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.fontSizeSmall
+                }
+                MenuSeparator {}
                 // Writes an empty `restart` file under {farmPath}/nodes/{id}/
                 // so the peer's filesystem watcher triggers a local restart
                 // next time it comes back online.

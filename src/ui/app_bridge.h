@@ -187,14 +187,18 @@ public:
     Q_INVOKABLE void writePeerRestartSignal(const QString& nodeId);
     Q_INVOKABLE void forgetPeer(const QString& nodeId);
 
-    // Farm cleanup. scanFarmCleanup returns a QVariantMap mirroring
-    // MonitorApp::scanFarmCleanup's JSON shape — six item lists that
-    // the dialog renders with checkboxes. executeFarmCleanup applies
-    // one of {archive, delete_jobs, delete_dirs, remove_peers} to the
-    // selected ids and returns the count processed.
-    Q_INVOKABLE QVariantMap scanFarmCleanup();
-    Q_INVOKABLE int         executeFarmCleanup(const QString& action,
-                                               const QStringList& ids);
+    // Farm cleanup — async: the scan walks the farm share (seconds on a
+    // slow SMB link), so both run on a worker thread and report back
+    // via farmCleanupScanReady with MonitorApp::scanFarmCleanup's JSON
+    // shape (six item lists the dialog renders with checkboxes).
+    // requestFarmCleanupAction applies one of {archive, delete_jobs,
+    // delete_dirs, remove_peers} to the selected ids, then rescans in
+    // the same pass. cleanupBusy gates the dialog's buttons meanwhile.
+    Q_INVOKABLE void requestFarmCleanupScan();
+    Q_INVOKABLE void requestFarmCleanupAction(const QString& action,
+                                              const QStringList& ids);
+    Q_PROPERTY(bool cleanupBusy READ cleanupBusy NOTIFY cleanupBusyChanged)
+    bool cleanupBusy() const { return m_cleanupBusy; }
 
     // Job controls — forwarded to MonitorApp. Each takes the slug /
     // job_id exposed by JobsModel. No-op when jobId is empty.
@@ -248,16 +252,22 @@ public:
                                const QStringList& flagValues,
                                int frameStart, int frameEnd,
                                int chunkSize, int priority);
+    // True while a submission round-trips to the leader — the form's
+    // Submit button gates on it (same pattern as editBusy).
+    Q_PROPERTY(bool submitBusy READ submitBusy NOTIFY submitBusyChanged)
+    bool submitBusy() const { return m_submitBusy; }
 
     // --- Job editing ---
-    // openJobEditor fetches the job's manifest (blocking HTTP on
-    // workers), resolves its template, and exposes an edit seed for the
-    // form via editSeed/editJobId. applyJobEdit re-bakes (or, when the
-    // template is gone, mutates) the manifest and hands it to
-    // MonitorApp::editJob with the chosen mode:
-    // "continue" | "restart" | "startover". editApplied fires on
-    // success; submissionFailed carries validation errors (reusing the
-    // form's error banner).
+    // openJobEditor fetches the job's manifest off the UI thread (HTTP
+    // on workers), resolves its template, and exposes an edit seed for
+    // the form via editSeed/editJobId; fetch failures surface through
+    // jobActionFailed. applyJobEdit re-bakes (or, when the template is
+    // gone, mutates) the manifest and hands it to MonitorApp::editJob
+    // with the chosen mode: "continue" | "restart" | "startover".
+    // editApplied fires only after the leader acknowledges the edit;
+    // submissionFailed carries validation AND leader errors (reusing
+    // the form's error banner — the dialog stays open on failure).
+    // editBusy is true while an apply round-trip is in flight.
     // --- Frame preview ---
     // previewSupported: compiled with the vendored image libs?
     // jobPreviewInfo: resolve the selected job's newest rendered frame
@@ -288,13 +298,20 @@ public:
     Q_INVOKABLE bool pinPreview(int frameStart, int frameEnd);
     Q_INVOKABLE void clearPreviewPin();
 
-    Q_INVOKABLE bool openJobEditor(const QString& jobId);
+    Q_INVOKABLE void openJobEditor(const QString& jobId);
     Q_INVOKABLE void closeJobEditor();
     Q_INVOKABLE void applyJobEdit(const QStringList& flagValues,
                                   int frameStart, int frameEnd,
                                   int chunkSize, int priority,
                                   int maxRetries, int timeoutSeconds,
                                   const QString& mode);
+    // False while the leader runs a build without the "job_edit"
+    // capability (or no leader is reachable) — Edit buttons gate on it.
+    Q_PROPERTY(bool leaderSupportsJobEdit READ leaderSupportsJobEdit
+               NOTIFY leaderSupportsJobEditChanged)
+    bool leaderSupportsJobEdit() const;
+    Q_PROPERTY(bool editBusy READ editBusy NOTIFY editBusyChanged)
+    bool editBusy() const { return m_editBusy; }
 
     QString syncRoot() const;
     void setSyncRoot(const QString& v);
@@ -385,8 +402,21 @@ signals:
 
     void submissionSucceeded(const QString& jobId);
     void submissionFailed(const QString& reason);
-    void editApplied();
+    void editApplied(const QString& jobId);
     void editJobChanged();
+    void editBusyChanged();
+    void submitBusyChanged();
+    void leaderSupportsJobEditChanged();
+    // Transient failure of a job action outside a dialog (e.g. the
+    // Edit button's manifest fetch) — surfaced as a toast in Main.qml.
+    void jobActionFailed(const QString& reason);
+    // Edit accepted onto the farm-share command queue (leader was
+    // unreachable) — informational toast, distinct from editApplied.
+    void editQueued(const QString& message);
+    void cleanupBusyChanged();
+    // Fired on the UI thread when an async cleanup scan (or an action's
+    // follow-up rescan) completes; results uses scanFarmCleanup's shape.
+    void farmCleanupScanReady(const QVariantMap& results);
     void previewPinChanged();
 
     void pathMappingsChanged();
@@ -394,6 +424,28 @@ signals:
 private:
     QVariantMap previewInfoForRange(const QString& jobId,
                                     int frameStart, int frameEnd);
+
+    // Job-edit async plumbing. finishOpenJobEditor/finishApplyJobEdit
+    // run on the UI thread after the manifest fetch thread completes.
+    void finishOpenJobEditor(const QString& jobId,
+                             const std::string& manifestJson);
+    void finishApplyJobEdit(const std::string& storedJson,
+                            const std::string& fetchError,
+                            const QStringList& flagValues,
+                            int frameStart, int frameEnd,
+                            int chunkSize, int priority,
+                            int maxRetries, int timeoutSeconds,
+                            const QString& mode);
+    void setEditBusy(bool busy);
+    bool m_editBusy = false;
+    bool m_editorOpening = false;
+    bool m_lastLeaderSupportsJobEdit = false;
+
+    void setCleanupBusy(bool busy);
+    bool m_cleanupBusy = false;
+
+    void setSubmitBusy(bool busy);
+    bool m_submitBusy = false;
 
     // Snapshot of MonitorApp::config() taken at construction and after each
     // saveSettings(). revertSettings() copies this back, emitting *Changed

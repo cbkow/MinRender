@@ -27,10 +27,11 @@ void RenderCoordinator::init(const fs::path& farmPath, const std::string& nodeId
     MonitorLog::instance().info("render", "Initialized for node " + nodeId);
 }
 
-void RenderCoordinator::queueDispatch(const JobManifest& manifest, const ChunkRange& chunk)
+void RenderCoordinator::queueDispatch(const JobManifest& manifest, const ChunkRange& chunk,
+                                      int64_t editEpoch)
 {
     std::lock_guard<std::mutex> lock(m_queueMutex);
-    m_dispatchQueue.push({manifest, chunk});
+    m_dispatchQueue.push({manifest, chunk, editEpoch});
     MonitorLog::instance().info("render", "Queued dispatch: job=" + manifest.job_id + " chunk=" + chunk.rangeStr());
 }
 
@@ -66,7 +67,8 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
             // Stopped: don't start new work, abandon the chunk
             MonitorLog::instance().info("render", "Stopped - skipping dispatch, abandoning chunk");
             if (m_completionFn)
-                m_completionFn(pending.manifest.job_id, pending.chunk, "abandoned");
+                m_completionFn(pending.manifest.job_id, pending.chunk, "abandoned",
+                               pending.editEpoch);
             hasPending = false;
         }
 
@@ -95,7 +97,8 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
                         m_requeueActive = false;
                         supervisor.markNeedsAttention();
                         if (m_completionFn)
-                            m_completionFn(pending.manifest.job_id, pending.chunk, "failed");
+                            m_completionFn(pending.manifest.job_id, pending.chunk, "failed",
+                                           pending.editEpoch);
                         return;
                     }
                 }
@@ -111,7 +114,8 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
                         pending.chunk.rangeStr() + " for job " + pending.manifest.job_id);
                     m_requeueActive = false;
                     if (m_completionFn)
-                        m_completionFn(pending.manifest.job_id, pending.chunk, "failed");
+                        m_completionFn(pending.manifest.job_id, pending.chunk, "failed",
+                                       pending.editEpoch);
                     return;
                 }
 
@@ -139,6 +143,7 @@ void RenderCoordinator::update(AgentSupervisor& supervisor)
             ActiveRender ar;
             ar.manifest = std::move(pending.manifest);
             ar.chunk = pending.chunk;
+            ar.editEpoch = pending.editEpoch;
             ar.ackReceived = false;
             ar.progressPct = 0.0f;
             ar.startTime = std::chrono::steady_clock::now();
@@ -229,6 +234,7 @@ void RenderCoordinator::abandonCurrentRender(const std::string& reason)
     auto& ar = m_activeRender.value();
     const std::string jobId = ar.manifest.job_id;
     const ChunkRange chunk = ar.chunk;
+    const int64_t epoch = ar.editEpoch;
 
     MonitorLog::instance().warn("render", "Abandoning render: job=" + jobId
         + " chunk=" + chunk.rangeStr() + " reason=" + reason);
@@ -240,7 +246,7 @@ void RenderCoordinator::abandonCurrentRender(const std::string& reason)
     m_disconnectGraceActive = false;
     m_activeRender.reset();
     if (m_completionFn)
-        m_completionFn(jobId, chunk, "abandoned");
+        m_completionFn(jobId, chunk, "abandoned", epoch);
 }
 
 void RenderCoordinator::purgeJob(const std::string& jobId)
@@ -313,7 +319,7 @@ void RenderCoordinator::handleAgentMessage(const std::string& type, const nlohma
         {
             ar.completedFrames.insert(frame);
             if (m_frameCompletionFn)
-                m_frameCompletionFn(ar.manifest.job_id, frame);
+                m_frameCompletionFn(ar.manifest.job_id, frame, ar.editEpoch);
             MonitorLog::instance().info("render",
                 "Frame " + std::to_string(frame) + " finished for job " + ar.manifest.job_id);
         }
@@ -602,6 +608,7 @@ void RenderCoordinator::onChunkCompleted(const nlohmann::json& j)
 
     std::string jobId = ar.manifest.job_id;
     ChunkRange chunk = ar.chunk;
+    const int64_t epoch = ar.editEpoch;
 
     MonitorLog::instance().info("render", "Chunk " + chunk.rangeStr() + " completed for job " + jobId + " (exit_code=" + std::to_string(exit_code) + ", elapsed=" + std::to_string(elapsed_ms) + "ms)");
 
@@ -626,7 +633,7 @@ void RenderCoordinator::onChunkCompleted(const nlohmann::json& j)
 
     m_activeRender.reset();
     if (m_completionFn)
-        m_completionFn(jobId, chunk, "completed");
+        m_completionFn(jobId, chunk, "completed", epoch);
 }
 
 void RenderCoordinator::onChunkFailed(const nlohmann::json& j)
@@ -654,12 +661,13 @@ void RenderCoordinator::failChunk(const std::string& error)
 
     std::string jobId = m_activeRender->manifest.job_id;
     ChunkRange chunk = m_activeRender->chunk;
+    const int64_t epoch = m_activeRender->editEpoch;
 
     MonitorLog::instance().error("render", "Chunk " + chunk.rangeStr() + " FAILED for job " + jobId + ": " + error);
 
     m_activeRender.reset();
     if (m_completionFn)
-        m_completionFn(jobId, chunk, "failed");
+        m_completionFn(jobId, chunk, "failed", epoch);
 }
 
 bool RenderCoordinator::copyStagingFiles(const std::string& stagingDir, const std::string& outputDir)

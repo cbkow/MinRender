@@ -25,6 +25,7 @@ struct CompletionReport
     int frame_start = 0, frame_end = 0;
     int64_t elapsed_ms = 0;
     int exit_code = 0;
+    int64_t edit_epoch = -1;   // -1 = legacy report (old worker)
 };
 
 struct FailureReport
@@ -32,12 +33,14 @@ struct FailureReport
     std::string node_id, job_id;
     int frame_start = 0, frame_end = 0;
     std::string error;
+    int64_t edit_epoch = -1;   // -1 = legacy report (old worker)
 };
 
 struct FrameReport
 {
     std::string node_id, job_id;
     int frame = 0;
+    int64_t edit_epoch = -1;   // -1 = legacy report (old worker)
 };
 
 struct RevertRequest

@@ -52,7 +52,8 @@ void DatabaseManager::createSchema()
             manifest_json TEXT NOT NULL,
             current_state TEXT NOT NULL DEFAULT 'active',
             priority INTEGER NOT NULL DEFAULT 50,
-            submitted_at_ms INTEGER NOT NULL
+            submitted_at_ms INTEGER NOT NULL,
+            edit_epoch INTEGER NOT NULL DEFAULT 0
         )
     )");
 
@@ -68,7 +69,8 @@ void DatabaseManager::createSchema()
             completed_at_ms INTEGER,
             retry_count INTEGER NOT NULL DEFAULT 0,
             completed_frames TEXT NOT NULL DEFAULT '[]',
-            failed_on TEXT NOT NULL DEFAULT '[]'
+            failed_on TEXT NOT NULL DEFAULT '[]',
+            edit_epoch INTEGER NOT NULL DEFAULT 0
         )
     )");
 
@@ -99,6 +101,21 @@ void DatabaseManager::createSchema()
     }
     catch (...) {} // column already exists — safe to ignore
     m_db->exec("UPDATE jobs SET sort_key = submitted_at_ms WHERE sort_key IS NULL");
+
+    // Migration: edit_epoch columns (idempotent). Bumped on every
+    // restart/startover job edit; chunks are stamped with the job's
+    // epoch at assign time and reports must echo it back, fencing off
+    // renders dispatched before the edit (see completeChunk/failChunk).
+    try
+    {
+        m_db->exec("ALTER TABLE jobs ADD COLUMN edit_epoch INTEGER NOT NULL DEFAULT 0");
+    }
+    catch (...) {} // column already exists — safe to ignore
+    try
+    {
+        m_db->exec("ALTER TABLE chunks ADD COLUMN edit_epoch INTEGER NOT NULL DEFAULT 0");
+    }
+    catch (...) {} // column already exists — safe to ignore
 }
 
 // --- Jobs ---
@@ -548,17 +565,20 @@ DatabaseManager::findNextPendingChunkForNode(const std::vector<std::string>& nod
     }
 }
 
-bool DatabaseManager::assignChunk(int64_t chunkId, const std::string& nodeId, int64_t nowMs)
+bool DatabaseManager::assignChunk(int64_t chunkId, const std::string& nodeId, int64_t nowMs,
+                                  int64_t editEpoch)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
         SQLite::Statement q(*m_db,
-            "UPDATE chunks SET state = 'assigned', assigned_to = ?, assigned_at_ms = ? "
+            "UPDATE chunks SET state = 'assigned', assigned_to = ?, assigned_at_ms = ?, "
+            "  edit_epoch = ? "
             "WHERE id = ? AND state = 'pending'");
         q.bind(1, nodeId);
         q.bind(2, nowMs);
-        q.bind(3, chunkId);
+        q.bind(3, editEpoch);
+        q.bind(4, chunkId);
         return q.exec() > 0;
     }
     catch (const std::exception& e)
@@ -568,18 +588,30 @@ bool DatabaseManager::assignChunk(int64_t chunkId, const std::string& nodeId, in
     }
 }
 
-bool DatabaseManager::completeChunk(const std::string& jobId, int frameStart, int frameEnd, int64_t nowMs)
+bool DatabaseManager::completeChunk(const std::string& jobId, int frameStart, int frameEnd,
+                                    int64_t nowMs, const std::string& nodeId,
+                                    int64_t editEpoch)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
+        // assigned_to must match when the reporter identifies itself —
+        // a late completion from a node whose chunk was reclaimed and
+        // reassigned must not complete the successor's render. The
+        // epoch guard additionally fences reports from before an edit.
         SQLite::Statement q(*m_db,
             "UPDATE chunks SET state = 'completed', completed_at_ms = ? "
-            "WHERE job_id = ? AND frame_start = ? AND frame_end = ? AND state = 'assigned'");
+            "WHERE job_id = ? AND frame_start = ? AND frame_end = ? AND state = 'assigned' "
+            "  AND (? = '' OR assigned_to = ?) "
+            "  AND (? < 0 OR edit_epoch = ?)");
         q.bind(1, nowMs);
         q.bind(2, jobId);
         q.bind(3, frameStart);
         q.bind(4, frameEnd);
+        q.bind(5, nodeId);
+        q.bind(6, nodeId);
+        q.bind(7, editEpoch);
+        q.bind(8, editEpoch);
         return q.exec() > 0;
     }
     catch (const std::exception& e)
@@ -590,11 +622,19 @@ bool DatabaseManager::completeChunk(const std::string& jobId, int frameStart, in
 }
 
 bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int frameEnd,
-                                int maxRetries, const std::string& failingNodeId)
+                                int maxRetries, const std::string& failingNodeId,
+                                int64_t editEpoch)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
+        // Fence first: only the assigned node's report against the
+        // current epoch may fail a chunk. Historically this had no
+        // guard at all, so a stale failure could pollute failed_on and
+        // burn a retry on a chunk another node was rendering fine.
+        if (!isChunkCurrent(jobId, frameStart, frameEnd, failingNodeId, editEpoch))
+            return false;
+
         // First, append failingNodeId to failed_on if provided and not already present
         if (!failingNodeId.empty())
         {
@@ -633,7 +673,7 @@ bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int fr
             "  state = CASE WHEN retry_count + 1 < ? THEN 'pending' ELSE 'failed' END, "
             "  assigned_to = CASE WHEN retry_count + 1 < ? THEN NULL ELSE assigned_to END, "
             "  assigned_at_ms = CASE WHEN retry_count + 1 < ? THEN NULL ELSE assigned_at_ms END "
-            "WHERE job_id = ? AND frame_start = ? AND frame_end = ?");
+            "WHERE job_id = ? AND frame_start = ? AND frame_end = ? AND state = 'assigned'");
         q.bind(1, maxRetries);
         q.bind(2, maxRetries);
         q.bind(3, maxRetries);
@@ -646,6 +686,78 @@ bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int fr
     {
         MonitorLog::instance().error("db", std::string("failChunk failed: ") + e.what());
         return false;
+    }
+}
+
+bool DatabaseManager::isChunkCurrent(const std::string& jobId, int frameStart, int frameEnd,
+                                     const std::string& nodeId, int64_t editEpoch)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "SELECT 1 FROM chunks "
+            "WHERE job_id = ? AND frame_start = ? AND frame_end = ? AND state = 'assigned' "
+            "  AND (? = '' OR assigned_to = ?) "
+            "  AND (? < 0 OR edit_epoch = ?) LIMIT 1");
+        q.bind(1, jobId);
+        q.bind(2, frameStart);
+        q.bind(3, frameEnd);
+        q.bind(4, nodeId);
+        q.bind(5, nodeId);
+        q.bind(6, editEpoch);
+        q.bind(7, editEpoch);
+        return q.executeStep();
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("isChunkCurrent failed: ") + e.what());
+        return false;
+    }
+}
+
+bool DatabaseManager::isJobEpochCurrent(const std::string& jobId, int64_t editEpoch)
+{
+    // Legacy reports (no epoch) are always current — old workers can't
+    // echo an epoch, and they get the pre-fence guards instead.
+    if (editEpoch < 0)
+        return true;
+    return getJobEditEpoch(jobId) == editEpoch;
+}
+
+int64_t DatabaseManager::getJobEditEpoch(const std::string& jobId)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "SELECT edit_epoch FROM jobs WHERE job_id = ?");
+        q.bind(1, jobId);
+        if (q.executeStep())
+            return q.getColumn(0).getInt64();
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("getJobEditEpoch failed: ") + e.what());
+    }
+    return 0;
+}
+
+int64_t DatabaseManager::bumpEditEpoch(const std::string& jobId)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        SQLite::Statement q(*m_db,
+            "UPDATE jobs SET edit_epoch = edit_epoch + 1 WHERE job_id = ?");
+        q.bind(1, jobId);
+        q.exec();
+        return getJobEditEpoch(jobId);
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("bumpEditEpoch failed: ") + e.what());
+        return 0;
     }
 }
 

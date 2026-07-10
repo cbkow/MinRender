@@ -314,8 +314,13 @@ Item {
                     iconName: "pencil-simple"
                     text: qsTr("Edit")
                     // The edit form is one manifest, one job — single
-                    // selection only.
+                    // selection only. Gated on the leader's capability:
+                    // old leaders have no /edit route.
                     enabled: root.checkedCount() === 1
+                             && appBridge.leaderSupportsJobEdit
+                    ToolTip.text: qsTr("The leader is running an older version without job editing")
+                    ToolTip.visible: hovered && !appBridge.leaderSupportsJobEdit
+                    ToolTip.delay: 500
                     onClicked: appBridge.openJobEditor(root.checkedJobIds()[0])
                 }
                 FlatButton {
@@ -544,7 +549,9 @@ Item {
                         height: parent.height
                         Progress {
                             anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 40
+                            // Reserve room for a "0000/0000" count plus
+                            // an 8px gutter so the bar never touches it.
+                            width: parent.width - 64
                             value: progress
                         }
                         Label {
@@ -681,8 +688,11 @@ Item {
         MenuSeparator {}
         MenuItem {
             // Single-job only: the edit form is one manifest, one job.
-            text: qsTr("Edit Job…")
+            text: appBridge.leaderSupportsJobEdit
+                  ? qsTr("Edit Job…")
+                  : qsTr("Edit Job… (needs leader upgrade)")
             enabled: root.checkedCount() <= 1
+                     && appBridge.leaderSupportsJobEdit
             onTriggered: appBridge.openJobEditor(jobMenu.targetId)
         }
         MenuSeparator {}

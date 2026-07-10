@@ -200,8 +200,6 @@ struct ChunkRange
     }
 };
 
-enum class ChunkState { Unclaimed, Rendering, Completed, Failed, Abandoned };
-
 inline std::vector<ChunkRange> computeChunks(int frame_start, int frame_end, int chunk_size)
 {
     std::vector<ChunkRange> chunks;
@@ -217,28 +215,6 @@ inline std::vector<ChunkRange> computeChunks(int frame_start, int frame_end, int
     }
     return chunks;
 }
-
-// ─── Dispatch structs ───────────────────────────────────────────────────────
-
-struct DispatchChunk
-{
-    int frame_start = 0;
-    int frame_end = 0;
-    std::string state = "pending";      // pending | assigned | completed | failed
-    std::string assigned_to;
-    int64_t assigned_at_ms = 0;
-    int64_t completed_at_ms = 0;
-    int retry_count = 0;
-    std::vector<std::string> failed_on; // node IDs that failed this chunk (blacklist)
-};
-
-struct DispatchTable
-{
-    int _version = 1;
-    std::string coordinator_id;
-    int64_t updated_at_ms = 0;
-    std::vector<DispatchChunk> chunks;
-};
 
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
@@ -533,50 +509,6 @@ inline void from_json(const nlohmann::json& j, JobManifest& m)
     if (j.contains("process"))           j.at("process").get_to(m.process);
     if (j.contains("environment"))       j.at("environment").get_to(m.environment);
     if (j.contains("tags_required"))     j.at("tags_required").get_to(m.tags_required);
-}
-
-inline void to_json(nlohmann::json& j, const DispatchChunk& d)
-{
-    j = nlohmann::json{
-        {"frame_start", d.frame_start},
-        {"frame_end", d.frame_end},
-        {"state", d.state},
-        {"assigned_to", d.assigned_to},
-        {"assigned_at_ms", d.assigned_at_ms},
-        {"completed_at_ms", d.completed_at_ms},
-        {"retry_count", d.retry_count},
-        {"failed_on", d.failed_on},
-    };
-}
-
-inline void from_json(const nlohmann::json& j, DispatchChunk& d)
-{
-    if (j.contains("frame_start"))     j.at("frame_start").get_to(d.frame_start);
-    if (j.contains("frame_end"))       j.at("frame_end").get_to(d.frame_end);
-    if (j.contains("state"))           j.at("state").get_to(d.state);
-    if (j.contains("assigned_to"))     j.at("assigned_to").get_to(d.assigned_to);
-    if (j.contains("assigned_at_ms"))  j.at("assigned_at_ms").get_to(d.assigned_at_ms);
-    if (j.contains("completed_at_ms")) j.at("completed_at_ms").get_to(d.completed_at_ms);
-    if (j.contains("retry_count"))     j.at("retry_count").get_to(d.retry_count);
-    if (j.contains("failed_on"))       j.at("failed_on").get_to(d.failed_on);
-}
-
-inline void to_json(nlohmann::json& j, const DispatchTable& dt)
-{
-    j = nlohmann::json{
-        {"_version", dt._version},
-        {"coordinator_id", dt.coordinator_id},
-        {"updated_at_ms", dt.updated_at_ms},
-        {"chunks", dt.chunks},
-    };
-}
-
-inline void from_json(const nlohmann::json& j, DispatchTable& dt)
-{
-    if (j.contains("_version"))        j.at("_version").get_to(dt._version);
-    if (j.contains("coordinator_id"))  j.at("coordinator_id").get_to(dt.coordinator_id);
-    if (j.contains("updated_at_ms"))   j.at("updated_at_ms").get_to(dt.updated_at_ms);
-    if (j.contains("chunks"))          j.at("chunks").get_to(dt.chunks);
 }
 
 inline void to_json(nlohmann::json& j, const JobStateEntry& s)

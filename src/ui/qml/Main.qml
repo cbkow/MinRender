@@ -328,8 +328,66 @@ ApplicationWindow {
         }
     }
 
-    // --- Farm Cleanup dialog (Phase 7 stub) ---
+    // --- Farm Cleanup dialog ---
     FarmCleanupDialog {
         id: farmCleanupDialog
+    }
+
+    // --- Transient toast ---
+    // Failure surface for job actions that happen outside a dialog
+    // (e.g. the Edit button's manifest fetch). Auto-hides; a new
+    // message restarts the timer.
+    Rectangle {
+        id: toast
+        property alias text: toastLabel.text
+        property bool isError: true
+
+        function show(message, error) {
+            toastLabel.text = message
+            isError = error === undefined ? true : error
+            toastTimer.restart()
+        }
+
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 24
+        width: Math.min(toastLabel.implicitWidth + 32, parent.width - 80)
+        height: toastLabel.implicitHeight + 16
+        radius: Theme.radius
+        color: Theme.surfaceAlt
+        border.color: toast.isError ? Theme.error : Theme.accent
+        border.width: Theme.borderWidth
+        visible: toastTimer.running
+        z: 1000
+
+        Label {
+            id: toastLabel
+            anchors.centerIn: parent
+            width: Math.min(implicitWidth, toast.parent.width - 112)
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            color: Theme.textBright
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeBase
+        }
+
+        Timer {
+            id: toastTimer
+            interval: 6000
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: toastTimer.stop()
+        }
+    }
+
+    Connections {
+        target: appBridge
+        function onJobActionFailed(reason) { toast.show(reason) }
+        function onEditQueued(message) { toast.show(message, false) }
+        function onEditApplied(jobId) {
+            toast.show(qsTr("Edit applied to %1").arg(jobId), false)
+        }
     }
 }

@@ -8,14 +8,11 @@ import MinRenderUi 1.0
 // may take a second or two on a slow share) and populates each section
 // with checkboxable rows. Per-section action buttons fire the matching
 // cleanup action on only the checked ids.
-Dialog {
+MrDialog {
     id: root
     title: qsTr("Farm Cleanup")
-    modal: true
-    anchors.centerIn: parent
     width: 720
     height: Math.min(760, parent ? parent.height - 80 : 700)
-    standardButtons: Dialog.Close
 
     // Six groups returned by AppBridge.scanFarmCleanup.
     property var finishedJobs:       []
@@ -37,6 +34,14 @@ Dialog {
         else   delete next[id]
         checked = next
     }
+    function setAllChecked(list, v) {
+        const next = Object.assign({}, checked)
+        for (let i = 0; i < list.length; ++i) {
+            if (v) next[list[i].id] = true
+            else   delete next[list[i].id]
+        }
+        checked = next
+    }
     function selectedInList(list) {
         const out = []
         for (let i = 0; i < list.length; ++i)
@@ -45,29 +50,36 @@ Dialog {
     }
 
     function rescan() {
-        const r = appBridge.scanFarmCleanup()
-        finishedJobs        = r.finished_jobs         || []
-        archivedJobs        = r.archived_jobs         || []
-        orphanedDirs        = r.orphaned_dirs         || []
-        stalePeers          = r.stale_peers           || []
-        staleStagingDirs    = r.stale_staging_dirs    || []
-        failedStagingCopies = r.failed_staging_copies || []
-        scanIsLeader        = r.is_leader === true
-        checked             = ({})
-        didScan             = true
+        appBridge.requestFarmCleanupScan()
     }
 
     function applyAction(action, list) {
         const ids = selectedInList(list)
         if (ids.length === 0) return
-        appBridge.executeFarmCleanup(action, ids)
-        rescan()   // refresh
+        // Fire-and-forget: the action's follow-up rescan repopulates
+        // via onFarmCleanupScanReady; cleanupBusy gates the buttons.
+        appBridge.requestFarmCleanupAction(action, ids)
     }
 
-    // Auto-scan on open. Runs after the Dialog paints so the user sees
-    // an "opening" feel rather than a frozen window while the share walk
-    // happens on a slow link.
-    onOpened: Qt.callLater(rescan)
+    Connections {
+        target: appBridge
+        function onFarmCleanupScanReady(r) {
+            if (!root.visible) return
+            root.finishedJobs        = r.finished_jobs         || []
+            root.archivedJobs        = r.archived_jobs         || []
+            root.orphanedDirs        = r.orphaned_dirs         || []
+            root.stalePeers          = r.stale_peers           || []
+            root.staleStagingDirs    = r.stale_staging_dirs    || []
+            root.failedStagingCopies = r.failed_staging_copies || []
+            root.scanIsLeader        = r.is_leader === true
+            root.checked             = ({})
+            root.didScan             = true
+        }
+    }
+
+    // Auto-scan on open — async, so the dialog paints immediately and
+    // the spinner shows while the share walk runs.
+    onOpened: rescan()
     onClosed: {
         didScan = false
         checked = ({})
@@ -75,6 +87,7 @@ Dialog {
 
     ColumnLayout {
         anchors.fill: parent
+        anchors.margins: 16
         spacing: 8
 
         RowLayout {
@@ -88,9 +101,16 @@ Dialog {
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
+            BusyIndicator {
+                visible: appBridge.cleanupBusy
+                running: visible
+                implicitWidth: 20
+                implicitHeight: 20
+            }
             FlatButton {
                 iconName: "arrows-clockwise"
                 text: qsTr("Rescan")
+                enabled: !appBridge.cleanupBusy
                 onClicked: root.rescan()
             }
         }
@@ -160,6 +180,15 @@ Dialog {
                 }
             }
         }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Item { Layout.fillWidth: true }
+            FlatButton {
+                text: qsTr("Close")
+                onClicked: root.close()
+            }
+        }
     }
 
     // --- Section component ---
@@ -188,6 +217,28 @@ Dialog {
 
             RowLayout {
                 Layout.fillWidth: true
+                // Tri-state select-all: wipe a whole category in two
+                // clicks (select all → action) without ticking rows.
+                CheckBox {
+                    visible: section.items.length > 0
+                    tristate: true
+                    checkState: {
+                        const n = root.selectedInList(section.items).length
+                        return n === 0 ? Qt.Unchecked
+                             : n === section.items.length ? Qt.Checked
+                             : Qt.PartiallyChecked
+                    }
+                    // nextCheckState drives the click cycle: anything
+                    // not-fully-checked selects all, checked clears.
+                    nextCheckState: function() {
+                        return checkState === Qt.Checked ? Qt.Unchecked : Qt.Checked
+                    }
+                    onClicked: root.setAllChecked(
+                        section.items, checkState === Qt.Checked)
+                    ToolTip.text: qsTr("Select all in this section")
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                }
                 SectionHeader {
                     text: section.title + " · " + section.items.length
                 }
@@ -196,6 +247,7 @@ Dialog {
                     text: section.actionLabel
                     enabled: section.items.length > 0
                              && root.selectedInList(section.items).length > 0
+                             && !appBridge.cleanupBusy
                     onClicked: section.actionTriggered()
                 }
             }

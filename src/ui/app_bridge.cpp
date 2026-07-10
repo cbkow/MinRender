@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <ctime>
 #include <deque>
+#include <thread>
 #include <regex>
 #include <set>
 #include <filesystem>
@@ -694,6 +695,13 @@ void AppBridge::refresh()
         emit thisNodeIsLeaderChanged();
     }
 
+    const bool editSupported = leaderSupportsJobEdit();
+    if (editSupported != m_lastLeaderSupportsJobEdit)
+    {
+        m_lastLeaderSupportsJobEdit = editSupported;
+        emit leaderSupportsJobEditChanged();
+    }
+
     const bool activeNow =
         m_monitor->nodeState() == MR::NodeState::Active;
     if (activeNow != m_lastNodeActive)
@@ -851,6 +859,19 @@ qint64 AppBridge::thisNodeRamMb() const
         : 0;
 }
 
+bool AppBridge::leaderSupportsJobEdit() const
+{
+    return m_monitor && m_monitor->leaderSupports("job_edit");
+}
+
+void AppBridge::setEditBusy(bool busy)
+{
+    if (m_editBusy == busy)
+        return;
+    m_editBusy = busy;
+    emit editBusyChanged();
+}
+
 bool AppBridge::thisNodeIsLeader() const
 {
     return m_monitor ? m_monitor->isLeader() : false;
@@ -902,13 +923,27 @@ void AppBridge::forgetPeer(const QString& nodeId)
     m_monitor->forgetPeer(nodeId.toStdString());
 }
 
-QVariantMap AppBridge::scanFarmCleanup()
+void AppBridge::setCleanupBusy(bool busy)
 {
-    if (!m_monitor) return {};
-    const auto j = m_monitor->scanFarmCleanup();
-    // nlohmann::json → QJsonDocument → QVariantMap gives us the same
-    // nested QVariantList-of-QVariantMap shape QML expects from the
-    // other Q_INVOKABLE methods on this class.
+    if (m_cleanupBusy == busy)
+        return;
+    m_cleanupBusy = busy;
+    emit cleanupBusyChanged();
+}
+
+void AppBridge::setSubmitBusy(bool busy)
+{
+    if (m_submitBusy == busy)
+        return;
+    m_submitBusy = busy;
+    emit submitBusyChanged();
+}
+
+// nlohmann::json → QJsonDocument → QVariantMap gives us the same
+// nested QVariantList-of-QVariantMap shape QML expects from the
+// other Q_INVOKABLE methods on this class.
+static QVariantMap cleanupJsonToVariant(const nlohmann::json& j)
+{
     const QByteArray bytes = QByteArray::fromStdString(j.dump());
     QJsonParseError err;
     const QJsonDocument doc = QJsonDocument::fromJson(bytes, &err);
@@ -917,14 +952,49 @@ QVariantMap AppBridge::scanFarmCleanup()
     return doc.object().toVariantMap();
 }
 
-int AppBridge::executeFarmCleanup(const QString& action,
-                                  const QStringList& ids)
+void AppBridge::requestFarmCleanupScan()
 {
-    if (!m_monitor || action.isEmpty()) return 0;
+    if (!m_monitor || m_cleanupBusy)
+        return;
+    setCleanupBusy(true);
+    // The scan walks the farm share — seconds on a slow SMB link, so
+    // never on the UI thread. MonitorApp::scanFarmCleanup is already
+    // called from HTTP handler threads, so it's safe off-thread.
+    std::thread([this]() {
+        const QVariantMap results =
+            cleanupJsonToVariant(m_monitor->scanFarmCleanup());
+        QMetaObject::invokeMethod(this,
+            [this, results]() {
+                setCleanupBusy(false);
+                emit farmCleanupScanReady(results);
+            },
+            Qt::QueuedConnection);
+    }).detach();
+}
+
+void AppBridge::requestFarmCleanupAction(const QString& action,
+                                         const QStringList& ids)
+{
+    if (!m_monitor || action.isEmpty() || ids.isEmpty() || m_cleanupBusy)
+        return;
+    setCleanupBusy(true);
     std::vector<std::string> stdIds;
     stdIds.reserve(ids.size());
     for (const QString& s : ids) stdIds.push_back(s.toStdString());
-    return m_monitor->executeFarmCleanup(action.toStdString(), stdIds);
+
+    std::thread([this, action = action.toStdString(),
+                 stdIds = std::move(stdIds)]() {
+        m_monitor->executeFarmCleanup(action, stdIds);
+        // Rescan in the same pass so the dialog repopulates once.
+        const QVariantMap results =
+            cleanupJsonToVariant(m_monitor->scanFarmCleanup());
+        QMetaObject::invokeMethod(this,
+            [this, results]() {
+                setCleanupBusy(false);
+                emit farmCleanupScanReady(results);
+            },
+            Qt::QueuedConnection);
+    }).detach();
 }
 
 void AppBridge::pauseJob(const QString& jobId)
@@ -1208,6 +1278,9 @@ void AppBridge::submitJob(const QString& templateId,
 
     // Worker — POST to leader. Marshal the result back to the UI thread
     // since postToLeaderAsync's callback runs on the http worker.
+    // submitBusy covers only this async leg; the leader path above is
+    // synchronous so the form never sees a busy state there.
+    setSubmitBusy(true);
     nlohmann::json body;
     body["manifest"] = manifest;
     body["priority"] = priority;
@@ -1220,6 +1293,7 @@ void AppBridge::submitJob(const QString& templateId,
             QMetaObject::invokeMethod(
                 this,
                 [this, ok, slugQ, resp]() {
+                    setSubmitBusy(false);
                     if (ok) emit submissionSucceeded(slugQ);
                     else    emit submissionFailed(
                                 resp.isEmpty() ? tr("Leader did not respond") : resp);
@@ -1269,8 +1343,7 @@ QVariantMap AppBridge::previewInfoForRange(const QString& jobId,
 
     // Filename filter from the output flag's pattern: escape it as a
     // regex, then let each `#` run match digits. DCCs replace the
-    // padding themselves (Blender ####, AE [####] — brackets are
-    // escaped literally so they simply don't match and we fall back).
+    // padding themselves (Blender ####, AE [####]).
     std::string stemRegex;
     for (const auto& f : job->manifest.flags)
     {
@@ -1293,6 +1366,17 @@ QVariantMap AppBridge::previewInfoForRange(const QString& jobId,
             if (special.find(c) != std::string::npos) rx += '\\';
             rx += c;
         }
+        // AE writes `[####]` tokens as bare digits (file_[####].png
+        // → file_0001.png) — unwrap the escaped brackets.
+        for (size_t p; (p = rx.find("\\[(\\d+)\\]")) != std::string::npos; )
+            rx.replace(p, 9, "(\\d+)");
+        // Bare stem with no `#` padding (Blender's `-o path/name_`):
+        // the renderer appends frame digits + extension itself
+        // (name_0001.exr). Claim those digits so ranged lookups can
+        // attribute frames. Stems that already end in an extension
+        // simply won't match, and the mtime fallback still applies.
+        if (rx.find("(\\d+)") == std::string::npos)
+            rx += "(\\d+)\\.\\w+";
         stemRegex = rx;
         break;
     }
@@ -1313,11 +1397,15 @@ QVariantMap AppBridge::previewInfoForRange(const QString& jobId,
         catch (...) {}
     }
 
-    // A restricted range (pin) is only resolvable through the pattern —
-    // the mtime fallback can't attribute a frame number to a file.
+    // Without a manifest pattern (worker nodes get no flags from the
+    // leader's /api/jobs summary; unknown DCC naming), attribute frames
+    // from the filenames themselves: a digit run immediately before the
+    // extension covers name_0001.exr, name.0001.exr, and name0001.png
+    // alike. Files without trailing digits stay mtime-fallback only.
+    static const std::regex kTrailingDigits(
+        R"((\d+)\.[A-Za-z0-9]+$)", std::regex::icase);
+
     const bool ranged = frameStart >= 0;
-    if (ranged && !pattern)
-        return out;
 
     std::string bestFile;
     long long bestFrame = -1;
@@ -1333,23 +1421,31 @@ QVariantMap AppBridge::previewInfoForRange(const QString& jobId,
             continue;
 
         const std::string name = entry.path().filename().string();
+        long long frame = -1;
         if (pattern)
         {
             std::smatch m;
             if (std::regex_match(name, m, *pattern) && m.size() > 1)
-            {
-                const long long frame = std::atoll(m[1].str().c_str());
-                if (ranged && (frame < frameStart || frame > frameEnd))
-                    continue;
-                if (frame > bestFrame)
-                {
-                    bestFrame = frame;
-                    bestFile = entry.path().string();
-                }
-                continue;
-            }
+                frame = std::atoll(m[1].str().c_str());
             // Pattern exists but this file doesn't match — only use it
             // for the mtime fallback if nothing matched at all.
+        }
+        else
+        {
+            std::smatch m;
+            if (std::regex_search(name, m, kTrailingDigits))
+                frame = std::atoll(m[1].str().c_str());
+        }
+        if (frame >= 0)
+        {
+            if (ranged && (frame < frameStart || frame > frameEnd))
+                continue;
+            if (frame > bestFrame)
+            {
+                bestFrame = frame;
+                bestFile = entry.path().string();
+            }
+            continue;
         }
         if (!ranged && bestFrame < 0)
         {
@@ -1439,20 +1535,53 @@ QStringList AppBridge::exrLayers(const QString& filePath)
     return out;
 }
 
-bool AppBridge::openJobEditor(const QString& jobId)
+// Human-readable reason for a failed manifest fetch (errorOut values
+// from MonitorApp::getJobManifestJson).
+static QString manifestFetchErrorText(const std::string& err)
 {
-    if (!m_monitor || jobId.isEmpty())
-        return false;
+    if (err == "route_missing")
+        return AppBridge::tr("The leader is running an older version without job editing — update the leader node");
+    if (err == "no_leader" || err == "unreachable")
+        return AppBridge::tr("Leader unreachable — check the farm connection");
+    if (err == "not_found")
+        return AppBridge::tr("The job no longer exists on the leader");
+    return AppBridge::tr("Couldn't fetch the job manifest: %1")
+        .arg(QString::fromStdString(err));
+}
 
-    const std::string manifestJson =
-        m_monitor->getJobManifestJson(jobId.toStdString());
-    if (manifestJson.empty())
-    {
-        MonitorLog::instance().warn("job",
-            "openJobEditor: no manifest for " + jobId.toStdString());
-        return false;
-    }
+void AppBridge::openJobEditor(const QString& jobId)
+{
+    if (!m_monitor || jobId.isEmpty() || m_editorOpening)
+        return;
+    m_editorOpening = true;
 
+    // Fetch off the UI thread — on workers this is an HTTP round-trip
+    // to the leader (seconds on a slow VPN). Seed assembly stays on the
+    // UI thread in finishOpenJobEditor.
+    std::thread([this, jobId]() {
+        std::string error;
+        const std::string manifestJson =
+            m_monitor->getJobManifestJson(jobId.toStdString(), &error);
+        QMetaObject::invokeMethod(this,
+            [this, jobId, manifestJson, error]() {
+                m_editorOpening = false;
+                if (manifestJson.empty())
+                {
+                    MonitorLog::instance().warn("job",
+                        "openJobEditor: no manifest for " + jobId.toStdString()
+                        + " (" + error + ")");
+                    emit jobActionFailed(manifestFetchErrorText(error));
+                    return;
+                }
+                finishOpenJobEditor(jobId, manifestJson);
+            },
+            Qt::QueuedConnection);
+    }).detach();
+}
+
+void AppBridge::finishOpenJobEditor(const QString& jobId,
+                                    const std::string& manifestJson)
+{
     JobManifest manifest;
     try
     {
@@ -1462,7 +1591,8 @@ bool AppBridge::openJobEditor(const QString& jobId)
     {
         MonitorLog::instance().warn("job",
             std::string("openJobEditor: bad manifest: ") + e.what());
-        return false;
+        emit jobActionFailed(tr("The stored job manifest is invalid"));
+        return;
     }
 
 #ifdef Q_OS_MACOS
@@ -1570,7 +1700,6 @@ bool AppBridge::openJobEditor(const QString& jobId)
     m_editJobId = jobId;
     m_editSeed  = seed;
     emit editJobChanged();
-    return true;
 }
 
 void AppBridge::closeJobEditor()
@@ -1604,14 +1733,50 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
         return;
     }
 
-    const std::string jobId = m_editJobId.toStdString();
+    if (m_editBusy)
+        return;
+    setEditBusy(true);
 
     // Re-fetch the stored manifest rather than trusting the seed — the
-    // job may have been edited elsewhere since the dialog opened.
-    const std::string storedJson = m_monitor->getJobManifestJson(jobId);
+    // job may have been edited elsewhere since the dialog opened. Off
+    // the UI thread: on workers this is a leader HTTP round-trip.
+    const std::string jobId = m_editJobId.toStdString();
+    std::thread([this, jobId, flagValues, frameStart, frameEnd, chunkSize,
+                 priority, maxRetries, timeoutSeconds, mode]() {
+        std::string error;
+        const std::string storedJson =
+            m_monitor->getJobManifestJson(jobId, &error);
+        QMetaObject::invokeMethod(this,
+            [this, storedJson, error, flagValues, frameStart, frameEnd,
+             chunkSize, priority, maxRetries, timeoutSeconds, mode]() {
+                finishApplyJobEdit(storedJson, error, flagValues,
+                                   frameStart, frameEnd, chunkSize, priority,
+                                   maxRetries, timeoutSeconds, mode);
+            },
+            Qt::QueuedConnection);
+    }).detach();
+}
+
+void AppBridge::finishApplyJobEdit(const std::string& storedJson,
+                                   const std::string& fetchError,
+                                   const QStringList& flagValues,
+                                   int frameStart, int frameEnd,
+                                   int chunkSize, int priority,
+                                   int maxRetries, int timeoutSeconds,
+                                   const QString& mode)
+{
+    // The dialog may have been cancelled while the fetch was in flight.
+    if (m_editJobId.isEmpty())
+    {
+        setEditBusy(false);
+        return;
+    }
+    const std::string jobId = m_editJobId.toStdString();
+
     if (storedJson.empty())
     {
-        emit submissionFailed(tr("Job manifest unavailable (leader unreachable?)"));
+        setEditBusy(false);
+        emit submissionFailed(manifestFetchErrorText(fetchError));
         return;
     }
     JobManifest manifest;
@@ -1621,6 +1786,7 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
     }
     catch (const std::exception& e)
     {
+        setEditBusy(false);
         emit submissionFailed(tr("Stored manifest is invalid: %1").arg(e.what()));
         return;
     }
@@ -1641,6 +1807,7 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
             [&](const JobTemplate& t) { return t.template_id == tid; });
         if (it == tmpls.end())
         {
+            setEditBusy(false);
             emit submissionFailed(tr("Template no longer available: %1")
                 .arg(QString::fromStdString(tid)));
             return;
@@ -1649,6 +1816,7 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
 
         if (fvs.size() != tmpl.flags.size())
         {
+            setEditBusy(false);
             emit submissionFailed(tr("Template changed while editing — reopen the editor"));
             return;
         }
@@ -1656,6 +1824,7 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
         {
             if (tmpl.flags[i].required && tmpl.flags[i].editable && fvs[i].empty())
             {
+                setEditBusy(false);
                 emit submissionFailed(tr("Required flag is empty: %1")
                     .arg(QString::fromStdString(
                         tmpl.flags[i].info.empty() ? tmpl.flags[i].flag
@@ -1668,6 +1837,7 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
         const std::string cmd = MR::getCmdForOS(tmpl.cmd, os);
         if (cmd.empty())
         {
+            setEditBusy(false);
             emit submissionFailed(tr("Template has no executable for this OS"));
             return;
         }
@@ -1690,6 +1860,7 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
         // were built 1:1 from manifest.flags.
         if (fvs.size() != manifest.flags.size())
         {
+            setEditBusy(false);
             emit submissionFailed(tr("Job changed while editing — reopen the editor"));
             return;
         }
@@ -1738,10 +1909,57 @@ void AppBridge::applyJobEdit(const QStringList& flagValues,
     manifest.job_id = jobId;
 
     nlohmann::json mj = manifest;
-    m_monitor->editJob(jobId, mj.dump(), mode.toStdString(), priority);
-
-    emit editApplied();
-    closeJobEditor();
+    // editApplied/close only fire once the leader acknowledges — the
+    // done callback arrives on the HTTP worker thread for remote
+    // leaders, so marshal back to the UI thread before touching state.
+    const QString jobIdQ = QString::fromStdString(jobId);
+    m_monitor->editJob(jobId, mj.dump(), mode.toStdString(), priority,
+        [this, jobIdQ](const MonitorApp::EditResult& r) {
+            QMetaObject::invokeMethod(this,
+                [this, jobIdQ, r]() {
+                    setEditBusy(false);
+                    if (r.ok())
+                    {
+                        emit editApplied(jobIdQ);
+                        closeJobEditor();
+                        return;
+                    }
+                    using Code = MonitorApp::EditResult::Code;
+                    if (r.code == Code::QueuedToShare)
+                    {
+                        // Not applied yet, but durably handed off — the
+                        // dialog closes with a distinct message rather
+                        // than pretending the edit already landed.
+                        emit editQueued(tr("Leader unreachable — edit queued to the farm and applies when the leader reconnects"));
+                        closeJobEditor();
+                        return;
+                    }
+                    QString msg;
+                    switch (r.code)
+                    {
+                    case Code::RouteMissing:
+                        msg = tr("The leader is running an older version without job editing — update the leader node");
+                        break;
+                    case Code::NoResponse:
+                        msg = tr("No response from the leader — check the farm connection and try again");
+                        break;
+                    case Code::JobNotFound:
+                        msg = tr("The job no longer exists on the leader");
+                        break;
+                    case Code::DbUnavailable:
+                        msg = tr("The leader's database isn't ready — try again shortly");
+                        break;
+                    case Code::InvalidManifest:
+                        msg = tr("Edit rejected: %1").arg(QString::fromStdString(r.message));
+                        break;
+                    default:
+                        msg = tr("Leader error: %1").arg(QString::fromStdString(r.message));
+                        break;
+                    }
+                    emit submissionFailed(msg);
+                },
+                Qt::QueuedConnection);
+        });
 }
 
 void AppBridge::requestRestart()

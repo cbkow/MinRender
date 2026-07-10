@@ -56,6 +56,11 @@ struct PeerInfo
     int priority = 100;
     std::vector<std::string> tags;
 
+    // Feature capabilities this build supports (additive across versions).
+    // Absent on old builds = the v0 feature set. HTTP-poll only — the
+    // compact UDP heartbeat deliberately doesn't carry these.
+    std::vector<std::string> capabilities;
+
     // Agent health
     std::string agent_health = "ok";    // ok | reconnecting | needs_attention
     std::string alert_reason;
@@ -76,6 +81,10 @@ struct PeerInfo
     // UDP multicast (runtime only, not serialized)
     bool has_udp_contact = false;
     int64_t last_udp_contact_ms = 0;
+
+    // Smoothed /api/status round-trip (runtime only) — drives the
+    // adaptive poll timeouts so VPN peers aren't flapped dead.
+    double poll_rtt_ewma_ms = 0.0;
 };
 
 // Serialize only the fields that go over HTTP (skip runtime fields)
@@ -95,6 +104,7 @@ inline void to_json(nlohmann::json& j, const PeerInfo& p)
         {"active_chunk", p.active_chunk},
         {"priority",     p.priority},
         {"tags",         p.tags},
+        {"capabilities", p.capabilities},
         {"endpoint",     p.endpoint},
         {"agent_health", p.agent_health},
         {"alert_reason", p.alert_reason},
@@ -124,6 +134,7 @@ inline void from_json(const nlohmann::json& j, PeerInfo& p)
     if (j.contains("active_chunk")) j.at("active_chunk").get_to(p.active_chunk);
     if (j.contains("priority"))     j.at("priority").get_to(p.priority);
     if (j.contains("tags"))         j.at("tags").get_to(p.tags);
+    if (j.contains("capabilities")) j.at("capabilities").get_to(p.capabilities);
     if (j.contains("endpoint"))      j.at("endpoint").get_to(p.endpoint);
     if (j.contains("agent_health"))  j.at("agent_health").get_to(p.agent_health);
     if (j.contains("alert_reason"))  j.at("alert_reason").get_to(p.alert_reason);

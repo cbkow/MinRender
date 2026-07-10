@@ -359,12 +359,19 @@ Item {
             onClicked: root.cancelled()
         }
 
+        BusyIndicator {
+            visible: !root.editMode && appBridge.submitBusy
+            running: visible
+            implicitWidth: 22
+            implicitHeight: 22
+        }
         FlatButton {
             visible: !root.editMode
             iconName: "paper-plane-tilt"
             text: qsTr("Submit")
             variant: "primary"
             enabled: jobNameField.text.length > 0 && currentTemplate !== null
+                     && !appBridge.submitBusy
             onClicked: {
                 errorBanner.text = ""
                 appBridge.submitJob(
@@ -379,12 +386,20 @@ Item {
         }
 
         // --- Edit-mode apply buttons ---
+        // All three disable while an apply round-trip is in flight
+        // (editBusy) — the leader ack, not the click, closes the dialog.
+        BusyIndicator {
+            visible: root.editMode && appBridge.editBusy
+            running: visible
+            implicitWidth: 22
+            implicitHeight: 22
+        }
         FlatButton {
             visible: root.editMode
             iconName: "play"
             text: qsTr("Apply to next chunks")
             variant: "primary"
-            enabled: !root.structuralChange
+            enabled: !root.structuralChange && !appBridge.editBusy
             ToolTip.text: qsTr("In-flight chunks finish with the old settings; every chunk dispatched from now on uses the new ones.")
             ToolTip.visible: hovered
             ToolTip.delay: 600
@@ -395,7 +410,7 @@ Item {
             iconName: "arrow-clockwise"
             text: qsTr("Stop chunks && apply")
             variant: "neutral"
-            enabled: !root.structuralChange
+            enabled: !root.structuralChange && !appBridge.editBusy
             ToolTip.text: qsTr("Kills in-flight renders and requeues them with the new settings. Completed chunks keep their output.")
             ToolTip.visible: hovered
             ToolTip.delay: 600
@@ -406,6 +421,7 @@ Item {
             iconName: "arrows-counter-clockwise"
             text: qsTr("Start over")
             variant: "danger"
+            enabled: !appBridge.editBusy
             ToolTip.text: qsTr("Discards ALL progress — every chunk, including completed frames, re-renders with the new settings.")
             ToolTip.visible: hovered
             ToolTip.delay: 600

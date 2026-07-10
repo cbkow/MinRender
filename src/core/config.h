@@ -36,8 +36,6 @@ struct Config
     // Sync root path (shared filesystem mount point)
     std::string sync_root;
 
-    // Leader election priority (lower = higher priority)
-    int priority = 100;
 
     // HTTP mesh port
     uint16_t http_port = 8420;
@@ -77,7 +75,6 @@ inline void to_json(nlohmann::json& j, const Config& c)
 {
     j = nlohmann::json{
         {"sync_root", c.sync_root},
-        {"priority", c.priority},
         {"http_port", c.http_port},
         {"ip_override", c.ip_override},
         {"tags", c.tags},
@@ -95,7 +92,6 @@ inline void to_json(nlohmann::json& j, const Config& c)
 inline void from_json(const nlohmann::json& j, Config& c)
 {
     if (j.contains("sync_root"))         j.at("sync_root").get_to(c.sync_root);
-    if (j.contains("priority"))          j.at("priority").get_to(c.priority);
     if (j.contains("http_port"))         c.http_port = j.at("http_port").get<uint16_t>();
     if (j.contains("ip_override"))       j.at("ip_override").get_to(c.ip_override);
     if (j.contains("tags"))              j.at("tags").get_to(c.tags);

@@ -18,7 +18,6 @@ public:
     void start(const std::filesystem::path& farmPath,
                const std::string& nodeId,
                const std::string& localEndpoint,   // "ip:port"
-               int localPriority,
                const std::vector<std::string>& localTags = {});
     void stop();
 
@@ -34,7 +33,6 @@ public:
                         const std::string& jobId = {},
                         const std::string& chunk = {});
     void setNodeState(const std::string& state);  // "active" | "stopped"
-    void setLocalPriority(int priority);
 
     // Optimistic update: set a remote peer's node_state locally (instant UI feedback)
     void setPeerNodeState(const std::string& nodeId, const std::string& state);
@@ -76,7 +74,6 @@ private:
     std::filesystem::path m_farmPath;
     std::string m_nodeId;
     std::string m_localEndpoint;
-    int m_localPriority = 100;
     std::vector<std::string> m_localTags;
 
     mutable std::mutex m_mutex;

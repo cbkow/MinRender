@@ -7,14 +7,11 @@ import MinRenderUi 1.0
 // job is dispatched between OSes, and by AppBridge when a macOS submitter
 // canonicalizes paths to Windows form. The dialog edits a local copy and
 // only commits to AppBridge.setPathMappings on Save — Cancel discards.
-Dialog {
+MrDialog {
     id: root
     title: qsTr("Path Mappings")
-    modal: true
-    anchors.centerIn: parent
     width: 820
     height: Math.min(600, parent ? parent.height - 80 : 560)
-    standardButtons: Dialog.NoButton
 
     // Local mutable copy. Each entry is {win, mac, lin, enabled, label}.
     // Reload from AppBridge on every open so re-opening discards any
@@ -67,6 +64,7 @@ Dialog {
 
     ColumnLayout {
         anchors.fill: parent
+        anchors.margins: 16
         spacing: 8
 
         Label {

@@ -25,6 +25,7 @@ struct ChunkRow
     int retry_count = 0;
     std::vector<int> completed_frames;  // individual frames completed within this chunk
     std::vector<std::string> failed_on; // node IDs that failed this chunk (blacklist)
+    int64_t edit_epoch = 0;             // job's edit_epoch at assign time
 };
 
 struct JobRow
@@ -34,6 +35,7 @@ struct JobRow
     std::string current_state = "active";  // active | paused | cancelled | completed
     int priority = 50;
     int64_t submitted_at_ms = 0;
+    int64_t edit_epoch = 0;          // bumped by each restart/startover edit
 };
 
 struct JobProgress
@@ -79,10 +81,28 @@ public:
     std::optional<std::pair<ChunkRow, std::string/*manifest_json*/>>
         findNextPendingChunkForNode(const std::vector<std::string>& nodeTags,
                                     const std::string& nodeId = {});
-    bool assignChunk(int64_t chunkId, const std::string& nodeId, int64_t nowMs);
-    bool completeChunk(const std::string& jobId, int frameStart, int frameEnd, int64_t nowMs);
+    // The edit-epoch fence: assignChunk stamps the job's epoch onto the
+    // chunk; complete/fail reports must come from the assigned node and
+    // (when they carry one) match the chunk's epoch, so renders
+    // dispatched before an edit or a flap-reassign can't corrupt the
+    // successor's bookkeeping. editEpoch -1 / empty node = legacy report
+    // (old worker) — the corresponding guard is skipped.
+    bool assignChunk(int64_t chunkId, const std::string& nodeId, int64_t nowMs,
+                     int64_t editEpoch);
+    bool completeChunk(const std::string& jobId, int frameStart, int frameEnd,
+                       int64_t nowMs, const std::string& nodeId = {},
+                       int64_t editEpoch = -1);
     bool failChunk(const std::string& jobId, int frameStart, int frameEnd,
-                   int maxRetries, const std::string& failingNodeId = {});
+                   int maxRetries, const std::string& failingNodeId = {},
+                   int64_t editEpoch = -1);
+    // Read-only fence pre-checks, used by the HTTP report handlers to
+    // answer stale reports (200 + {"stale":true}) without queueing them.
+    bool isChunkCurrent(const std::string& jobId, int frameStart, int frameEnd,
+                        const std::string& nodeId, int64_t editEpoch);
+    bool isJobEpochCurrent(const std::string& jobId, int64_t editEpoch);
+    int64_t getJobEditEpoch(const std::string& jobId);
+    // Increment and return the job's new epoch (restart/startover edits).
+    int64_t bumpEditEpoch(const std::string& jobId);
     bool revertChunkToPending(const std::string& jobId, int frameStart, int frameEnd);
     int reassignDeadWorkerChunks(const std::string& deadNodeId);
     std::string getJobCompletionState(const std::string& jobId);

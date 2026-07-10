@@ -69,21 +69,62 @@ public:
     // worker-side forwards always return true (result arrives async).
     bool moveJob(const std::string& jobId, const std::string& targetJobId, bool before);
     void setJobPriority(const std::string& jobId, int priority);
+    // Outcome of a job edit. On workers the terminal code arrives async
+    // (the leader round-trip); on the leader it is known synchronously.
+    struct EditResult
+    {
+        enum class Code
+        {
+            Applied,         // leader stored + executed the edit
+            InvalidManifest, // manifest JSON rejected
+            JobNotFound,     // leader has no such job
+            DbUnavailable,   // leader DB not ready
+            LeaderError,     // leader answered an error
+            NoResponse,      // no leader reachable / connect failed
+            RouteMissing,    // leader too old for /edit (v0 feature set)
+            QueuedToShare,   // leader unreachable — durably queued to
+                             // {farmPath}/commands/ instead
+        };
+        Code code = Code::NoResponse;
+        std::string message;
+        bool ok() const { return code == Code::Applied; }
+    };
+
     // Apply an edited manifest to an existing job. mode:
     //   "continue"  — manifest UPDATE only; next dispatches pick it up
     //   "restart"   — also return in-flight chunks to pending + abort them
     //   "startover" — also drop and recompute ALL chunks from the new
     //                 frame range / chunk size
+    // `done` fires exactly once with the outcome — synchronously on the
+    // leader, from the UI-thread-marshalled HTTP callback on workers.
     void editJob(const std::string& jobId, const std::string& manifestJson,
-                 const std::string& mode, int priority);
+                 const std::string& mode, int priority,
+                 std::function<void(const EditResult&)> done = nullptr);
+    // Leader-local edit execution (DB mutation, chunk reset/rebuild,
+    // abort pushes). Shared by editJob, the /edit HTTP handler, and the
+    // farm-share command consumer.
+    EditResult applyEditLocally(const std::string& jobId,
+                                const std::string& manifestJson,
+                                const std::string& mode, int priority);
+    // Fallback command transport when the leader can't be reached over
+    // HTTP: drop the edit as {farmPath}/commands/*.json for whichever
+    // node is leader to consume (pollFarmCommands). Survives leader
+    // handover — the share is the queue, same philosophy as the
+    // endpoint.json phonebook. Returns false if the write failed.
+    bool writeEditCommand(const std::string& jobId,
+                          const std::string& manifestJson,
+                          const std::string& mode, int priority);
     // Abort a local in-flight render of this job without failure
     // bookkeeping (see RenderCoordinator::abandonCurrentRender). Called
     // by the leader's edit push via POST /api/render/abort.
     void abandonJobRender(const std::string& jobId, const std::string& reason);
     // Full manifest JSON for a job — from the DB on the leader, via a
     // blocking HTTP GET to the leader on workers (same pattern as
-    // getChunksForJob). Empty string when unavailable.
-    std::string getJobManifestJson(const std::string& jobId);
+    // getChunksForJob). Empty string when unavailable; errorOut (when
+    // given) distinguishes why: "not_found", "route_missing" (old
+    // leader), "no_leader", "unreachable", or a leader error body.
+    std::string getJobManifestJson(const std::string& jobId,
+                                   std::string* errorOut = nullptr);
     void cancelJob(const std::string& jobId);
     void requeueJob(const std::string& jobId);
     void deleteJob(const std::string& jobId);
@@ -140,10 +181,19 @@ public:
     void postToLeaderAsync(const std::string& endpoint, const std::string& body,
                            std::function<void(bool success, const std::string& response)> callback = nullptr,
                            const std::string& method = "POST");
+    // Status-aware variant: callback gets the HTTP status (0 = no
+    // response) so callers can tell unreachable from answered-error.
+    void postToLeaderAsyncEx(const std::string& endpoint, const std::string& body,
+                             std::function<void(int status, const std::string& response)> statusCallback,
+                             const std::string& method = "POST");
 
     // Leader election (delegated to PeerManager)
     bool isLeader() const { return m_peerManager.isLeader(); }
     std::string getLeaderEndpoint() const;
+
+    // True when the current leader advertises the capability token in
+    // its /api/status. Old builds send no capabilities (= v0 set).
+    bool leaderSupports(const std::string& capability) const;
 
     // Tray state
     // trayIconName() returns "green" | "blue" | "yellow" | "red" | "gray" for
@@ -185,11 +235,18 @@ private:
     void loadConfig();
     void onBecomeLeader();
     void onLoseLeadership();
+    // Leader-only consumer of {farmPath}/commands/ — applies queued
+    // commands via applyEditLocally, acks by moving each file to
+    // commands/processed/ (SubmissionWatcher idiom), drops entries
+    // older than 15 min unapplied, prunes processed/ after 7 days.
+    void pollFarmCommands();
+    std::chrono::steady_clock::time_point m_lastCommandPoll{};
     void refreshCachedJobs();
     void abortRenderIfJobGone();
     void reportCompletion(const std::string& jobId, const ChunkRange& chunk,
-                          const std::string& state);
-    void reportFrameCompletion(const std::string& jobId, int frame);
+                          const std::string& state, int64_t editEpoch);
+    void reportFrameCompletion(const std::string& jobId, int frame,
+                               int64_t editEpoch);
     void handleUdpMessages();
     void sendUdpHeartbeat();
 
@@ -248,6 +305,7 @@ private:
         int64_t elapsedMs = 0;
         int exitCode = 0;
         std::string error;
+        int64_t editEpoch = -1;   // echoed to the leader's epoch fence
     };
     std::vector<PendingReport> m_pendingReports;
 
@@ -256,6 +314,7 @@ private:
     {
         std::string jobId;
         int frame = 0;
+        int64_t editEpoch = -1;
     };
     std::vector<PendingFrameReport> m_pendingFrameReports;
 
@@ -270,6 +329,11 @@ private:
         std::string endpoint;
         std::string body;
         std::function<void(bool success, const std::string& response)> callback;
+        // Status-aware variant: status 0 = no response (connect/read
+        // failure), otherwise the HTTP status. Lets callers distinguish
+        // "leader unreachable" from "leader answered an error" — the
+        // bool callback above conflates the two.
+        std::function<void(int status, const std::string& response)> statusCallback;
     };
     std::mutex m_httpQueueMutex;
     std::queue<HttpRequest> m_httpQueue;

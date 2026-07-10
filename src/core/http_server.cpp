@@ -160,9 +160,12 @@ void HttpServer::setupRoutes()
             auto manifest = body.at("manifest").get<JobManifest>();
             int frameStart = body.at("frame_start").get<int>();
             int frameEnd = body.at("frame_end").get<int>();
+            // Absent on old leaders — reports then omit it and get the
+            // legacy (pre-epoch) guards.
+            int64_t editEpoch = body.value("edit_epoch", int64_t(-1));
 
             ChunkRange chunk{frameStart, frameEnd};
-            m_app->renderCoordinator().queueDispatch(manifest, chunk);
+            m_app->renderCoordinator().queueDispatch(manifest, chunk, editEpoch);
 
             res.set_content(R"({"status":"ok"})", "application/json");
         }
@@ -404,8 +407,31 @@ void HttpServer::setupRoutes()
             const std::string manifest = body.at("manifest").dump();
             const std::string mode     = body.value("mode", "continue");
             const int priority         = body.value("priority", 50);
-            m_app->editJob(jobId, manifest, mode, priority);
-            res.set_content(R"({"status":"ok"})", "application/json");
+
+            using Code = MonitorApp::EditResult::Code;
+            const auto r = m_app->applyEditLocally(jobId, manifest, mode, priority);
+            switch (r.code)
+            {
+            case Code::Applied:
+                res.set_content(R"({"status":"ok"})", "application/json");
+                break;
+            case Code::JobNotFound:
+                res.status = 404;
+                res.set_content(R"({"error":"job_not_found"})", "application/json");
+                break;
+            case Code::InvalidManifest:
+                res.status = 400;
+                res.set_content(
+                    nlohmann::json{{"error", "invalid_manifest"},
+                                   {"detail", r.message}}.dump(),
+                    "application/json");
+                break;
+            case Code::DbUnavailable:
+            default:
+                res.status = 503;
+                res.set_content(R"({"error":"db_unavailable"})", "application/json");
+                break;
+            }
         }
         catch (const std::exception& e)
         {
@@ -527,6 +553,17 @@ void HttpServer::setupRoutes()
             std::string nodeId = body.value("node_id", "");
             std::string jobId = body.at("job_id").get<std::string>();
             auto frames = body.at("frames").get<std::vector<int>>();
+            int64_t editEpoch = body.value("edit_epoch", int64_t(-1));
+
+            // Epoch fence: a push from before a job edit is answered
+            // 200 + stale (a non-200 would make old flushers retry
+            // forever). The stale verdict also tells a new worker to
+            // abandon the fenced render locally.
+            if (!m_app->databaseManager().isJobEpochCurrent(jobId, editEpoch))
+            {
+                res.set_content(R"({"status":"stale","stale":true})", "application/json");
+                return;
+            }
 
             for (int frame : frames)
             {
@@ -534,6 +571,7 @@ void HttpServer::setupRoutes()
                 fr.node_id = nodeId;
                 fr.job_id = jobId;
                 fr.frame = frame;
+                fr.edit_epoch = editEpoch;
                 m_app->dispatchManager().queueFrameCompletion(std::move(fr));
             }
 
@@ -562,6 +600,17 @@ void HttpServer::setupRoutes()
             report.frame_end = body.at("frame_end").get<int>();
             report.elapsed_ms = body.value("elapsed_ms", int64_t(0));
             report.exit_code = body.value("exit_code", 0);
+            report.edit_epoch = body.value("edit_epoch", int64_t(-1));
+
+            // Fence pre-check (see frame-complete): stale reports get
+            // 200 + stale so the sender drops them instead of retrying.
+            if (!m_app->databaseManager().isChunkCurrent(
+                    report.job_id, report.frame_start, report.frame_end,
+                    report.node_id, report.edit_epoch))
+            {
+                res.set_content(R"({"status":"stale","stale":true})", "application/json");
+                return;
+            }
 
             m_app->dispatchManager().queueCompletion(std::move(report));
             res.set_content(R"({"status":"ok"})", "application/json");
@@ -588,6 +637,17 @@ void HttpServer::setupRoutes()
             report.frame_start = body.at("frame_start").get<int>();
             report.frame_end = body.at("frame_end").get<int>();
             report.error = body.value("error", std::string("Unknown"));
+            report.edit_epoch = body.value("edit_epoch", int64_t(-1));
+
+            // Fence pre-check (see frame-complete): a stale failure
+            // must not blacklist the node or burn a retry.
+            if (!m_app->databaseManager().isChunkCurrent(
+                    report.job_id, report.frame_start, report.frame_end,
+                    report.node_id, report.edit_epoch))
+            {
+                res.set_content(R"({"status":"stale","stale":true})", "application/json");
+                return;
+            }
 
             m_app->dispatchManager().queueFailure(std::move(report));
             res.set_content(R"({"status":"ok"})", "application/json");
@@ -779,8 +839,6 @@ void HttpServer::setupRoutes()
                 uint16_t p = body["udp_port"].get<uint16_t>();
                 if (p != cfg.udp_port) { cfg.udp_port = p; needsRestart = true; }
             }
-            if (body.contains("priority"))
-                cfg.priority = body["priority"].get<int>();
             if (body.contains("tags"))
                 cfg.tags = body["tags"].get<std::vector<std::string>>();
             if (body.contains("staging_enabled"))

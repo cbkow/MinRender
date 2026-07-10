@@ -20,10 +20,15 @@ class AgentSupervisor;
 class RenderCoordinator
 {
 public:
+    // editEpoch: the job's edit epoch received with the dispatch (-1
+    // when the leader didn't send one) — echoed in reports so the
+    // leader can fence renders dispatched before a job edit.
     using CompletionCallback = std::function<void(const std::string& jobId,
                                                    const ChunkRange& chunk,
-                                                   const std::string& state)>;
-    using FrameCompletionCallback = std::function<void(const std::string& jobId, int frame)>;
+                                                   const std::string& state,
+                                                   int64_t editEpoch)>;
+    using FrameCompletionCallback = std::function<void(const std::string& jobId, int frame,
+                                                       int64_t editEpoch)>;
 
     RenderCoordinator() = default;
 
@@ -33,7 +38,8 @@ public:
               AgentSupervisor* supervisor);
 
     // Called by DispatchManager — thread-safe
-    void queueDispatch(const JobManifest& manifest, const ChunkRange& chunk);
+    void queueDispatch(const JobManifest& manifest, const ChunkRange& chunk,
+                       int64_t editEpoch = -1);
 
     // Called from MonitorApp::update() (main thread)
     void update(AgentSupervisor& supervisor);
@@ -64,6 +70,8 @@ public:
     // UI queries
     bool isRendering() const { return m_activeRender.has_value(); }
     std::string currentJobId() const;
+    int64_t currentEditEpoch() const
+    { return m_activeRender ? m_activeRender->editEpoch : -1; }
     ChunkRange currentChunk() const;
     std::string currentChunkLabel() const;  // "f42" or "f42-50"
     float currentProgress() const;
@@ -91,6 +99,7 @@ private:
     {
         JobManifest manifest;
         ChunkRange chunk;
+        int64_t editEpoch = -1;
     };
     std::queue<PendingDispatch> m_dispatchQueue;
     std::mutex m_queueMutex;
@@ -104,6 +113,7 @@ private:
     {
         JobManifest manifest;
         ChunkRange chunk;
+        int64_t editEpoch = -1;
         bool ackReceived = false;
         float progressPct = 0.0f;
         std::chrono::steady_clock::time_point startTime;
