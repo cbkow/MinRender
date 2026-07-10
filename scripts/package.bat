@@ -55,6 +55,15 @@ if exist "%BUILD%\WinSparkle.dll" (
   echo WARN: %BUILD%\WinSparkle.dll not found - auto-update disabled in this build.
 )
 
+REM Frame-preview decode DLLs (OpenEXR/Imath/png/jpeg-turbo/tiff + deps) —
+REM vendored at external\install-win64 (vcpkg export, see CMakeLists). Optional:
+REM absent means the build has no preview pane and needs nothing shipped.
+if exist "%REPO%\external\install-win64\bin\*.dll" (
+  copy /Y "%REPO%\external\install-win64\bin\*.dll" "%DEPLOY%\" >nul || exit /b 1
+) else (
+  echo WARN: external\install-win64\bin has no DLLs - frame preview absent in this build.
+)
+
 REM Rust-built agent — warn if missing, don't fail (dev may not have rebuilt)
 if exist "%AGENT%" (
   copy /Y "%AGENT%" "%DEPLOY%\" >nul

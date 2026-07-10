@@ -69,11 +69,20 @@ qt_standard_project_setup(REQUIRES 6.8)
 # libtiff). When every package resolves, the minrender target compiles
 # src/preview/ (also vendored from QCView) and defines
 # MINRENDER_HAVE_PREVIEW; otherwise the preview pane is absent and the
-# build proceeds — same optional pattern as Sparkle/WinSparkle, so the
-# Windows build keeps working until its libs land (vcpkg: openexr
-# libpng libjpeg-turbo tiff, or a populated external/install).
-set(MR_VENDOR_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/external/install")
-if(EXISTS "${MR_VENDOR_PREFIX}/lib")
+# build proceeds — same optional pattern as Sparkle/WinSparkle.
+# The prefixes are per-platform and must stay separate: external/install
+# holds macOS dylibs whose lib/cmake configs reference gitignored .a
+# files, so any other platform picking them up aborts configure.
+# external/install-win64 is gitignored (like external/winsparkle);
+# repopulate it with `vcpkg export openexr libpng libjpeg-turbo tiff
+# --raw` and copy installed/x64-windows/ whole — the vcpkg target
+# configs reference the debug/ import libs, so it must come along.
+if(APPLE)
+    set(MR_VENDOR_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/external/install")
+elseif(WIN32)
+    set(MR_VENDOR_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/external/install-win64")
+endif()
+if(MR_VENDOR_PREFIX AND EXISTS "${MR_VENDOR_PREFIX}/lib")
     list(PREPEND CMAKE_PREFIX_PATH "${MR_VENDOR_PREFIX}")
 endif()
 find_package(OpenEXR 3.1 QUIET)
@@ -194,6 +203,16 @@ if(MR_HAVE_PREVIEW)
         JPEG::JPEG
         TIFF::TIFF
     )
+    # The vendored Windows decode libs are DLLs; sync them next to the
+    # exe (same pattern as WinSparkle.dll) so dev builds run from build\
+    # and package.bat's deploy stage can pick them up from one place.
+    if(WIN32 AND EXISTS "${MR_VENDOR_PREFIX}/bin")
+        file(GLOB MR_PREVIEW_DLLS "${MR_VENDOR_PREFIX}/bin/*.dll")
+        add_custom_command(TARGET minrender POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${MR_PREVIEW_DLLS} "$<TARGET_FILE_DIR:minrender>"
+            COMMENT "Sync preview decode DLLs next to minRender.exe" VERBATIM)
+    endif()
 endif()
 
 # Mark Theme.qml as a QML singleton explicitly — Qt 6.11's auto-detection
