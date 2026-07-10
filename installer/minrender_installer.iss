@@ -2,7 +2,7 @@
 ; https://jrsoftware.org/isinfo.php
 
 #define MyAppName "minRender"
-#define MyAppVersion "0.4.9"
+#define MyAppVersion "0.5.0"
 #define MyAppPublisher "cbkow"
 #define MyAppURL "https://github.com/cbkow/minrender"
 #define MyAppExeName "minRender.exe"
@@ -17,7 +17,7 @@ AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
-AppUpdatesURL={#MyAppURL}9
+AppUpdatesURL={#MyAppURL}
 AppCopyright=Copyright (C) 2025-2026 {#MyAppPublisher}
 
 ; Installation directories
@@ -90,8 +90,10 @@ Name: "launchafter"; Description: "Launch {#MyAppName} after installation"; Grou
 ; (those are handled by the plugins\* components below). The
 ; ExcludePatterns strip the plugin trees; the core block installs
 ; minRender.exe, minrender-headless.exe, mr-restart.exe, mr-agent.exe,
-; WinSparkle.dll (when auto-update is built in), Qt DLLs, platforms\,
-; styles\, qml\, resources\ (fonts, icons, templates, etc.).
+; WinSparkle.dll (when auto-update is built in), the frame-preview
+; decode DLLs (OpenEXR/Imath/png/jpeg-turbo/tiff + deps, staged from
+; external\install-win64), Qt DLLs, platforms\, styles\, qml\,
+; resources\ (fonts, icons, templates, etc.).
 Source: "..\build\deploy\*"; DestDir: "{app}"; \
     Excludes: "resources\plugins\blender\*,resources\plugins\cinema4d\*,resources\plugins\afterEffects\*,vc_redist.x64.exe"; \
     Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
