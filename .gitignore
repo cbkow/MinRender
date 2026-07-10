@@ -68,6 +68,12 @@ _deps/
 /external/Sparkle/
 /external/winsparkle/
 
+# Vendored Windows frame-preview decode libs (binary; not committed).
+# Populate via `vcpkg export openexr libpng libjpeg-turbo tiff --raw`
+# and copy installed/x64-windows/ whole (see CMakeLists comment).
+# When absent, the preview pane is compiled out and the build proceeds.
+/external/install-win64/
+
 # Sparkle EdDSA PRIVATE key. generate_keys -x exports it to a plaintext file —
 # never commit it. The private key belongs in the login Keychain + an offline
 # backup; only the PUBLIC key is embedded in the app.
