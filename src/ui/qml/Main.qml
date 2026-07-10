@@ -305,8 +305,12 @@ ApplicationWindow {
     // manifest fetch.
     MrDialog {
         id: editJobDialog
+        readonly property bool resubmit:
+            !!appBridge.editSeed && appBridge.editSeed.resubmit === true
         title: appBridge.editJobId.length > 0
-               ? qsTr("Edit Job — %1").arg(appBridge.editJobId)
+               ? (resubmit
+                  ? qsTr("Resubmit chunk as new job — %1").arg(appBridge.editJobId)
+                  : qsTr("Edit Job — %1").arg(appBridge.editJobId))
                : qsTr("Edit Job")
         width: 640
         height: Math.min(760, window.height - 80)
@@ -324,6 +328,12 @@ ApplicationWindow {
             SubmissionForm {
                 editSeed: appBridge.editSeed
                 onCancelled: appBridge.closeJobEditor()
+                // Resubmit mode ends with a normal submission — close
+                // the editor and jump to the new job.
+                onSubmitted: (jobId) => {
+                    appBridge.closeJobEditor()
+                    appBridge.currentJobId = jobId
+                }
             }
         }
     }

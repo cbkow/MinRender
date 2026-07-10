@@ -41,6 +41,9 @@ struct JobRow
 struct JobProgress
 {
     int total = 0, completed = 0, failed = 0, rendering = 0, pending = 0;
+    // Stopped chunks — excluded from total (see getAllJobs), surfaced
+    // so the UI can label a finished job "partially completed".
+    int stopped = 0;
     // Wall-clock duration endpoints, aggregated over the job's chunks.
     // 0 = no chunk assigned / completed yet.
     int64_t first_assigned_ms = 0;
@@ -121,6 +124,12 @@ public:
     bool rebuildChunks(const std::string& jobId, const std::vector<ChunkRange>& chunks);
     bool retryFailedChunks(const std::string& jobId);
     bool reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
+    // Move a pending/assigned chunk to the terminal 'stopped' state
+    // (never re-dispatched; excluded from progress totals; requeue via
+    // reassignChunk resumes it). Returns the pre-update row so the
+    // caller can abort-push the node that was rendering it, or nullopt
+    // if the chunk wasn't stoppable.
+    std::optional<ChunkRow> stopChunk(int64_t chunkId);
     void markChunksCompleted(const std::string& jobId, const std::vector<ChunkRange>& ranges);
 
     // Per-frame completion tracking

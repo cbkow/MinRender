@@ -201,6 +201,16 @@ std::vector<JobSummary> DatabaseManager::getAllJobs()
             {
                 std::string state = cq.getColumn(0).getString();
                 int count = cq.getColumn(1).getInt();
+                // Stopped chunks are deliberately excluded from total —
+                // progress bars and N/M counts everywhere (old clients
+                // included) then read as if those frames were never
+                // part of the job. Reported separately for the
+                // "partially completed" badge.
+                if (state == "stopped")
+                {
+                    s.progress.stopped = count;
+                    continue;
+                }
                 s.progress.total += count;
                 if (state == "completed")      s.progress.completed = count;
                 else if (state == "failed")    s.progress.failed = count;
@@ -689,6 +699,44 @@ bool DatabaseManager::failChunk(const std::string& jobId, int frameStart, int fr
     }
 }
 
+std::optional<ChunkRow> DatabaseManager::stopChunk(int64_t chunkId)
+{
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    try
+    {
+        ChunkRow row;
+        {
+            SQLite::Statement sel(*m_db,
+                "SELECT job_id, frame_start, frame_end, state, assigned_to "
+                "FROM chunks WHERE id = ?");
+            sel.bind(1, chunkId);
+            if (!sel.executeStep())
+                return std::nullopt;
+            row.id          = chunkId;
+            row.job_id      = sel.getColumn(0).getString();
+            row.frame_start = sel.getColumn(1).getInt();
+            row.frame_end   = sel.getColumn(2).getInt();
+            row.state       = sel.getColumn(3).getString();
+            row.assigned_to = sel.getColumn(4).isNull()
+                              ? std::string{} : sel.getColumn(4).getString();
+        }
+
+        SQLite::Statement q(*m_db,
+            "UPDATE chunks SET state = 'stopped', assigned_to = NULL, "
+            "  assigned_at_ms = NULL "
+            "WHERE id = ? AND state IN ('pending', 'assigned')");
+        q.bind(1, chunkId);
+        if (q.exec() == 0)
+            return std::nullopt;   // already terminal
+        return row;
+    }
+    catch (const std::exception& e)
+    {
+        MonitorLog::instance().error("db", std::string("stopChunk failed: ") + e.what());
+        return std::nullopt;
+    }
+}
+
 bool DatabaseManager::isChunkCurrent(const std::string& jobId, int frameStart, int frameEnd,
                                      const std::string& nodeId, int64_t editEpoch)
 {
@@ -808,9 +856,12 @@ std::string DatabaseManager::getJobCompletionState(const std::string& jobId)
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     try
     {
+        // 'stopped' is terminal: it neither holds the job open nor
+        // fails it — the job can complete around stopped chunks (the
+        // UI labels that "partially completed").
         SQLite::Statement q(*m_db, R"(
             SELECT
-              SUM(CASE WHEN state NOT IN ('completed','failed') THEN 1 ELSE 0 END),
+              SUM(CASE WHEN state NOT IN ('completed','failed','stopped') THEN 1 ELSE 0 END),
               SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END)
             FROM chunks WHERE job_id = ?
         )");
@@ -966,12 +1017,25 @@ bool DatabaseManager::reassignChunk(int64_t chunkId, const std::string& targetNo
     {
         if (targetNodeId.empty())
         {
-            // Reset to pending — clear assignment
+            // Reset to pending — clear assignment. 'stopped' included:
+            // requeueing is how a stopped chunk resumes.
             SQLite::Statement q(*m_db,
                 "UPDATE chunks SET state = 'pending', assigned_to = NULL, assigned_at_ms = NULL "
-                "WHERE id = ? AND state IN ('assigned', 'failed')");
+                "WHERE id = ? AND state IN ('assigned', 'failed', 'stopped')");
             q.bind(1, chunkId);
-            return q.exec() > 0;
+            if (q.exec() == 0)
+                return false;
+
+            // The dispatcher only pulls from active jobs — requeueing a
+            // chunk on a job that already finished (completed around a
+            // stopped chunk, or ended failed) must reopen the job.
+            SQLite::Statement rj(*m_db,
+                "UPDATE jobs SET current_state = 'active' "
+                "WHERE job_id = (SELECT job_id FROM chunks WHERE id = ?) "
+                "  AND current_state IN ('completed', 'failed')");
+            rj.bind(1, chunkId);
+            rj.exec();
+            return true;
         }
         else
         {
@@ -980,7 +1044,7 @@ bool DatabaseManager::reassignChunk(int64_t chunkId, const std::string& targetNo
                 std::chrono::system_clock::now().time_since_epoch()).count();
             SQLite::Statement q(*m_db,
                 "UPDATE chunks SET state = 'assigned', assigned_to = ?, assigned_at_ms = ? "
-                "WHERE id = ? AND state IN ('assigned', 'failed')");
+                "WHERE id = ? AND state IN ('assigned', 'failed', 'stopped')");
             q.bind(1, targetNodeId);
             q.bind(2, nowMs);
             q.bind(3, chunkId);

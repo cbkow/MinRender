@@ -169,6 +169,12 @@ public:
     void         setSelectedTaskChunkIndex(int i);
     QStringList  taskOutputLines()         const { return m_taskOutputLines; }
 
+    // Reveal the currently-viewed log's file in Finder/Explorer — the
+    // selected task chunk's stdout log, a peer's monitor-<date>.log, or
+    // our own (all live on the farm share). jobActionFailed toast when
+    // no file exists for the current source.
+    Q_INVOKABLE void revealCurrentLog();
+
     QString thisNodeId() const;
     QString thisNodeHostname() const;
     QString thisNodeGpu() const;
@@ -227,14 +233,33 @@ public:
     Q_INVOKABLE void requestSubmissionMode();
 
     // Chunk-level actions on the currently-selected job.
-    // reassignChunk: targetNodeId="" lets the dispatcher pick.
+    // reassignChunk: targetNodeId="" lets the dispatcher pick. Also the
+    //   resume path for stopped chunks (back to pending).
+    // stopChunk: terminal 'stopped' state + abort push to the renderer;
+    //   frames leave the grid/progress, job can complete "partial".
     // resubmitChunkAsJob: returns the new job's slug ("" on failure)
     //   so the caller can switch the JobDetail to it.
     Q_INVOKABLE void reassignChunk(qint64 chunkId,
                                    const QString& targetNodeId = QString());
+    Q_INVOKABLE void stopChunk(qint64 chunkId);
+    Q_PROPERTY(bool leaderSupportsChunkStop READ leaderSupportsChunkStop
+               NOTIFY leaderSupportsChunkStopChanged)
+    bool leaderSupportsChunkStop() const;
     Q_INVOKABLE QString resubmitChunkAsJob(const QString& jobId,
                                            int frameStart, int frameEnd,
                                            int chunkSize);
+    // Opens the submission form seeded from jobId's stored manifest with
+    // the frame range preset to the chunk — "edit, then submit as a new
+    // job". Same async fetch/failure surface as openJobEditor.
+    Q_INVOKABLE void openChunkResubmitEditor(const QString& jobId,
+                                             int frameStart, int frameEnd);
+    // Resubmit-mode submit for template-gone jobs: mutates the seed's
+    // stored manifest (flags 1:1, like applyJobEdit's raw path) into a
+    // new job. Template-found resubmits go through plain submitJob.
+    Q_INVOKABLE void submitManifestResubmit(const QString& jobName,
+                                            const QStringList& flagValues,
+                                            int frameStart, int frameEnd,
+                                            int chunkSize, int priority);
 
     // Returns a QVariantMap describing a template by id: {name, templateId,
     // dcc, path, frameStart, frameEnd, chunkSize, maxRetries, flags:[…]}
@@ -407,6 +432,7 @@ signals:
     void editBusyChanged();
     void submitBusyChanged();
     void leaderSupportsJobEditChanged();
+    void leaderSupportsChunkStopChanged();
     // Transient failure of a job action outside a dialog (e.g. the
     // Edit button's manifest fetch) — surfaced as a toast in Main.qml.
     void jobActionFailed(const QString& reason);
@@ -427,8 +453,14 @@ private:
 
     // Job-edit async plumbing. finishOpenJobEditor/finishApplyJobEdit
     // run on the UI thread after the manifest fetch thread completes.
+    // resubmit=true seeds the form for "submit chunk as new job":
+    // frame range overridden to the chunk, name editable, and the raw
+    // manifest stashed in the seed for the template-gone submit path.
     void finishOpenJobEditor(const QString& jobId,
-                             const std::string& manifestJson);
+                             const std::string& manifestJson,
+                             bool resubmit = false,
+                             int frameStartOverride = -1,
+                             int frameEndOverride = -1);
     void finishApplyJobEdit(const std::string& storedJson,
                             const std::string& fetchError,
                             const QStringList& flagValues,
@@ -440,6 +472,7 @@ private:
     bool m_editBusy = false;
     bool m_editorOpening = false;
     bool m_lastLeaderSupportsJobEdit = false;
+    bool m_lastLeaderSupportsChunkStop = false;
 
     void setCleanupBusy(bool busy);
     bool m_cleanupBusy = false;

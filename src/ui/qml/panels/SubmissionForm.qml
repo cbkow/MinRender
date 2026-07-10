@@ -22,7 +22,12 @@ Item {
     signal failed(string reason)
 
     property var editSeed: null
-    readonly property bool editMode: !!editSeed && !!editSeed.jobId
+    // resubmitMode: seeded like edit mode but submits a NEW job scoped
+    // to a chunk's frames (name editable, single Submit button).
+    readonly property bool resubmitMode:
+        !!editSeed && editSeed.resubmit === true
+    readonly property bool editMode:
+        !!editSeed && !!editSeed.jobId && !resubmitMode
 
     // Frame range / chunk size edits restructure the chunk table, so
     // only Start over can honor them.
@@ -40,7 +45,7 @@ Item {
     }
 
     Component.onCompleted: {
-        if (!editMode)
+        if (!editMode && !resubmitMode)
             return
         currentTemplateId = editSeed.templateId
         currentTemplate = { flags: editSeed.flags }
@@ -48,7 +53,8 @@ Item {
         for (let i = 0; i < editSeed.flags.length; ++i)
             vals.push(editSeed.flags[i].value || "")
         currentFlagValues = vals
-        jobNameField.text = editSeed.jobId
+        jobNameField.text = resubmitMode ? editSeed.suggestedName
+                                         : editSeed.jobId
         frameStartField.value = editSeed.frameStart
         frameEndField.value   = editSeed.frameEnd
         chunkSizeField.value  = editSeed.chunkSize
@@ -154,7 +160,7 @@ Item {
         SectionHeader { text: qsTr("Template") }
         ComboBox {
             id: templatePicker
-            visible: !root.editMode
+            visible: !root.editMode && !root.resubmitMode
             Layout.fillWidth: true
             model: appBridge.templatesModel
             textRole: "name"
@@ -163,15 +169,16 @@ Item {
             onActivated: root.refreshTemplate(currentValue || "")
         }
         Label {
-            visible: root.editMode
+            readonly property bool seeded: root.editMode || root.resubmitMode
+            visible: seeded
             Layout.fillWidth: true
-            text: root.editMode
+            text: seeded
                   ? (root.editSeed.templateFound
                      ? root.editSeed.templateName
                      : qsTr("%1 (template missing — editing raw values)")
                            .arg(root.editSeed.templateName))
                   : ""
-            color: root.editMode && !root.editSeed.templateFound
+            color: seeded && !root.editSeed.templateFound
                    ? Theme.warn : Theme.textPrimary
             font.pixelSize: Theme.fontSizeBase
             elide: Text.ElideRight
@@ -368,12 +375,24 @@ Item {
         FlatButton {
             visible: !root.editMode
             iconName: "paper-plane-tilt"
-            text: qsTr("Submit")
+            text: root.resubmitMode ? qsTr("Submit as new job") : qsTr("Submit")
             variant: "primary"
             enabled: jobNameField.text.length > 0 && currentTemplate !== null
                      && !appBridge.submitBusy
             onClicked: {
                 errorBanner.text = ""
+                if (root.resubmitMode && !root.editSeed.templateFound) {
+                    // No template to re-bake through — mutate the
+                    // parent's stored manifest instead.
+                    appBridge.submitManifestResubmit(
+                        jobNameField.text,
+                        currentFlagValues,
+                        frameStartField.value,
+                        frameEndField.value,
+                        chunkSizeField.value,
+                        priorityField.value)
+                    return
+                }
                 appBridge.submitJob(
                     currentTemplateId,
                     jobNameField.text,

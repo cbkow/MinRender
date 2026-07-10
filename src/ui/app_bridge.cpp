@@ -19,7 +19,12 @@
 #include "preview/exr_image_loader.h"
 #endif
 
+#include <QDate>
+#include <QDateTime>
+#include <QDesktopServices>
+#include <QDir>
 #include <QJsonDocument>
+#include <QProcess>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QStringList>
@@ -598,6 +603,60 @@ void AppBridge::setSelectedTaskChunkIndex(int i)
     reloadSelectedTaskChunk();
 }
 
+void AppBridge::revealCurrentLog()
+{
+    if (!m_monitor || !m_monitor->isFarmRunning())
+    {
+        emit jobActionFailed(tr("Farm not running — no log files available"));
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    fs::path logPath;
+    if (m_logSourceId == QStringLiteral("__task__"))
+    {
+        if (m_selectedTaskChunkIndex >= 0
+            && m_selectedTaskChunkIndex < m_taskOutputChunks.size())
+        {
+            logPath = m_taskOutputChunks[m_selectedTaskChunkIndex]
+                          .toMap().value("path").toString().toStdString();
+        }
+    }
+    else
+    {
+        // Peer log — or our own when no source is picked (the local
+        // ring buffer mirrors {farm}/nodes/<us>/monitor-<date>.log).
+        const std::string nodeId = m_logSourceId.isEmpty()
+            ? m_monitor->identity().nodeId()
+            : m_logSourceId.toStdString();
+        const std::string today =
+            QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd")).toStdString();
+        logPath = m_monitor->farmPath() / "nodes" / nodeId
+                  / ("monitor-" + today + ".log");
+    }
+
+    std::error_code ec;
+    if (logPath.empty() || !fs::exists(logPath, ec))
+    {
+        emit jobActionFailed(tr("No log file on disk for this source"));
+        return;
+    }
+
+    const QString native = QDir::toNativeSeparators(
+        QString::fromStdString(logPath.string()));
+#if defined(Q_OS_MACOS)
+    QProcess::startDetached(QStringLiteral("open"),
+                            {QStringLiteral("-R"), native});
+#elif defined(Q_OS_WIN)
+    // explorer's /select, quirk: the switch and path form one argument.
+    QProcess::startDetached(QStringLiteral("explorer"),
+                            {QStringLiteral("/select,") + native});
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(
+        QString::fromStdString(logPath.parent_path().string())));
+#endif
+}
+
 void AppBridge::reloadSelectedTaskChunk()
 {
     if (m_selectedTaskChunkIndex < 0
@@ -700,6 +759,13 @@ void AppBridge::refresh()
     {
         m_lastLeaderSupportsJobEdit = editSupported;
         emit leaderSupportsJobEditChanged();
+    }
+
+    const bool stopSupported = leaderSupportsChunkStop();
+    if (stopSupported != m_lastLeaderSupportsChunkStop)
+    {
+        m_lastLeaderSupportsChunkStop = stopSupported;
+        emit leaderSupportsChunkStopChanged();
     }
 
     const bool activeNow =
@@ -862,6 +928,18 @@ qint64 AppBridge::thisNodeRamMb() const
 bool AppBridge::leaderSupportsJobEdit() const
 {
     return m_monitor && m_monitor->leaderSupports("job_edit");
+}
+
+bool AppBridge::leaderSupportsChunkStop() const
+{
+    return m_monitor && m_monitor->leaderSupports("chunk_stop");
+}
+
+void AppBridge::stopChunk(qint64 chunkId)
+{
+    if (!m_monitor || chunkId <= 0)
+        return;
+    m_monitor->stopChunk(chunkId);
 }
 
 void AppBridge::setEditBusy(bool busy)
@@ -1302,6 +1380,113 @@ void AppBridge::submitJob(const QString& templateId,
         });
 }
 
+void AppBridge::submitManifestResubmit(const QString& jobName,
+                                       const QStringList& flagValues,
+                                       int frameStart, int frameEnd,
+                                       int chunkSize, int priority)
+{
+    if (!m_monitor)
+    {
+        emit submissionFailed(tr("Backend not ready"));
+        return;
+    }
+    if (frameStart > frameEnd || chunkSize < 1)
+    {
+        emit submissionFailed(tr("Invalid frame range or chunk size"));
+        return;
+    }
+    const std::string storedJson =
+        m_editSeed.value("manifestJson").toString().toStdString();
+    if (storedJson.empty())
+    {
+        emit submissionFailed(tr("No source manifest to resubmit from"));
+        return;
+    }
+
+    JobManifest manifest;
+    try
+    {
+        manifest = nlohmann::json::parse(storedJson).get<JobManifest>();
+    }
+    catch (const std::exception& e)
+    {
+        emit submissionFailed(tr("Stored manifest is invalid: %1").arg(e.what()));
+        return;
+    }
+
+    // Mutate flags 1:1 — the resubmit form's rows were built from
+    // manifest.flags in the same order (template-gone path only).
+    if (static_cast<size_t>(flagValues.size()) != manifest.flags.size())
+    {
+        emit submissionFailed(tr("Job changed while editing — reopen the editor"));
+        return;
+    }
+    for (int i = 0; i < flagValues.size(); ++i)
+        manifest.flags[static_cast<size_t>(i)].value =
+            flagValues[i].toStdString();
+
+    manifest.frame_start = frameStart;
+    manifest.frame_end   = frameEnd;
+    manifest.chunk_size  = chunkSize;
+
+    const std::string slug = TemplateManager::generateSlug(
+        jobName.toStdString(), m_monitor->farmPath() / "jobs");
+    if (slug.empty())
+    {
+        emit submissionFailed(tr("Failed to generate job slug"));
+        return;
+    }
+    manifest.job_id          = slug;
+    manifest.submitted_by    = m_monitor->identity().nodeId();
+    manifest.submitted_at_ms = QDateTime::currentMSecsSinceEpoch();
+
+#ifdef Q_OS_MACOS
+    // Same canonicalization boundary as submitJob.
+    if (MR::currentOsTag() == "mac")
+    {
+        const auto& mappings = m_monitor->config().path_mappings;
+        for (auto& flag : manifest.flags)
+        {
+            if (flag.value.has_value() && !flag.value->empty())
+                flag.value = MR::toCanonicalPath(*flag.value, mappings);
+        }
+        if (manifest.output_dir.has_value() && !manifest.output_dir->empty())
+            manifest.output_dir = MR::toCanonicalPath(*manifest.output_dir, mappings);
+        manifest.submitted_os = "windows";
+    }
+#endif
+
+    if (m_monitor->isLeader())
+    {
+        SubmitRequest sr;
+        sr.manifest = std::move(manifest);
+        sr.priority = priority;
+        m_monitor->dispatchManager().queueSubmission(std::move(sr));
+        emit submissionSucceeded(QString::fromStdString(slug));
+        return;
+    }
+
+    setSubmitBusy(true);
+    nlohmann::json body;
+    body["manifest"] = manifest;
+    body["priority"] = priority;
+    const QString slugQ = QString::fromStdString(slug);
+    m_monitor->postToLeaderAsync(
+        "/api/jobs", body.dump(),
+        [this, slugQ](bool ok, const std::string& response) {
+            const QString resp = QString::fromStdString(response);
+            QMetaObject::invokeMethod(
+                this,
+                [this, ok, slugQ, resp]() {
+                    setSubmitBusy(false);
+                    if (ok) emit submissionSucceeded(slugQ);
+                    else    emit submissionFailed(
+                                resp.isEmpty() ? tr("Leader did not respond") : resp);
+                },
+                Qt::QueuedConnection);
+        });
+}
+
 bool AppBridge::previewSupported() const
 {
 #ifdef MINRENDER_HAVE_PREVIEW
@@ -1579,8 +1764,37 @@ void AppBridge::openJobEditor(const QString& jobId)
     }).detach();
 }
 
+void AppBridge::openChunkResubmitEditor(const QString& jobId,
+                                        int frameStart, int frameEnd)
+{
+    if (!m_monitor || jobId.isEmpty() || m_editorOpening)
+        return;
+    m_editorOpening = true;
+
+    std::thread([this, jobId, frameStart, frameEnd]() {
+        std::string error;
+        const std::string manifestJson =
+            m_monitor->getJobManifestJson(jobId.toStdString(), &error);
+        QMetaObject::invokeMethod(this,
+            [this, jobId, frameStart, frameEnd, manifestJson, error]() {
+                m_editorOpening = false;
+                if (manifestJson.empty())
+                {
+                    emit jobActionFailed(manifestFetchErrorText(error));
+                    return;
+                }
+                finishOpenJobEditor(jobId, manifestJson,
+                                    /*resubmit=*/true, frameStart, frameEnd);
+            },
+            Qt::QueuedConnection);
+    }).detach();
+}
+
 void AppBridge::finishOpenJobEditor(const QString& jobId,
-                                    const std::string& manifestJson)
+                                    const std::string& manifestJson,
+                                    bool resubmit,
+                                    int frameStartOverride,
+                                    int frameEndOverride)
 {
     JobManifest manifest;
     try
@@ -1696,6 +1910,22 @@ void AppBridge::finishOpenJobEditor(const QString& jobId,
     seed["priority"]       = priority;
     seed["maxRetries"]     = manifest.max_retries;
     seed["timeoutSeconds"] = manifest.timeout_seconds.value_or(0);
+
+    if (resubmit)
+    {
+        // Chunk-resubmit variant: same prefilled form, but it submits a
+        // NEW job scoped to the chunk's frames. Chunk size defaults to
+        // the full range so the obvious tweak — "1 frame per node" —
+        // is a single field edit.
+        seed["resubmit"]      = true;
+        seed["frameStart"]    = frameStartOverride;
+        seed["frameEnd"]      = frameEndOverride;
+        seed["chunkSize"]     = frameEndOverride - frameStartOverride + 1;
+        seed["suggestedName"] = QString("%1_f%2-%3")
+            .arg(jobId).arg(frameStartOverride).arg(frameEndOverride);
+        // Raw manifest for the template-gone submit path.
+        seed["manifestJson"]  = QString::fromStdString(manifestJson);
+    }
 
     m_editJobId = jobId;
     m_editSeed  = seed;

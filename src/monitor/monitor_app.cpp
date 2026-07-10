@@ -606,6 +606,7 @@ void MonitorApp::refreshCachedJobs()
             info.completed_chunks = s.progress.completed;
             info.failed_chunks = s.progress.failed;
             info.rendering_chunks = s.progress.rendering;
+            info.stopped_chunks = s.progress.stopped;
             info.first_assigned_ms = s.progress.first_assigned_ms;
             info.last_completed_ms = s.progress.last_completed_ms;
 
@@ -625,6 +626,7 @@ void MonitorApp::refreshCachedJobs()
                 {"failed_chunks", s.progress.failed},
                 {"rendering_chunks", s.progress.rendering},
                 {"pending_chunks", s.progress.pending},
+                {"stopped_chunks", s.progress.stopped},
                 {"first_assigned_ms", s.progress.first_assigned_ms},
                 {"last_completed_ms", s.progress.last_completed_ms},
             };
@@ -693,6 +695,7 @@ void MonitorApp::refreshCachedJobs()
                                 info.completed_chunks = jj.value("completed_chunks", 0);
                                 info.failed_chunks = jj.value("failed_chunks", 0);
                                 info.rendering_chunks = jj.value("rendering_chunks", 0);
+                                info.stopped_chunks = jj.value("stopped_chunks", 0);
                                 info.first_assigned_ms = jj.value("first_assigned_ms", int64_t(0));
                                 info.last_completed_ms = jj.value("last_completed_ms", int64_t(0));
                                 if (jj.contains("output_dir") && jj["output_dir"].is_string())
@@ -1048,6 +1051,103 @@ void MonitorApp::reassignChunk(int64_t chunkId, const std::string& targetNodeId)
     }
 }
 
+namespace {
+// Look up a peer's endpoint by nodeId without PeerManager gaining a
+// dedicated accessor (the snapshot is cheap — it's a copy of a map).
+std::string peerEndpointFor(const std::vector<PeerInfo>& peers,
+                            const std::string& nodeId)
+{
+    for (const auto& p : peers)
+        if (p.node_id == nodeId) return p.endpoint;
+    return {};
+}
+
+// Log HTTP round-trip result for peer remote-control actions so a
+// silent failure (peer unreachable, 404, auth rejection) shows up in
+// the local log instead of making the UI look buggy.
+void logPeerResult(const std::string& action, const std::string& nodeId,
+                   bool success, const std::string& response)
+{
+    if (success)
+    {
+        MonitorLog::instance().info("peer",
+            action + " ok: " + nodeId);
+    }
+    else
+    {
+        std::string msg = action + " failed: " + nodeId;
+        if (!response.empty()) msg += " (" + response + ")";
+        MonitorLog::instance().warn("peer", msg);
+    }
+}
+} // namespace
+
+void MonitorApp::stopChunk(int64_t chunkId)
+{
+    if (isLeader() && m_databaseManager.isOpen())
+    {
+        const auto row = m_databaseManager.stopChunk(chunkId);
+        if (!row.has_value())
+            return;   // already terminal / unknown — nothing to do
+
+        MonitorLog::instance().info("job",
+            "Stopped chunk " + std::to_string(chunkId) + " (" + row->job_id +
+            " f" + std::to_string(row->frame_start) +
+            "-" + std::to_string(row->frame_end) + ")");
+
+        // Kill the in-flight render, if any — same abort push the job
+        // edits use (abandon: no failure bookkeeping, no blacklist). A
+        // node that misses the push finishes a wasted render whose
+        // completion bounces off the state='assigned' guard.
+        if (!row->assigned_to.empty())
+        {
+            if (row->assigned_to == m_identity.nodeId())
+            {
+                abandonJobRender(row->job_id, "chunk stopped");
+            }
+            else
+            {
+                const std::string ep =
+                    peerEndpointFor(m_peerManager.getPeerSnapshot(), row->assigned_to);
+                auto [host, port] = ep.empty()
+                    ? std::pair<std::string, int>{std::string{}, 0}
+                    : parseEndpoint(ep);
+                if (!host.empty())
+                {
+                    HttpRequest req;
+                    req.host     = host;
+                    req.port     = port;
+                    req.method   = "POST";
+                    req.endpoint = "/api/render/abort";
+                    req.body     = nlohmann::json{{"job_id", row->job_id},
+                                                  {"reason", "chunk stopped"}}.dump();
+                    const std::string nodeId = row->assigned_to;
+                    req.callback = [nodeId](bool ok, const std::string& resp) {
+                        logPeerResult("render abort", nodeId, ok, resp);
+                    };
+                    std::lock_guard<std::mutex> lock(m_httpQueueMutex);
+                    m_httpQueue.push(std::move(req));
+                }
+                // offline — the wasted render is fenced on report
+            }
+        }
+        refreshCachedJobs();
+    }
+    else
+    {
+        nlohmann::json body = {{"chunk_id", chunkId}};
+        postToLeaderAsyncEx("/api/chunks/stop", body.dump(),
+            [chunkId, this](int status, const std::string&) {
+                if (status == 200)
+                    m_forceJobsRefresh.store(true);
+                else
+                    MonitorLog::instance().warn("job",
+                        "Stop chunk " + std::to_string(chunkId) +
+                        " failed (status " + std::to_string(status) + ")");
+            });
+    }
+}
+
 std::string MonitorApp::resubmitJob(const std::string& jobId)
 {
     if (isLeader() && m_databaseManager.isOpen())
@@ -1136,39 +1236,6 @@ void MonitorApp::unsuspendNode(const std::string& nodeId)
         postToLeaderAsync("/api/nodes/" + nodeId + "/unsuspend", "");
     }
 }
-
-namespace {
-// Look up a peer's endpoint by nodeId without PeerManager gaining a
-// dedicated accessor (the snapshot is cheap — it's a copy of a map).
-std::string peerEndpointFor(const std::vector<PeerInfo>& peers,
-                            const std::string& nodeId)
-{
-    for (const auto& p : peers)
-        if (p.node_id == nodeId) return p.endpoint;
-    return {};
-}
-} // namespace
-
-namespace {
-// Log HTTP round-trip result for peer remote-control actions so a
-// silent failure (peer unreachable, 404, auth rejection) shows up in
-// the local log instead of making the UI look buggy.
-void logPeerResult(const std::string& action, const std::string& nodeId,
-                   bool success, const std::string& response)
-{
-    if (success)
-    {
-        MonitorLog::instance().info("peer",
-            action + " ok: " + nodeId);
-    }
-    else
-    {
-        std::string msg = action + " failed: " + nodeId;
-        if (!response.empty()) msg += " (" + response + ")";
-        MonitorLog::instance().warn("peer", msg);
-    }
-}
-} // namespace
 
 void MonitorApp::setPeerNodeActive(const std::string& nodeId, bool active)
 {
@@ -2105,7 +2172,7 @@ PeerInfo MonitorApp::buildLocalPeerInfo() const
     // that peers must not assume across versions. Old builds omit the
     // field entirely and are treated as the v0 feature set.
     info.capabilities = {"job_edit", "edit_result", "edit_epoch",
-                         "edit_commands"};
+                         "edit_commands", "chunk_stop"};
     info.is_local = true;
     info.is_alive = true;
 

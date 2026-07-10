@@ -172,6 +172,9 @@ struct JobInfo
     int completed_chunks = 0;
     int failed_chunks = 0;
     int rendering_chunks = 0;
+    // Stopped chunks are excluded from total_chunks at the source;
+    // this count drives the "partially completed" job label.
+    int stopped_chunks = 0;
     // Wall-clock duration endpoints (earliest chunk assignment /
     // latest chunk completion); 0 = not yet.
     int64_t first_assigned_ms = 0;

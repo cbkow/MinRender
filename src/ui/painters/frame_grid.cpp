@@ -204,6 +204,18 @@ void FrameGrid::paint(QPainter* painter)
         const QString state =
             m_model->data(idx, ChunksModel::StateRole).toString();
 
+        // Stopped chunks read as "not part of the job": paint plain
+        // background over the pass-1 unclaimed fill and skip the
+        // completed-frames overlay entirely.
+        if (state == QStringLiteral("stopped"))
+        {
+            const int firstIdx = std::max(0, fs - m_frameStart);
+            const int lastIdx  = std::min(totalFrames - 1, fe - m_frameStart);
+            for (int i = firstIdx; i <= lastIdx; ++i)
+                painter->fillRect(cellRect(i), m_bg);
+            continue;
+        }
+
         QColor chunkColor = m_unclaimed;
         if (state == QStringLiteral("completed"))
             chunkColor = m_completed;

@@ -135,8 +135,17 @@ Item {
         case "paused":    return Theme.warn
         case "cancelled": return Theme.error
         case "completed": return Theme.info
+        case "partial":   return Theme.warn
         default:          return Theme.textSecondary
         }
+    }
+
+    // Display-only refinement: a job that completed around stopped
+    // chunks reads "partial" — the wire state stays "completed" so old
+    // clients are untouched.
+    function displayState(state, stoppedChunks) {
+        return state === "completed" && stoppedChunks > 0
+               ? "partial" : state
     }
 
     function formatTs(ms) {
@@ -471,6 +480,7 @@ Item {
                 required property int    totalChunks
                 required property int    doneChunks
                 required property int    failedChunks
+                required property int    stoppedChunks
                 required property var    createdAt
                 required property int    priority
                 required property double firstAssignedAt
@@ -535,13 +545,19 @@ Item {
                     }
 
                     Label {
-                        text: state
-                        color: root.stateColor(state)
+                        readonly property string shown:
+                            root.displayState(state, stoppedChunks)
+                        text: shown
+                        color: root.stateColor(shown)
                         font.pixelSize: 11
                         font.bold: true
                         width: root.colState
                         elide: Text.ElideRight
                         anchors.verticalCenter: parent.verticalCenter
+                        ToolTip.text: qsTr("%1 stopped chunk(s) excluded").arg(stoppedChunks)
+                        ToolTip.visible: shown === "partial" && stateHover.hovered
+                        ToolTip.delay: 400
+                        HoverHandler { id: stateHover }
                     }
 
                     Item {

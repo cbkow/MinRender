@@ -32,6 +32,7 @@ public:
         DoneChunksRole,
         FailedChunksRole,
         RenderingChunksRole,
+        StoppedChunksRole,    // excluded from totals; drives "partial" label
         CreatedAtRole,        // qint64 ms since epoch
         PriorityRole,
         FirstAssignedAtRole,  // qint64 ms since epoch; 0 = no chunk assigned yet

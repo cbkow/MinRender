@@ -105,22 +105,36 @@ Item {
                 property var targetChunkId: 0
                 property int targetFrameStart: 0
                 property int targetFrameEnd: 0
+                property string targetState: ""
 
                 MenuItem {
-                    text: qsTr("Reassign to another node")
+                    text: chunkMenu.targetState === "stopped"
+                          ? qsTr("Requeue (resume stopped chunk)")
+                          : qsTr("Reassign to another node")
                     onTriggered: appBridge.reassignChunk(chunkMenu.targetChunkId, "")
                 }
                 MenuItem {
-                    text: qsTr("Submit as separate job")
-                    onTriggered: {
-                        const newId = appBridge.resubmitChunkAsJob(
-                            appBridge.currentJobId,
-                            chunkMenu.targetFrameStart,
-                            chunkMenu.targetFrameEnd,
-                            chunkMenu.targetFrameEnd - chunkMenu.targetFrameStart + 1)
-                        if (newId.length > 0)
-                            appBridge.currentJobId = newId
-                    }
+                    // Terminal 'stopped': render killed, never
+                    // re-dispatched, frames leave the grid/progress;
+                    // the job finishes "partial" around it.
+                    text: appBridge.leaderSupportsChunkStop
+                          ? qsTr("Stop chunk")
+                          : qsTr("Stop chunk (needs leader upgrade)")
+                    enabled: appBridge.leaderSupportsChunkStop
+                             && (chunkMenu.targetState === "pending"
+                                 || chunkMenu.targetState === "assigned")
+                    onTriggered: appBridge.stopChunk(chunkMenu.targetChunkId)
+                }
+                MenuSeparator {}
+                MenuItem {
+                    // Opens the submission form seeded from this job's
+                    // manifest, frame range preset to the chunk — tweak
+                    // (e.g. chunk size 1) and submit as a new job.
+                    text: qsTr("Submit as separate job…")
+                    onTriggered: appBridge.openChunkResubmitEditor(
+                        appBridge.currentJobId,
+                        chunkMenu.targetFrameStart,
+                        chunkMenu.targetFrameEnd)
                 }
             }
 
@@ -130,6 +144,7 @@ Item {
                 case "paused":    return Theme.warn
                 case "cancelled": return Theme.error
                 case "completed": return Theme.info
+                case "stopped":   return Theme.textMuted
                 default:          return Theme.textSecondary
                 }
             }
@@ -487,6 +502,10 @@ Item {
                                 height: 24
                                 color: selected ? Theme.selection
                                      : index % 2 === 0 ? Theme.bg : Theme.bgAlt
+                                // Stopped chunks stay listed (this row
+                                // is where Requeue lives) but dimmed —
+                                // they're out of the job's accounting.
+                                opacity: state === "stopped" ? 0.45 : 1.0
 
                                 MouseArea {
                                     anchors.fill: parent
@@ -497,6 +516,7 @@ Item {
                                             chunkMenu.targetChunkId = chunkId
                                             chunkMenu.targetFrameStart = frameStart
                                             chunkMenu.targetFrameEnd   = frameEnd
+                                            chunkMenu.targetState      = state
                                             chunkMenu.popup()
                                             return
                                         }

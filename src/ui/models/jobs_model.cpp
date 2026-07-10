@@ -26,6 +26,7 @@ bool jobsSameFields(const JobInfo& a, const JobInfo& b)
         && a.completed_chunks    == b.completed_chunks
         && a.failed_chunks       == b.failed_chunks
         && a.rendering_chunks    == b.rendering_chunks
+        && a.stopped_chunks      == b.stopped_chunks
         && a.first_assigned_ms   == b.first_assigned_ms
         && a.last_completed_ms   == b.last_completed_ms;
 }
@@ -81,6 +82,8 @@ QVariant JobsModel::data(const QModelIndex& index, int role) const
         return job.failed_chunks;
     case RenderingChunksRole:
         return job.rendering_chunks;
+    case StoppedChunksRole:
+        return job.stopped_chunks;
     case CreatedAtRole:
         return static_cast<qint64>(job.manifest.submitted_at_ms);
     case PriorityRole:
@@ -105,6 +108,7 @@ QHash<int, QByteArray> JobsModel::roleNames() const
         { DoneChunksRole,      "doneChunks" },
         { FailedChunksRole,    "failedChunks" },
         { RenderingChunksRole, "renderingChunks" },
+        { StoppedChunksRole,   "stoppedChunks" },
         { CreatedAtRole,       "createdAt" },
         { PriorityRole,        "priority" },
         { FirstAssignedAtRole, "firstAssignedAt" },

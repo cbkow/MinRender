@@ -131,6 +131,9 @@ public:
     void archiveJob(const std::string& jobId);
     void retryFailedChunks(const std::string& jobId);
     void reassignChunk(int64_t chunkId, const std::string& targetNodeId = {});
+    // Move a chunk to the terminal 'stopped' state and abort whoever is
+    // rendering it (abandon semantics — no blacklist). Requeue resumes.
+    void stopChunk(int64_t chunkId);
     std::string resubmitJob(const std::string& jobId);
     std::string resubmitChunkAsJob(const std::string& jobId,
                                     int frameStart, int frameEnd, int chunkSize);

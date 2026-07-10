@@ -144,6 +144,21 @@ Item {
                 ToolSeparator { Layout.fillHeight: true }
 
                 FlatButton {
+                    iconName: "folder-open"
+                    text: Qt.platform.os === "windows"
+                          ? qsTr("Show in Explorer")
+                          : qsTr("Show in Finder")
+                    // Task mode needs a picked chunk; node/local logs
+                    // always have today's file while the farm runs.
+                    enabled: !root.taskMode
+                             || appBridge.selectedTaskChunkIndex >= 0
+                    ToolTip.text: qsTr("Reveal the current log file for use with other tools")
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    onClicked: appBridge.revealCurrentLog()
+                }
+
+                FlatButton {
                     iconName: "broom"
                     text: qsTr("Clear")
                     enabled: !root.remoteMode

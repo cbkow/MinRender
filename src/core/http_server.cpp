@@ -191,7 +191,7 @@ void HttpServer::setupRoutes()
         {
             auto body = nlohmann::json::parse(req.body);
             const std::string jobId = body.at("job_id").get<std::string>();
-            m_app->abandonJobRender(jobId, "job edited");
+            m_app->abandonJobRender(jobId, body.value("reason", "job edited"));
             res.set_content(R"({"status":"ok"})", "application/json");
         }
         catch (const std::exception& e)
@@ -505,6 +505,27 @@ void HttpServer::setupRoutes()
             std::string targetNode = body.value("target_node", "");
 
             m_app->reassignChunk(chunkId, targetNode);
+            res.set_content(R"({"status":"ok"})", "application/json");
+        }
+        catch (const std::exception& e)
+        {
+            res.status = 400;
+            nlohmann::json err = {{"error", e.what()}};
+            res.set_content(err.dump(), "application/json");
+        }
+    });
+
+    // POST /api/chunks/stop -- move a chunk to the terminal 'stopped'
+    // state and abort whoever is rendering it (capability: chunk_stop)
+    m_server.Post("/api/chunks/stop", [this](const httplib::Request& req, httplib::Response& res)
+    {
+        if (!requireLeader(res)) return;
+
+        try
+        {
+            auto body = nlohmann::json::parse(req.body);
+            int64_t chunkId = body.at("chunk_id").get<int64_t>();
+            m_app->stopChunk(chunkId);
             res.set_content(R"({"status":"ok"})", "application/json");
         }
         catch (const std::exception& e)
