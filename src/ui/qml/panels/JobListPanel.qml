@@ -214,6 +214,13 @@ Item {
         dragJobId = jobId
         dragIndex = rowIdx
         dropGap = -1
+        // Grabbing a row makes it the thing being interacted with: select
+        // it (exclusively) right away, so the highlight and detail panel
+        // are on it during the drag and travel with it after the drop.
+        const next = {}
+        next[jobId] = true
+        checked = next
+        appBridge.currentJobId = jobId
     }
 
     function updateDrag(contentY) {
@@ -236,12 +243,6 @@ Item {
                 appBridge.moveJob(dragJobId, jobIdAt(dropGap), true)
             else
                 appBridge.moveJob(dragJobId, jobIdAt(jobList.count - 1), false)
-            // Select the job that was just moved (exclusively) so the
-            // highlight and detail panel travel with it to its new row.
-            const next = {}
-            next[dragJobId] = true
-            checked = next
-            appBridge.currentJobId = dragJobId
         }
         dragJobId = ""
         dragIndex = -1
