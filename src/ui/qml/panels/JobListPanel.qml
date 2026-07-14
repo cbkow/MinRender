@@ -236,6 +236,12 @@ Item {
                 appBridge.moveJob(dragJobId, jobIdAt(dropGap), true)
             else
                 appBridge.moveJob(dragJobId, jobIdAt(jobList.count - 1), false)
+            // Select the job that was just moved (exclusively) so the
+            // highlight and detail panel travel with it to its new row.
+            const next = {}
+            next[dragJobId] = true
+            checked = next
+            appBridge.currentJobId = dragJobId
         }
         dragJobId = ""
         dragIndex = -1
