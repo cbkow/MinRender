@@ -45,6 +45,13 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
+    // Row lookups for imperative QML code (drag-to-reorder). QML can't use
+    // the Roles enum values, and hard-coded `Qt.UserRole + N` offsets break
+    // silently whenever a role is inserted mid-enum (PriorityRole shifted
+    // when StoppedChunksRole landed, killing drag-to-reorder).
+    Q_INVOKABLE QString jobIdAt(int row) const;
+    Q_INVOKABLE int priorityAt(int row) const;
+
     void setJobs(const std::vector<JobInfo>& jobs);
 
 private:

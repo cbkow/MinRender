@@ -61,9 +61,7 @@ Item {
     // currentJobId is the "primary" (drives JobDetailPanel) and is
     // always one of the checked rows when any are checked.
     function jobIdAt(rowIdx) {
-        return appBridge.jobsModel.data(
-            appBridge.jobsModel.index(rowIdx, 0),
-            Qt.UserRole + 1)   // JobIdRole
+        return appBridge.jobsModel.jobIdAt(rowIdx)
     }
 
     function selectRange(fromJobId, toJobId) {
@@ -199,9 +197,7 @@ Item {
     property alias colCreated:  colSettings.created
 
     function priorityAt(rowIdx) {
-        return appBridge.jobsModel.data(
-            appBridge.jobsModel.index(rowIdx, 0),
-            Qt.UserRole + 11)  // PriorityRole
+        return appBridge.jobsModel.priorityAt(rowIdx)
     }
 
     // --- Drag-to-reorder state ---

@@ -96,6 +96,20 @@ QVariant JobsModel::data(const QModelIndex& index, int role) const
     return {};
 }
 
+QString JobsModel::jobIdAt(int row) const
+{
+    if (row < 0 || row >= static_cast<int>(m_jobs.size()))
+        return {};
+    return QString::fromStdString(m_jobs[static_cast<size_t>(row)].manifest.job_id);
+}
+
+int JobsModel::priorityAt(int row) const
+{
+    if (row < 0 || row >= static_cast<int>(m_jobs.size()))
+        return -1;
+    return m_jobs[static_cast<size_t>(row)].current_priority;
+}
+
 QHash<int, QByteArray> JobsModel::roleNames() const
 {
     return {
