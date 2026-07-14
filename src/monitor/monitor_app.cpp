@@ -856,7 +856,7 @@ bool MonitorApp::moveJob(const std::string& jobId, const std::string& targetJobI
         if (!m_databaseManager.moveJob(jobId, targetJobId, before))
         {
             MonitorLog::instance().warn("job",
-                "Move rejected (missing job or unequal priority): " + jobId);
+                "Move rejected (missing job or target): " + jobId);
             return false;
         }
         MonitorLog::instance().info("job", "Moved job " + jobId

@@ -288,9 +288,10 @@ bool DatabaseManager::moveJob(const std::string& jobId, const std::string& targe
     {
         SQLite::Transaction txn(*m_db);
 
-        // Both jobs must exist and share a priority — reordering is only
-        // defined within an equal-priority group (dispatch sorts by
-        // priority first, so a cross-group move would be meaningless).
+        // Both jobs must exist. When priorities differ, the moved job ADOPTS
+        // the target's priority — a drop into another group means "dispatch
+        // it exactly here", so the visible list order stays the literal
+        // dispatch order (list sorts by priority first, then sort_key).
         int prio = 0, targetPrio = 0;
         {
             SQLite::Statement q(*m_db, "SELECT job_id, priority FROM jobs WHERE job_id IN (?, ?)");
@@ -303,8 +304,15 @@ bool DatabaseManager::moveJob(const std::string& jobId, const std::string& targe
                 if (q.getColumn(0).getString() == jobId) prio = q.getColumn(1).getInt();
                 else                                     targetPrio = q.getColumn(1).getInt();
             }
-            if (found != 2 || prio != targetPrio)
+            if (found != 2)
                 return false;
+        }
+        if (prio != targetPrio)
+        {
+            SQLite::Statement q(*m_db, "UPDATE jobs SET priority = ? WHERE job_id = ?");
+            q.bind(1, targetPrio);
+            q.bind(2, jobId);
+            q.exec();
         }
 
         // Snapshot the group in current display order, splice the moved
@@ -316,7 +324,7 @@ bool DatabaseManager::moveJob(const std::string& jobId, const std::string& targe
             SQLite::Statement q(*m_db,
                 "SELECT job_id FROM jobs WHERE priority = ? "
                 "ORDER BY COALESCE(sort_key, submitted_at_ms) ASC, submitted_at_ms ASC");
-            q.bind(1, prio);
+            q.bind(1, targetPrio);
             while (q.executeStep())
                 ids.push_back(q.getColumn(0).getString());
         }

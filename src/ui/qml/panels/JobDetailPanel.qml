@@ -226,9 +226,10 @@ Item {
                             }
                             // Priority is editable post-submission: dispatch
                             // re-sorts on every chunk request, so a change
-                            // takes effect on the next dispatch. Within an
-                            // equal-priority group, order is set by the drag
-                            // handles in the jobs panel.
+                            // takes effect on the next dispatch. Fine-grained
+                            // order (including across priority groups, which
+                            // adopts the drop target's priority) is set by
+                            // the drag handles in the jobs panel.
                             Label {
                                 text: qsTr("priority")
                                 color: Theme.textSecondary

@@ -216,9 +216,9 @@ public:
     Q_INVOKABLE void archiveJob(const QString& jobId);
     Q_INVOKABLE void retryFailedChunks(const QString& jobId);
 
-    // Dispatch-order controls. moveJob reorders jobId next to targetId —
-    // rejected (leader-side) unless both share a priority. setJobPriority
-    // moves a job between priority groups.
+    // Dispatch-order controls. moveJob reorders jobId next to targetId;
+    // when their priorities differ the moved job adopts the target's, so a
+    // drag can cross group boundaries. setJobPriority sets it directly.
     Q_INVOKABLE void moveJob(const QString& jobId, const QString& targetId, bool before);
     Q_INVOKABLE void setJobPriority(const QString& jobId, int priority);
 

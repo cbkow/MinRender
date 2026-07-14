@@ -64,8 +64,9 @@ public:
     // Job controls
     void pauseJob(const std::string& jobId);
     void resumeJob(const std::string& jobId);
-    // Reorder within an equal-priority group (drag handles in the jobs
-    // panel). Returns false when the leader rejects the move locally;
+    // Reorder via the drag handles in the jobs panel. Crossing a
+    // priority-group boundary makes the job adopt the target's priority.
+    // Returns false when the leader rejects the move locally;
     // worker-side forwards always return true (result arrives async).
     bool moveJob(const std::string& jobId, const std::string& targetJobId, bool before);
     void setJobPriority(const std::string& jobId, int priority);

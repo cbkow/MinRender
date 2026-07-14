@@ -196,38 +196,30 @@ Item {
     property alias colDuration: colSettings.duration
     property alias colCreated:  colSettings.created
 
-    function priorityAt(rowIdx) {
-        return appBridge.jobsModel.priorityAt(rowIdx)
-    }
-
     // --- Drag-to-reorder state ---
-    // Reordering is only meaningful within a contiguous equal-priority
-    // run (dispatch sorts by priority first), so the drop gap is clamped
-    // to the dragged row's run. Model refreshes are paused for the
-    // duration (appBridge.jobsRefreshPaused), so indices are stable.
+    // Any row can be dragged anywhere: the job is spliced next to the row
+    // at the drop line, and if that row is in a different priority group
+    // the moved job adopts its priority (leader-side, DatabaseManager::
+    // moveJob) — the visible list order IS the dispatch order. At a group
+    // boundary the drop line means "before the row below it", so the job
+    // adopts that lower row's priority; a drop below the last row adopts
+    // the last row's. Model refreshes are paused for the duration
+    // (appBridge.jobsRefreshPaused), so indices are stable.
     property string dragJobId: ""
     property int dragIndex: -1
-    property int dragRunStart: -1   // first row of the equal-priority run
-    property int dragRunEnd: -1     // last row of the equal-priority run
     property int dropGap: -1        // insertion gap (row index the job lands before); -1 = invalid
 
     function beginDrag(jobId, rowIdx) {
         appBridge.jobsRefreshPaused = true
         dragJobId = jobId
         dragIndex = rowIdx
-        const prio = priorityAt(rowIdx)
-        let lo = rowIdx, hi = rowIdx
-        while (lo > 0 && priorityAt(lo - 1) === prio) --lo
-        while (hi < jobList.count - 1 && priorityAt(hi + 1) === prio) ++hi
-        dragRunStart = lo
-        dragRunEnd = hi
         dropGap = -1
     }
 
     function updateDrag(contentY) {
         let gap = Math.round(contentY / 32)   // 32 = fixed row height
-        if (gap < dragRunStart || gap > dragRunEnd + 1) {
-            dropGap = -1                       // outside the priority run
+        if (gap < 0 || gap > jobList.count) {
+            dropGap = -1                       // outside the list
             return
         }
         // Dropping into its own slot is a no-op — hide the indicator.
@@ -240,15 +232,13 @@ Item {
 
     function endDrag() {
         if (dropGap >= 0) {
-            if (dropGap <= dragRunEnd)
+            if (dropGap < jobList.count)
                 appBridge.moveJob(dragJobId, jobIdAt(dropGap), true)
             else
-                appBridge.moveJob(dragJobId, jobIdAt(dropGap - 1), false)
+                appBridge.moveJob(dragJobId, jobIdAt(jobList.count - 1), false)
         }
         dragJobId = ""
         dragIndex = -1
-        dragRunStart = -1
-        dragRunEnd = -1
         dropGap = -1
         appBridge.jobsRefreshPaused = false
     }
