@@ -34,13 +34,12 @@
 
 #include <algorithm>
 #include <ctime>
-#include <deque>
 #include <thread>
 #include <regex>
 #include <set>
 #include <filesystem>
 #include <fstream>
-#include <map>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace MR {
@@ -1831,16 +1830,52 @@ void AppBridge::finishOpenJobEditor(const QString& jobId,
     QVariantList flags;
     if (templateFound)
     {
-        // Overlay manifest values onto the template's flags. Baking may
-        // have dropped empty optional positionals, so match by flag
-        // string and consume the manifest's entries per name in order —
-        // a flag with no manifest entry was empty at submit time.
-        std::map<std::string, std::deque<std::string>> valuesByFlag;
-        for (const auto& mf : manifest.flags)
-            valuesByFlag[mf.flag].push_back(mf.value.value_or(""));
-
-        for (const auto& tf : it->flags)
+        // Overlay manifest values onto the template's flags. Baking emits
+        // the manifest's flags as an ordered SUBSEQUENCE of the template's
+        // (an empty optional positional is dropped together with its
+        // preceding standalone flag), so walk both lists with two cursors:
+        // a template slot consumes the next manifest entry only when the
+        // flag strings match, and a mismatch means that slot was empty at
+        // submit time. Matching per flag NAME is wrong here — positionals
+        // all share the name "" and one dropped slot shifts every later
+        // positional a field over (the empty -S scene slot put the output
+        // path in the scene box and baked "-o 1" on chunk resubmits).
+        const auto& tflags = it->flags;
+        std::vector<const ManifestFlag*> matched(tflags.size(), nullptr);
+        std::vector<bool> consumed(manifest.flags.size(), false);
+        for (size_t ti = 0, mi = 0;
+             ti < tflags.size() && mi < manifest.flags.size(); ++ti)
         {
+            if (manifest.flags[mi].flag == tflags[ti].flag)
+            {
+                matched[ti] = &manifest.flags[mi];
+                consumed[mi] = true;
+                ++mi;
+            }
+        }
+        // Salvage for template drift (flag added/reordered since the job
+        // was submitted): a named manifest entry the ordered walk couldn't
+        // place still fills the first unmatched same-named template slot.
+        // Orphaned positionals stay unplaced — a visibly empty field is
+        // safer than a value in the wrong one.
+        for (size_t mi = 0; mi < manifest.flags.size(); ++mi)
+        {
+            if (consumed[mi] || manifest.flags[mi].flag.empty())
+                continue;
+            for (size_t ti = 0; ti < tflags.size(); ++ti)
+            {
+                if (!matched[ti] && tflags[ti].flag == manifest.flags[mi].flag)
+                {
+                    matched[ti] = &manifest.flags[mi];
+                    consumed[mi] = true;
+                    break;
+                }
+            }
+        }
+
+        for (size_t ti = 0; ti < tflags.size(); ++ti)
+        {
+            const auto& tf = tflags[ti];
             QVariantMap fm;
             fm["flag"]     = QString::fromStdString(tf.flag);
             fm["info"]     = QString::fromStdString(tf.info);
@@ -1850,17 +1885,9 @@ void AppBridge::finishOpenJobEditor(const QString& jobId,
             fm["type"]     = QString::fromStdString(tf.type);
             fm["filter"]   = QString::fromStdString(tf.filter);
             fm["id"]       = QString::fromStdString(tf.id);
-
-            auto& dq = valuesByFlag[tf.flag];
-            if (!dq.empty())
-            {
-                fm["value"] = display(dq.front());
-                dq.pop_front();
-            }
-            else
-            {
-                fm["value"] = QString();
-            }
+            fm["value"]    = matched[ti]
+                             ? display(matched[ti]->value.value_or(""))
+                             : QString();
             flags.push_back(fm);
         }
     }
