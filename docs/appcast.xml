@@ -8,6 +8,27 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.1</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.1</sparkle:version>
+      <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+      <h3>minRender 0.5.1</h3>
+      <ul>
+        <li><b>Priority &amp; drag-to-reorder fixes</b> — dragging jobs in the queue works again, can cross priority groups (the job adopts the target's priority), and the selection highlight follows the dragged job.</li>
+        <li><b>Edit Job fix</b> — corrected a flag misalignment when seeding the job editor that could corrupt chunk resubmits.</li>
+        <li><b>Staging copy-back hardening</b> — workers now own output-directory creation, retry delivery, and no longer complete silently on copy failures.</li>
+      </ul>
+      ]]></description>
+      <pubDate>Tue, 14 Jul 2026 17:34:49 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.1/minRender-0.5.1-macOS.dmg"
+        sparkle:edSignature="ON7+DCsGKaDCIX/ibHok2NnGvB0PDGJgS/qRCm2OzYktT4IVlXfTC52sTs0MAcM0sPfuIFLiDbWcclG1G7AuAw=="
+        length="84077159"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.5.0</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.5.0</sparkle:version>
