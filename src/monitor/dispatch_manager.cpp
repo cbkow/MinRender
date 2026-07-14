@@ -111,15 +111,12 @@ std::string DispatchManager::submitJob(const JobManifest& manifest, int priority
     if (!m_db->insertJob(row))
         return {};
 
-    // Create output directory once (leader-only, at submission time)
-    if (manifest.output_dir.has_value() && !manifest.output_dir.value().empty())
-    {
-        std::error_code ec;
-        std::filesystem::create_directories(manifest.output_dir.value(), ec);
-        if (ec)
-            MonitorLog::instance().warn("dispatch",
-                "Failed to create output dir for job " + manifest.job_id + ": " + ec.message());
-    }
+    // Note: the output directory is deliberately NOT created here. The
+    // manifest path is in canonical Windows form, which may be meaningless on
+    // this (elected, any-OS) leader, and with per-node synced storage a dir
+    // created here still has to sync before workers see it. Each worker
+    // creates the dir itself at staging copy-back (idempotent, and the worker
+    // is the one node guaranteed to have the volume — it read the scene off it).
 
     // Compute and insert chunks
     auto chunks = computeChunks(manifest.frame_start, manifest.frame_end, manifest.chunk_size);
@@ -675,15 +672,8 @@ std::string DispatchManager::submitJobWithChunks(const JobManifest& manifest, in
     if (!m_db->insertJob(row))
         return {};
 
-    // Create output directory once (leader-only, at submission time)
-    if (manifest.output_dir.has_value() && !manifest.output_dir.value().empty())
-    {
-        std::error_code ec;
-        std::filesystem::create_directories(manifest.output_dir.value(), ec);
-        if (ec)
-            MonitorLog::instance().warn("dispatch",
-                "Failed to create output dir for job " + manifest.job_id + ": " + ec.message());
-    }
+    // Output dir creation is the worker's job at staging copy-back — see the
+    // note in submitJob().
 
     // Insert caller-provided chunks
     if (!m_db->insertChunks(manifest.job_id, chunks))

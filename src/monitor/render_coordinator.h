@@ -93,6 +93,8 @@ private:
 
     // Staging helpers
     bool copyStagingFiles(const std::string& stagingDir, const std::string& outputDir);
+    bool deliverStagedFiles(const std::string& stagingDir, const std::string& outputDir);
+    void updatePendingDeliveries();
 
     // Dispatch queue (DispatchManager → main thread)
     struct PendingDispatch
@@ -125,6 +127,23 @@ private:
     };
     std::optional<ActiveRender> m_activeRender;
 
+    // Chunks that rendered fine but whose staged frames couldn't reach the
+    // output dir (storage offline / not mounted / not yet synced). The render
+    // isn't burned: update() retries the copy until DELIVERY_TIMEOUT_SECONDS,
+    // then fails the chunk. Completion is only reported once frames are
+    // actually on the destination. Main thread only.
+    struct PendingDelivery
+    {
+        std::string jobId;
+        ChunkRange chunk;
+        int64_t editEpoch = -1;
+        std::string stagingDir;
+        std::string outputDir;
+        std::chrono::steady_clock::time_point firstAttempt;
+        std::chrono::steady_clock::time_point lastAttempt;
+    };
+    std::vector<PendingDelivery> m_pendingDeliveries;
+
     // Config
     std::filesystem::path m_farmPath;
     std::string m_nodeId;
@@ -139,6 +158,10 @@ private:
     bool m_disconnectGraceActive = false;
     std::chrono::steady_clock::time_point m_disconnectGraceStart;
     static constexpr int DISCONNECT_GRACE_SECONDS = 30;
+
+    // Staged-frame delivery retry (storage blips shouldn't burn a finished render)
+    static constexpr int DELIVERY_RETRY_SECONDS = 30;
+    static constexpr int DELIVERY_TIMEOUT_SECONDS = 600;
 
     // Re-queue backoff tracking (agent disconnect while dispatch queued)
     bool m_requeueActive = false;

@@ -22,6 +22,7 @@ void RenderCoordinator::init(const fs::path& farmPath, const std::string& nodeId
     m_frameCompletionFn = std::move(frameCompletionFn);
     m_supervisor = supervisor;
     m_activeRender.reset();
+    m_pendingDeliveries.clear();
     m_stopped = false;
 
     MonitorLog::instance().info("render", "Initialized for node " + nodeId);
@@ -37,6 +38,9 @@ void RenderCoordinator::queueDispatch(const JobManifest& manifest, const ChunkRa
 
 void RenderCoordinator::update(AgentSupervisor& supervisor)
 {
+    // Retry any staged frames that couldn't reach their output dir yet
+    updatePendingDeliveries();
+
     // If no active render and dispatch queue has items and agent is connected
     if (!m_activeRender.has_value())
     {
@@ -484,6 +488,18 @@ void RenderCoordinator::dispatchChunk(AgentSupervisor& supervisor)
         }
     }
 
+    // Without staging the renderer writes straight to the output dir, and not
+    // every DCC creates missing directories (aerender doesn't; Blender does).
+    // Best-effort here — if the volume is down the render fails on its own.
+    if (ar.stagingDir.empty() && ar.manifest.output_dir.has_value() && !ar.manifest.output_dir.value().empty())
+    {
+        std::error_code ec;
+        std::filesystem::create_directories(ar.manifest.output_dir.value(), ec);
+        if (!std::filesystem::exists(ar.manifest.output_dir.value(), ec))
+            MonitorLog::instance().warn("render",
+                "Output dir unreachable before render: " + ar.manifest.output_dir.value());
+    }
+
     auto taskJson = buildTaskJson(ar.manifest, ar.chunk);
     std::string taskStr = taskJson.dump();
 
@@ -612,22 +628,25 @@ void RenderCoordinator::onChunkCompleted(const nlohmann::json& j)
 
     MonitorLog::instance().info("render", "Chunk " + chunk.rangeStr() + " completed for job " + jobId + " (exit_code=" + std::to_string(exit_code) + ", elapsed=" + std::to_string(elapsed_ms) + "ms)");
 
-    // Copy staged files to network output directory
+    // Copy staged files to network output directory. A chunk only counts as
+    // completed once its frames are actually on the destination — if the copy
+    // fails (storage offline / unmounted), hold the chunk and retry from
+    // update() rather than burning a finished render or lying "completed".
     if (!ar.stagingDir.empty() && !ar.originalOutputDir.empty())
     {
-        if (copyStagingFiles(ar.stagingDir, ar.originalOutputDir))
+        if (!deliverStagedFiles(ar.stagingDir, ar.originalOutputDir))
         {
-            // Clean up staging directory on success
-            std::error_code ec;
-            fs::remove_all(ar.stagingDir, ec);
-            if (ec)
-                MonitorLog::instance().warn("render", "Failed to clean staging dir: " + ar.stagingDir + " (" + ec.message() + ")");
-            else
-                MonitorLog::instance().info("render", "Staging dir cleaned: " + ar.stagingDir);
-        }
-        else
-        {
-            MonitorLog::instance().warn("render", "Some staging files failed to copy — files remain in: " + ar.stagingDir);
+            MonitorLog::instance().warn("render",
+                "Chunk " + chunk.rangeStr() + " for job " + jobId +
+                " rendered but undeliverable — retrying copy every " +
+                std::to_string(DELIVERY_RETRY_SECONDS) + "s for up to " +
+                std::to_string(DELIVERY_TIMEOUT_SECONDS) + "s (frames in: " +
+                ar.stagingDir + ")");
+            auto now = std::chrono::steady_clock::now();
+            m_pendingDeliveries.push_back(
+                {jobId, chunk, epoch, ar.stagingDir, ar.originalOutputDir, now, now});
+            m_activeRender.reset();
+            return;
         }
     }
 
@@ -675,11 +694,15 @@ bool RenderCoordinator::copyStagingFiles(const std::string& stagingDir, const st
     bool allOk = true;
     std::error_code ec;
 
-    // Verify destination exists (leader created it at submission time)
+    // Create the destination if needed. Safe to race with other workers:
+    // mkdir is idempotent and every racer converges on "directory exists".
+    // If it still doesn't exist afterwards, the volume is unreachable —
+    // the caller keeps the frames staged and retries.
+    fs::create_directories(outputDir, ec);
     if (!fs::exists(outputDir, ec))
     {
         MonitorLog::instance().error("render",
-            "Output dir does not exist for staging copy: " + outputDir);
+            "Output dir unreachable for staging copy: " + outputDir);
         return false;
     }
 
@@ -703,6 +726,84 @@ bool RenderCoordinator::copyStagingFiles(const std::string& stagingDir, const st
     }
 
     return allOk;
+}
+
+bool RenderCoordinator::deliverStagedFiles(const std::string& stagingDir, const std::string& outputDir)
+{
+    // copyStagingFiles overwrites existing files, so a partial copy followed
+    // by a retry re-copies everything and converges — no per-file bookkeeping.
+    if (!copyStagingFiles(stagingDir, outputDir))
+        return false;
+
+    std::error_code ec;
+    fs::remove_all(stagingDir, ec);
+    if (ec)
+        MonitorLog::instance().warn("render", "Failed to clean staging dir: " + stagingDir + " (" + ec.message() + ")");
+    else
+        MonitorLog::instance().info("render", "Staging dir cleaned: " + stagingDir);
+    return true;
+}
+
+void RenderCoordinator::updatePendingDeliveries()
+{
+    if (m_pendingDeliveries.empty())
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+
+    for (auto it = m_pendingDeliveries.begin(); it != m_pendingDeliveries.end();)
+    {
+        // Job deleted while frames were being held: stop retrying. The files
+        // stay in staging rather than being written into a deleted job's
+        // output dir; no report — the leader already dropped the job.
+        bool deleted = false;
+        {
+            std::lock_guard<std::mutex> lock(m_queueMutex);
+            deleted = m_deletedJobs.count(it->jobId) > 0;
+        }
+        if (deleted)
+        {
+            MonitorLog::instance().info("render",
+                "Dropping pending delivery for deleted job " + it->jobId +
+                " — frames remain in: " + it->stagingDir);
+            it = m_pendingDeliveries.erase(it);
+            continue;
+        }
+
+        auto sinceLast = std::chrono::duration_cast<std::chrono::seconds>(now - it->lastAttempt).count();
+        if (sinceLast < DELIVERY_RETRY_SECONDS)
+        {
+            ++it;
+            continue;
+        }
+        it->lastAttempt = now;
+
+        if (deliverStagedFiles(it->stagingDir, it->outputDir))
+        {
+            MonitorLog::instance().info("render",
+                "Chunk " + it->chunk.rangeStr() + " for job " + it->jobId +
+                " delivered after retry");
+            if (m_completionFn)
+                m_completionFn(it->jobId, it->chunk, "completed", it->editEpoch);
+            it = m_pendingDeliveries.erase(it);
+            continue;
+        }
+
+        auto sinceFirst = std::chrono::duration_cast<std::chrono::seconds>(now - it->firstAttempt).count();
+        if (sinceFirst >= DELIVERY_TIMEOUT_SECONDS)
+        {
+            MonitorLog::instance().error("render",
+                "Chunk " + it->chunk.rangeStr() + " for job " + it->jobId +
+                " undeliverable after " + std::to_string(sinceFirst) +
+                "s — failing chunk, frames remain in: " + it->stagingDir);
+            if (m_completionFn)
+                m_completionFn(it->jobId, it->chunk, "failed", it->editEpoch);
+            it = m_pendingDeliveries.erase(it);
+            continue;
+        }
+
+        ++it;
+    }
 }
 
 } // namespace MR
