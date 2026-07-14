@@ -8,6 +8,30 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.0</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.0</sparkle:version>
+      <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+      <sparkle:os>windows</sparkle:os>
+      <description><![CDATA[
+      <h3>minRender 0.5.0</h3>
+      <ul>
+        <li><b>Frame preview</b> — click frames or chunks in the grid to preview rendered EXR/PNG/TIFF output right in the monitor, with an EXR layer picker. Works from any node.</li>
+        <li><b>Edit Job</b> — change a submitted job's parameters and apply to the next chunks, restart in-flight work, or start over. Edits are acknowledged by the leader and queue to the farm share if it's unreachable.</li>
+        <li><b>Stop chunk &amp; resubmit</b> — stop a chunk (its frames leave the progress accounting; the job finishes "partial") and resubmit it as a new job with different parameters, e.g. one frame per node.</li>
+        <li><b>UI overhaul</b> — tabbed detail pane, modal submission, resizable columns, durations, selectable node rows, async farm cleanup with per-section select-all, and a Show in Finder button for logs.</li>
+        <li><b>Farm reliability</b> — nodes advertise capabilities across versions; a render fence prevents double-rendered frames after edits or connection flaps; VPN-friendly timeouts stop remote nodes from being flagged dead.</li>
+      </ul>
+      <p>Rolling upgrade safe: older nodes keep working unchanged; version-dependent features stay disabled until the leader updates.</p>
+      ]]></description>
+      <pubDate>Thu, 09 Jul 2026 22:22:01 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.0/minRender-0.5.0-Setup-x64.exe"
+        sparkle:edSignature="Ydk2f9BqvHBdmZjQyJbtPrbi0sFqvyUZMMtT/OSVJzSooBMSFI/V/SUD0nB0LHH55xGCxfnb4Catabmj1CcnDw=="
+        length="58042675"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.4.9</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.4.9</sparkle:version>
