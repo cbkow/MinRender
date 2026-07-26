@@ -67,7 +67,7 @@ def get_farm_path():
 
 # -- Template ID ---------------------------------------------------------------
 
-TEMPLATE_ID = "blender-5.1-plugin"
+TEMPLATE_ID = "blender-5.2-plugin"
 
 
 # -- Properties ----------------------------------------------------------------
