@@ -8,6 +8,26 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.2</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.2</sparkle:version>
+      <sparkle:shortVersionString>0.5.2</sparkle:shortVersionString>
+      <sparkle:os>windows</sparkle:os>
+      <description><![CDATA[
+      <h3>minRender 0.5.2</h3>
+      <ul>
+        <li><b>Blender 5.2</b> — the bundled Blender templates and submission addon now target Blender 5.2 (Windows executable path: C:/Program Files/Blender Foundation/Blender 5.2). The old 5.1 templates are replaced on the farm share on first launch.</li>
+        <li><b>Action needed</b> — reinstall the Blender addon (Install from Disk, from the farm share's plugins/blender/MinRender.py) so submissions use the new template. Keep Blender 5.1 installed on render nodes until jobs submitted before this update have finished.</li>
+      </ul>
+      ]]></description>
+      <pubDate>Sun, 26 Jul 2026 16:24:52 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.2/minRender-0.5.2-Setup-x64.exe"
+        sparkle:edSignature="JEqa5uqAw0p6jHh4rNbBebOdCjidN5VGUH8iWPT4qdpHE5a7NJsEfZZtgfjkRAr6q7stzPXfitjxvwPA9aoiDg=="
+        length="58055735"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.5.1</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.5.1</sparkle:version>
