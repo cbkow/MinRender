@@ -96,56 +96,49 @@ void PeerManager::processUdpHeartbeat(const std::string& nodeId, const std::stri
                                        const std::string& alertReason,
                                        bool readyForWork)
 {
+    // ip/port are still parsed off the wire (and kept in the signature to
+    // mirror the heartbeat schema) but are intentionally not consumed —
+    // see the endpoint-authority note below.
+    (void)ip;
+    (void)port;
+
     auto now = nowMs();
     std::lock_guard<std::mutex> lock(m_mutex);
 
     auto it = m_peers.find(nodeId);
     if (it == m_peers.end())
     {
-        // New peer discovered via UDP — create minimal entry
-        // (last_seen_ms stays 0 until first HTTP poll fills hardware info)
-        PeerInfo info;
-        info.node_id = nodeId;
-        info.endpoint = ip + ":" + std::to_string(port);
-        info.node_state = nodeState;
-        info.render_state = renderState;
-        info.active_job = jobId;
-        info.active_chunk = chunk;
-        info.priority = priority;
-        info.agent_health = agentHealth;
-        info.alert_reason = alertReason;
-        info.ready_for_work = readyForWork;
-        info.is_alive = true;
-        info.failed_polls = 0;
-        info.last_seen_ms = 0;
-        info.has_udp_contact = true;
-        info.last_udp_contact_ms = now;
-        m_peers[nodeId] = info;
-        MonitorLog::instance().info("peer", "Discovered peer via UDP: " + nodeId +
-            " at " + info.endpoint);
+        // Unknown node. Deliberately NOT discovered here: multicast is
+        // unauthenticated, so anything on the LAN can emit a heartbeat. A
+        // UDP-created peer carried an attacker-chosen endpoint, and the
+        // leader then POSTed /api/dispatch/assign to it *with the farm
+        // secret in the Authorization header* — one spoofed packet was
+        // enough to exfiltrate the shared secret.
+        //
+        // discoverPeers() is the only path that creates peers, from
+        // nodes/<id>/endpoint.json on the shared farm filesystem. That
+        // directory sits beside farm.json, so writing it already requires
+        // the secret. It runs on the same ~3s tick as this, so legitimate
+        // discovery is no slower in practice.
+        return;
     }
-    else
-    {
-        // Update existing peer with fast state info
-        // (don't touch last_seen_ms — that tracks HTTP poll success for adaptive polling)
-        it->second.node_state = nodeState;
-        it->second.render_state = renderState;
-        it->second.active_job = jobId;
-        it->second.active_chunk = chunk;
-        it->second.priority = priority;
-        it->second.agent_health = agentHealth;
-        it->second.alert_reason = alertReason;
-        it->second.ready_for_work = readyForWork;
-        it->second.is_alive = true;
-        it->second.failed_polls = 0;
-        it->second.has_udp_contact = true;
-        it->second.last_udp_contact_ms = now;
 
-        // Update endpoint if changed
-        std::string newEndpoint = ip + ":" + std::to_string(port);
-        if (it->second.endpoint != newEndpoint)
-            it->second.endpoint = newEndpoint;
-    }
+    // Known peer: multicast carries fast liveness/state only. The endpoint
+    // is NOT updated from UDP for the reason above — an IP change has to
+    // come through endpoint.json.
+    // (don't touch last_seen_ms — that tracks HTTP poll success for adaptive polling)
+    it->second.node_state = nodeState;
+    it->second.render_state = renderState;
+    it->second.active_job = jobId;
+    it->second.active_chunk = chunk;
+    it->second.priority = priority;
+    it->second.agent_health = agentHealth;
+    it->second.alert_reason = alertReason;
+    it->second.ready_for_work = readyForWork;
+    it->second.is_alive = true;
+    it->second.failed_polls = 0;
+    it->second.has_udp_contact = true;
+    it->second.last_udp_contact_ms = now;
 }
 
 void PeerManager::processUdpGoodbye(const std::string& nodeId)
@@ -257,14 +250,10 @@ void PeerManager::discoverPeers()
         if (!std::filesystem::exists(endpointPath, ec))
             continue;
 
-        // Already known?
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            if (m_peers.count(nodeId))
-                continue;
-        }
-
-        // Read and parse endpoint.json
+        // Read and parse endpoint.json. This is the only authority for a
+        // peer's endpoint (UDP heartbeats deliberately can't set one), so
+        // known peers are re-read too rather than skipped — otherwise a
+        // node that legitimately changed IP could never be corrected.
         try
         {
             std::ifstream ifs(endpointPath);
@@ -274,14 +263,34 @@ void PeerManager::discoverPeers()
             auto j = nlohmann::json::parse(ifs);
             PeerEndpoint ep = j.get<PeerEndpoint>();
 
+            // The directory name is the node's identity; a file claiming a
+            // different node_id would key the peer map inconsistently.
+            if (ep.node_id != nodeId)
+                continue;
+
+            std::string endpoint = ep.ip + ":" + std::to_string(ep.port);
+
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_peers.find(nodeId);
+            if (it != m_peers.end())
+            {
+                // Known peer — only correct the endpoint, keep live state.
+                if (it->second.endpoint != endpoint)
+                {
+                    MonitorLog::instance().info("peer", "Peer endpoint changed: " +
+                        nodeId + " " + it->second.endpoint + " -> " + endpoint);
+                    it->second.endpoint = endpoint;
+                }
+                continue;
+            }
+
             PeerInfo info;
             info.node_id = ep.node_id;
-            info.endpoint = ep.ip + ":" + std::to_string(ep.port);
+            info.endpoint = endpoint;
             info.is_alive = true;
             info.failed_polls = 0;
             info.last_seen_ms = 0;  // not yet polled
 
-            std::lock_guard<std::mutex> lock(m_mutex);
             m_peers[nodeId] = info;
             MonitorLog::instance().info("peer", "Discovered peer: " + nodeId +
                 " at " + info.endpoint);
