@@ -225,7 +225,15 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
         auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 
+        // A blank secret would be written to farm.json and then make every
+        // node fail closed (the API answers 503 without one), so treat RNG
+        // failure as a hard init error rather than creating a dead farm.
         std::string apiSecret = generateApiSecret();
+        if (apiSecret.empty())
+        {
+            result.error = "Failed to generate farm api_secret (system RNG unavailable)";
+            return result;
+        }
 
         nlohmann::json farmJson = {
             {"_version", 1},
@@ -268,7 +276,15 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
             if (!fj.contains("api_secret") || !fj["api_secret"].is_string() ||
                 fj["api_secret"].get<std::string>().empty())
             {
-                fj["api_secret"] = generateApiSecret();
+                // As above: never persist a blank secret. Leaving farm.json
+                // untouched keeps the farm recoverable on the next start.
+                std::string upgraded = generateApiSecret();
+                if (upgraded.empty())
+                {
+                    result.error = "Failed to generate farm api_secret (system RNG unavailable)";
+                    return result;
+                }
+                fj["api_secret"] = upgraded;
                 needsWrite = true;
                 MonitorLog::instance().info("farm", "Generated api_secret for existing farm");
             }

@@ -16,6 +16,36 @@
 
 namespace MR {
 
+namespace {
+
+// Length-independent compare so a wrong token can't be recovered byte by byte
+// from response timing. Length is not secret (the secret is fixed-width hex).
+bool constantTimeEquals(const std::string& a, const std::string& b)
+{
+    if (a.size() != b.size())
+        return false;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < a.size(); ++i)
+        diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+    return diff == 0;
+}
+
+// Reject anything that isn't a plain filename. The route regexes use [^/]+,
+// which still admits "." and ".." — enough to walk out of the intended
+// directory once httplib has percent-decoded the path. Node ids and log
+// filenames are program-generated and always plain, so this rejects nothing
+// legitimate.
+bool isSafePathSegment(const std::string& seg)
+{
+    if (seg.empty() || seg == "." || seg == "..")
+        return false;
+    return seg.find('/') == std::string::npos
+        && seg.find('\\') == std::string::npos
+        && seg.find(':') == std::string::npos;
+}
+
+} // namespace
+
 void HttpServer::init(MonitorApp* app)
 {
     m_app = app;
@@ -691,6 +721,12 @@ void HttpServer::setupRoutes()
         if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
 
         std::string jobId = req.matches[1];
+        if (!isSafePathSegment(jobId))
+        {
+            res.status = 400;
+            res.set_content(R"({"error":"invalid_path"})", "application/json");
+            return;
+        }
         auto stdoutDir = m_app->farmPath() / "jobs" / jobId / "stdout";
 
         namespace fs = std::filesystem;
@@ -745,6 +781,14 @@ void HttpServer::setupRoutes()
         std::string nodeId = req.matches[2];
         std::string filename = req.matches[3];
 
+        if (!isSafePathSegment(jobId) || !isSafePathSegment(nodeId) ||
+            !isSafePathSegment(filename))
+        {
+            res.status = 400;
+            res.set_content(R"({"error":"invalid_path"})", "application/json");
+            return;
+        }
+
         auto logPath = m_app->farmPath() / "jobs" / jobId / "stdout" / nodeId / filename;
 
         std::ifstream ifs(logPath, std::ios::in);
@@ -766,6 +810,13 @@ void HttpServer::setupRoutes()
         if (!m_app || !m_app->isFarmRunning()) { res.status = 503; return; }
 
         std::string nodeId = req.matches[1];
+        if (!isSafePathSegment(nodeId))
+        {
+            res.status = 400;
+            res.set_content(R"({"error":"invalid_path"})", "application/json");
+            return;
+        }
+
         int maxLines = 500;
         if (req.has_param("max_lines"))
         {
@@ -922,32 +973,56 @@ bool HttpServer::start(const std::string& bindAddress, uint16_t port)
 
     setupRoutes();
 
-    // Auth middleware: require Bearer token on all /api/ routes except GET /api/status
-    if (!m_apiSecret.empty())
+    // Auth middleware. The server binds 0.0.0.0 on a farm LAN and exposes
+    // endpoints that launch processes (/api/dispatch/assign, /api/node/restart,
+    // /api/agent/restart), so every /api/ route requires the shared farm
+    // secret. Two deliberate design points:
+    //
+    //  - Fail CLOSED. An empty secret (unreadable farm.json, api_secret
+    //    stripped) used to skip installing this handler entirely, leaving the
+    //    whole API open to the LAN. Now it denies everything instead.
+    //  - Only GET /api/status is exempt, because peer discovery has to reach
+    //    it before a node can know the secret is right. It reports hostname
+    //    and hardware, nothing that grants control.
+    //
+    // /api/config used to be exempt "for the local Tauri UI"; that UI is gone
+    // (the Qt AppBridge calls MonitorApp in-process) and the exemption let any
+    // LAN host read the farm layout and rewrite sync_root, ports, and path
+    // mappings unauthenticated. Removed — do not reintroduce a path prefix
+    // exemption here without an authenticated caller that needs it.
+    m_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) -> httplib::Server::HandlerResponse
     {
-        m_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) -> httplib::Server::HandlerResponse
-        {
-            // Skip auth for GET /api/status (used by peer discovery)
-            // and /api/config* (used by local Tauri UI)
-            if (req.method == "GET" && req.path == "/api/status")
-                return httplib::Server::HandlerResponse::Unhandled;
-            if (req.path.rfind("/api/config", 0) == 0)
-                return httplib::Server::HandlerResponse::Unhandled;
-
-            // Only protect /api/ routes
-            if (req.path.rfind("/api/", 0) != 0)
-                return httplib::Server::HandlerResponse::Unhandled;
-
-            auto it = req.headers.find("Authorization");
-            if (it == req.headers.end() || it->second != "Bearer " + m_apiSecret)
-            {
-                res.status = 401;
-                res.set_content(R"({"error":"unauthorized"})", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-
+        // Only protect /api/ routes
+        if (req.path.rfind("/api/", 0) != 0)
             return httplib::Server::HandlerResponse::Unhandled;
-        });
+
+        if (req.method == "GET" && req.path == "/api/status")
+            return httplib::Server::HandlerResponse::Unhandled;
+
+        if (m_apiSecret.empty())
+        {
+            res.status = 503;
+            res.set_content(R"({"error":"auth_unavailable"})", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
+        auto it = req.headers.find("Authorization");
+        if (it == req.headers.end() ||
+            !constantTimeEquals(it->second, "Bearer " + m_apiSecret))
+        {
+            res.status = 401;
+            res.set_content(R"({"error":"unauthorized"})", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
+
+    if (m_apiSecret.empty())
+    {
+        MonitorLog::instance().error("http",
+            "No farm api_secret available — API will refuse all authenticated "
+            "requests (503). Check farm.json is readable.");
     }
 
     m_port = port;
