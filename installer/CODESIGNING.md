@@ -34,18 +34,40 @@ Windows needs the equivalent.
 
 ## Getting a certificate (pick one)
 
-1. **Azure Trusted Signing** — ~$10/month, open to individual developers
-   (identity verification required). Microsoft-issued short-lived certs;
-   builds start with good SmartScreen reputation. Best price/effort for a
-   solo maintainer. Integrates with signtool via the Trusted Signing dlib.
-2. **SignPath.io free OSS tier** — free code signing for open-source
-   projects; signing happens in their CI infrastructure. Worth applying
-   since this repo is public on GitHub.
-3. **Classic OV certificate** (Certum ~€, Sectigo/DigiCert ~$100–400/yr).
-   Certum's "Open Source Code Signing" cert is the cheapest OV route.
-   Note OV certs build SmartScreen reputation gradually — signing stops the
-   *trojan* verdicts quickly, but "unrecognized app" warnings fade only
-   after enough installs.
+Certificates are issued on **identity verification of the publisher**, not on
+review of what the software does. CAs do not audit application behaviour, and
+a render manager that spawns processes across a LAN is an ordinary software
+category — Deadline, Royal Render, Qube! and OpenCue all ship signed. The
+friction is paperwork and key custody, not eligibility.
+
+1. **SignPath Foundation free OSS tier** — the best fit here. MinRender is
+   MIT licensed with no commercial dual-licensing and a public repo, which
+   are the substantive eligibility criteria. Signing runs inside their
+   pipeline, so expect to move the Windows release build into CI rather than
+   signing from a workstation. Applications take days to weeks.
+   <https://signpath.io/solutions/open-source-community>
+2. **Classic OV certificate** (Certum's Open Source Code Signing is the
+   cheapest route; Sectigo/DigiCert run higher). Since the 2023 CA/Browser
+   Forum change, OV keys must live on a hardware token or cloud HSM, which
+   adds cost and logistics. OV builds SmartScreen reputation gradually:
+   signing clears the *trojan* verdicts quickly, but "unrecognized app"
+   warnings fade only after enough installs.
+3. **Azure Artifact Signing** (formerly Trusted Signing) — *check current
+   status before counting on it*. Individual-developer onboarding opened in
+   preview in late 2024 but was suspended in April 2025, with access limited
+   to US/Canada organisations having 3+ years of verifiable history. It is
+   attractive when available (Microsoft-issued, no token to manage, signs
+   fine from a workstation), but it is not currently a path for a solo
+   maintainer without an established company.
+   <https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options>
+
+## You can ship before a certificate exists
+
+Signing is the real fix, but it is not a prerequisite for releasing. The
+VERSIONINFO metadata above improves the classifier score on its own, and the
+false-positive submission below works on unsigned binaries — `!ml` verdicts
+are typically cleared within days. `MR_SIGN_CMD` is opt-in, so an unsigned
+0.5.3 builds and ships exactly as previous releases did.
 
 ## Per-release routine (until reputation is established)
 
