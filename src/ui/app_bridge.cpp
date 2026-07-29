@@ -280,6 +280,13 @@ QString AppBridge::rndrStatus() const
         : QString();
 }
 
+QString AppBridge::farmSecretFingerprint() const
+{
+    return m_monitor
+        ? QString::fromStdString(m_monitor->farmSecretFingerprint())
+        : QString();
+}
+
 void AppBridge::setCurrentJobId(const QString& jobId)
 {
     if (m_currentJobId == jobId)
@@ -782,6 +789,35 @@ void AppBridge::refresh()
     {
         m_lastRndrStatus = rndrNow;
         emit rndrStatusChanged();
+    }
+
+    // Farm secret fingerprint + how many live peers report a different one.
+    // Peers that predate the field report nothing; those are counted as
+    // agreeing rather than mismatched, so a mixed-version farm doesn't show
+    // a false alarm.
+    const QString fpNow = farmSecretFingerprint();
+    if (fpNow != m_lastSecretFingerprint)
+    {
+        m_lastSecretFingerprint = fpNow;
+        emit farmSecretFingerprintChanged();
+    }
+
+    int mismatches = 0;
+    if (!fpNow.isEmpty())
+    {
+        const std::string mine = fpNow.toStdString();
+        for (const auto& p : m_monitor->peerManager().getPeerSnapshot())
+        {
+            if (!p.is_alive || p.secret_fingerprint.empty())
+                continue;
+            if (p.secret_fingerprint != mine)
+                ++mismatches;
+        }
+    }
+    if (mismatches != m_secretMismatchCount)
+    {
+        m_secretMismatchCount = mismatches;
+        emit secretMismatchCountChanged();
     }
 
     // MonitorApp::refreshCachedJobs runs on the same thread (the 50 ms

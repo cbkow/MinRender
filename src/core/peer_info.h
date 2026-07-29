@@ -71,6 +71,13 @@ struct PeerInfo
     // Network
     std::string endpoint;   // "ip:port"
 
+    // First 8 hex chars of SHA-256(farm api_secret). Lets the UI show that
+    // two nodes disagree about the secret — the cause of otherwise opaque
+    // 401s — without ever putting the secret on screen. Safe to publish:
+    // 32 bits of hash reveals nothing about a 256-bit secret. Empty on
+    // builds predating it, and on a node with no secret loaded.
+    std::string secret_fingerprint;
+
     // Runtime (not serialized over HTTP, computed locally by PeerManager)
     bool is_local = false;
     bool is_alive = true;
@@ -106,6 +113,7 @@ inline void to_json(nlohmann::json& j, const PeerInfo& p)
         {"tags",         p.tags},
         {"capabilities", p.capabilities},
         {"endpoint",     p.endpoint},
+        {"secret_fingerprint", p.secret_fingerprint},
         {"agent_health", p.agent_health},
         {"alert_reason", p.alert_reason},
         {"ready_for_work", p.ready_for_work},
@@ -136,6 +144,7 @@ inline void from_json(const nlohmann::json& j, PeerInfo& p)
     if (j.contains("tags"))         j.at("tags").get_to(p.tags);
     if (j.contains("capabilities")) j.at("capabilities").get_to(p.capabilities);
     if (j.contains("endpoint"))      j.at("endpoint").get_to(p.endpoint);
+    if (j.contains("secret_fingerprint")) j.at("secret_fingerprint").get_to(p.secret_fingerprint);
     if (j.contains("agent_health"))  j.at("agent_health").get_to(p.agent_health);
     if (j.contains("alert_reason"))  j.at("alert_reason").get_to(p.alert_reason);
     if (j.contains("ready_for_work")) j.at("ready_for_work").get_to(p.ready_for_work);

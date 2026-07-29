@@ -229,6 +229,10 @@ public:
     const std::string& farmError() const { return m_farmError; }
     const std::string& farmSecret() const { return m_farmSecret; }
 
+    // Short non-reversible id for the loaded secret — for UI display and
+    // /api/status. Empty when no secret is loaded. See core/sha256.h.
+    std::string farmSecretFingerprint() const;
+
     // Job selection state
     void selectJob(const std::string& id);
     void requestSubmissionMode();

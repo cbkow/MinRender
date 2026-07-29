@@ -137,6 +137,62 @@ Item {
             }
         }
 
+        // --- Farm security ---
+        // Shows a fingerprint of the shared API secret, never the secret
+        // itself — safe on a screen share, and enough to tell whether the
+        // nodes agree. A mismatch is the usual cause of peers returning 401.
+        SectionHeader { text: qsTr("Farm security") }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacingLoose
+
+                Label { text: qsTr("Secret fingerprint") }
+                Label {
+                    text: appBridge.farmSecretFingerprint.length > 0
+                          ? appBridge.farmSecretFingerprint
+                          : qsTr("not loaded")
+                    font.family: appBridge.monoFamily
+                    color: appBridge.farmSecretFingerprint.length > 0
+                           ? Theme.textMuted
+                           : Theme.warn
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: appBridge.farmSecretFingerprint.length === 0
+                text: qsTr("No farm secret loaded — this node will reject all API calls. Check that farm.json is readable.")
+                color: Theme.warn
+                font.pixelSize: Theme.fontSizeSmall
+                wrapMode: Text.WordWrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: appBridge.secretMismatchCount > 0
+                text: qsTr("%n node(s) on this farm report a different secret and cannot exchange work with this one.",
+                           "", appBridge.secretMismatchCount)
+                color: Theme.warn
+                font.pixelSize: Theme.fontSizeSmall
+                wrapMode: Text.WordWrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: appBridge.farmSecretFingerprint.length > 0
+                         && appBridge.secretMismatchCount === 0
+                text: qsTr("Every node reading the same farm.json shares this secret. Anyone with read access to the sync root can control the farm.")
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+                wrapMode: Text.WordWrap
+            }
+        }
+
         // --- Render ---
         SectionHeader { text: qsTr("Rendering") }
         CheckBox {

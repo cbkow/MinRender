@@ -120,6 +120,12 @@ class AppBridge : public QObject
     Q_PROPERTY(bool    rndrAvailable      READ rndrAvailable      NOTIFY rndrAvailableChanged)
     Q_PROPERTY(QString rndrStatus         READ rndrStatus         NOTIFY rndrStatusChanged)
 
+    // Farm secret fingerprint (see core/sha256.h) plus the count of live
+    // peers reporting a different one. A non-zero mismatch count is what
+    // turns an opaque wall of 401s into "that node has the wrong secret".
+    Q_PROPERTY(QString farmSecretFingerprint READ farmSecretFingerprint NOTIFY farmSecretFingerprintChanged)
+    Q_PROPERTY(int     secretMismatchCount   READ secretMismatchCount   NOTIFY secretMismatchCountChanged)
+
 public:
     explicit AppBridge(MonitorApp* monitor, QObject* parent = nullptr);
     ~AppBridge() override;
@@ -367,6 +373,9 @@ public:
     bool rndrAvailable() const;
     QString rndrStatus() const;
 
+    QString farmSecretFingerprint() const;
+    int secretMismatchCount() const { return m_secretMismatchCount; }
+
     // Polled from main_qt.cpp's 50 ms tick. Emits *Changed signals only
     // when the underlying MonitorApp state actually shifted.
     void refresh();
@@ -412,6 +421,8 @@ signals:
     void rndrDualModeChanged();
     void rndrAvailableChanged();
     void rndrStatusChanged();
+    void farmSecretFingerprintChanged();
+    void secretMismatchCountChanged();
     void currentJobIdChanged();
     void submissionModeChanged();
     void jobsRefreshPausedChanged();
@@ -534,6 +545,8 @@ private:
     bool m_lastIsLeader     = false;
     bool m_lastNodeActive   = true;
     QString m_lastRndrStatus;
+    QString m_lastSecretFingerprint;
+    int     m_secretMismatchCount = 0;
 };
 
 } // namespace MR

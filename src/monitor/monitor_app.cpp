@@ -3,6 +3,7 @@
 #include "core/platform.h"
 #include "core/monitor_log.h"
 #include "core/net_utils.h"
+#include "core/sha256.h"
 
 #include <nlohmann/json.hpp>
 #include <httplib.h>
@@ -2156,10 +2157,16 @@ bool MonitorApp::shouldEnterSubmission()
 
 // --- Build local PeerInfo for HTTP responses ---
 
+std::string MonitorApp::farmSecretFingerprint() const
+{
+    return secretFingerprint(m_farmSecret);
+}
+
 PeerInfo MonitorApp::buildLocalPeerInfo() const
 {
     PeerInfo info;
     info.node_id = m_identity.nodeId();
+    info.secret_fingerprint = farmSecretFingerprint();
     info.hostname = m_identity.systemInfo().hostname;
     info.os = getOS();
     info.app_version = APP_VERSION;

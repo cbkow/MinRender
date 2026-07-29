@@ -110,6 +110,7 @@ set(MINRENDER_CORE_SOURCES
     src/core/monitor_log.cpp
     src/core/single_instance.cpp
     src/core/net_utils.cpp
+    src/core/sha256.cpp
     src/core/http_server.cpp
     src/core/udp_notify.cpp
     src/monitor/peer_manager.cpp
