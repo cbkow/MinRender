@@ -94,6 +94,21 @@ REM because minrender uses them — no separate windeployqt run needed.
 echo.
 echo Deploy folder ready: %DEPLOY%
 
+REM --- Authenticode signing (opt-in; see installer\CODESIGNING.md) ---
+REM Set MR_SIGN_CMD to a signtool command line minus the target file, e.g.
+REM   set MR_SIGN_CMD=signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a
+REM Every shipped exe must be signed or Defender's ML keeps flagging the
+REM unsigned ones (Bearfoos.B!ml). WinSparkle.dll ships unsigned upstream,
+REM so it gets our signature too.
+if not defined MR_SIGN_CMD goto :after_sign
+echo.
+echo Signing binaries...
+for %%F in (minRender.exe minrender-headless.exe mr-restart.exe mr-agent.exe WinSparkle.dll) do (
+  if exist "%DEPLOY%\%%F" %MR_SIGN_CMD% "%DEPLOY%\%%F"
+  if errorlevel 1 exit /b 1
+)
+:after_sign
+
 if /I not "%~1"=="--iss" goto :done
 
 REM Inno Setup compile step. Hoisted out of a nested if-block because
@@ -101,7 +116,16 @@ REM the ISCC path contains "(x86)" which breaks nested-parens parsing.
 if not exist "%ISCC%" goto :no_iscc
 echo.
 echo Compiling installer...
+REM With MR_SIGN_CMD set, hand Inno a "signtool" definition so the installer
+REM (and its uninstaller stub) get signed as well — an unsigned setup exe
+REM undoes most of the goodwill from signing the payload.
+if defined MR_SIGN_CMD goto :iss_signed
 "%ISCC%" "%REPO%\installer\minrender_installer.iss"
+if errorlevel 1 exit /b %errorlevel%
+goto :done
+
+:iss_signed
+"%ISCC%" /DSIGN "/Ssigntool=%MR_SIGN_CMD% $f" "%REPO%\installer\minrender_installer.iss"
 if errorlevel 1 exit /b %errorlevel%
 
 :done

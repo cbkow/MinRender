@@ -2,7 +2,7 @@
 ; https://jrsoftware.org/isinfo.php
 
 #define MyAppName "minRender"
-#define MyAppVersion "0.5.2"
+#define MyAppVersion "0.5.3"
 #define MyAppPublisher "cbkow"
 #define MyAppURL "https://github.com/cbkow/minrender"
 #define MyAppExeName "minRender.exe"
@@ -35,6 +35,15 @@ OutputDir=.
 OutputBaseFilename=minRender-{#MyAppVersion}-Setup-x64
 Compression=lzma2/max
 SolidCompression=yes
+
+; Code signing (opt-in; see CODESIGNING.md). scripts\package.bat passes
+; /DSIGN plus an /Ssigntool=... definition when MR_SIGN_CMD is set, which
+; signs both the setup exe and the uninstaller stub. Unsigned installers
+; are the main trigger for Defender/SmartScreen flags on distribution.
+#ifdef SIGN
+SignTool=signtool
+SignedUninstaller=yes
+#endif
 
 ; Visual settings
 SetupIconFile=..\resources\icons\minrender.ico
@@ -177,7 +186,19 @@ begin
 
   if CurStep = ssPostInstall then
   begin
-    // Add Windows Firewall rules for HTTP (TCP) and UDP multicast
+    // Windows Firewall rules for HTTP (TCP) and UDP multicast.
+    //
+    // Unscoped (all profiles, any remote address) on purpose — don't "harden"
+    // these without reading SECURITY.md first:
+    //   - remoteip=localsubnet breaks peers that reach the farm over VPN from
+    //     another subnet, and wouldn't help on public Wi-Fi anyway, where the
+    //     hostile network IS the local subnet.
+    //   - profile=domain,private covers the public Wi-Fi case, but silently
+    //     makes a node unreachable whenever Windows classifies its VPN adapter
+    //     as Public — which presents as a mysteriously dead peer.
+    // Since every /api/ route now requires the farm secret, an open port
+    // exposes only unauthenticated GET /api/status. That residual is judged
+    // smaller than the support cost of nodes vanishing from the farm.
     Exec('netsh', 'advfirewall firewall delete rule name="MinRender"',
          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec('netsh', 'advfirewall firewall delete rule name="MinRender UDP"',

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MinRender VERSION 0.5.2 LANGUAGES C CXX)
+project(MinRender VERSION 0.5.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -143,6 +143,25 @@ else()
 endif()
 
 # ===========================================================================
+# Windows version resources
+# ===========================================================================
+# Every shipped exe gets an icon + full VERSIONINFO block (company, file
+# description, version). Defender's ML heuristics penalize metadata-less
+# binaries heavily — this is one of the two big false-positive levers, the
+# other being Authenticode signing (see installer/CODESIGNING.md).
+if(WIN32)
+    function(mr_add_windows_rc target description original_filename)
+        set(MR_RC_DESCRIPTION "${description}")
+        set(MR_RC_ORIGINAL_FILENAME "${original_filename}")
+        set(MR_RC_INTERNAL_NAME "${target}")
+        set(MR_RC_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/minrender.ico")
+        configure_file(resources/version.rc.in
+            "${CMAKE_CURRENT_BINARY_DIR}/rc/${target}.rc" @ONLY)
+        target_sources(${target} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/rc/${target}.rc")
+    endfunction()
+endif()
+
+# ===========================================================================
 # MinRender Monitor (Qt 6 Quick GUI)
 # ===========================================================================
 qt_add_executable(minrender
@@ -161,8 +180,10 @@ qt_add_executable(minrender
     src/ui/updater/app_updater.h   # header-only Q_OBJECT — listed so AUTOMOC mocs it
     $<$<NOT:$<BOOL:${APPLE}>>:src/ui/platform/color_space.cpp>
     $<$<BOOL:${APPLE}>:src/ui/platform/color_space_mac.mm>
-    $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )
+if(WIN32)
+    mr_add_windows_rc(minrender "MinRender Render Farm Monitor" "minRender.exe")
+endif()
 
 # QML-only UI — we never use QtDesigner .ui forms, so turn AUTOUIC off.
 set_target_properties(minrender PROPERTIES AUTOUIC OFF)
@@ -448,8 +469,10 @@ add_executable(minrender-headless
     ${MINRENDER_CORE_SOURCES}
     src/core/system_tray.cpp
     src/monitor/main_headless.cpp
-    $<$<BOOL:${WIN32}>:resources/minrender.rc>
 )
+if(WIN32)
+    mr_add_windows_rc(minrender-headless "MinRender Headless Monitor" "minrender-headless.exe")
+endif()
 
 # Headless doesn't use any Qt UI facilities — just QLockFile +
 # QLocalServer/Socket via single_instance.cpp. Disable Qt autogen to
@@ -497,6 +520,7 @@ endif()
 # ===========================================================================
 if(WIN32)
     add_executable(mr-restart src/restart/main.cpp)
+    mr_add_windows_rc(mr-restart "MinRender Update Restart Helper" "mr-restart.exe")
     if(MSVC)
         target_compile_options(mr-restart PRIVATE /W4)
         set_target_properties(mr-restart PROPERTIES WIN32_EXECUTABLE TRUE)
