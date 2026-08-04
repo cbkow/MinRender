@@ -67,7 +67,8 @@ firewall rules, package identity), running from `build\msix`. Verify:
   visible to a normal shell.
 - Task Manager → Startup shows "minRender"; after sign-out/in the app is in
   the tray, window hidden (mr-restart's no-arg startup mode).
-- "Check for Updates…" in the About menu is greyed out.
+- The About menu has no "Check for Updates…" item (absent on Windows —
+  the Store owns updates).
 
 Uninstall from Start like any app.
 
