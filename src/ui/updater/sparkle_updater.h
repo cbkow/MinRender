@@ -45,4 +45,15 @@ inline void checkForUpdatesNow() {}
 
 #endif
 
+// True when a real updater backend is compiled in. Drives the enabled state
+// of the "Check for Updates…" menu item, so dev builds and Store builds
+// (MINRENDER_STORE_BUILD — the Store delivers updates itself) show it greyed
+// out instead of silently doing nothing.
+#if (defined(__APPLE__) && defined(MINRENDER_HAVE_SPARKLE)) || \
+    (defined(_WIN32) && defined(MINRENDER_HAVE_WINSPARKLE))
+inline constexpr bool kUpdaterAvailable = true;
+#else
+inline constexpr bool kUpdaterAvailable = false;
+#endif
+
 } // namespace MR

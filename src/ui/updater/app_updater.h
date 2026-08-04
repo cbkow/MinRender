@@ -10,8 +10,13 @@
 class AppUpdater : public QObject
 {
     Q_OBJECT
+    // False when no updater backend is compiled in (dev builds, Store builds)
+    // — the menu item binds enabled to this instead of no-opping on click.
+    Q_PROPERTY(bool available READ available CONSTANT)
 public:
     using QObject::QObject;
+
+    bool available() const { return MR::kUpdaterAvailable; }
 
     Q_INVOKABLE void checkForUpdates() { MR::checkForUpdatesNow(); }
 };

@@ -9,7 +9,9 @@ ApplicationWindow {
 
     width: 1440
     height: 900
-    visible: true
+    // startMinimized: context property from main_qt.cpp (--minimized flag,
+    // set by the launch-at-login paths). The tray icon restores the window.
+    visible: !startMinimized
     title: qsTr("minRender Monitor")
 
     // QML controls (TextField/ComboBox/SpinBox/CheckBox/MenuBar) read
@@ -104,6 +106,10 @@ ApplicationWindow {
             MenuSeparator {}
             Action {
                 text: qsTr("Check for &Updates…")
+                // Greyed out when no updater backend is compiled in: dev
+                // builds without the vendored framework, and Store builds,
+                // where the Microsoft Store delivers updates itself.
+                enabled: appUpdater.available
                 onTriggered: appUpdater.checkForUpdates()
             }
             Action {

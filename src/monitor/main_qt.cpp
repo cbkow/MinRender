@@ -236,6 +236,15 @@ int main(int argc, char* argv[])
     engine.rootContext()->setContextProperty(
         QStringLiteral("appUpdater"), &appUpdater);
 
+    // Start hidden in the tray. Passed by the Inno startup shortcut, by
+    // mr-restart (both directly and in its no-argument MSIX startup-task
+    // mode — startup tasks can't carry arguments), and honored by Main.qml's
+    // root window visibility. The tray icon is the way back in.
+    const bool startMinimized =
+        app.arguments().contains(QStringLiteral("--minimized"));
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("startMinimized"), startMinimized);
+
     engine.loadFromModule("MinRenderUi", "Main");
 
     for (QObject* obj : engine.rootObjects())
