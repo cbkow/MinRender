@@ -166,13 +166,16 @@ read it at farm start; mixed secrets show up as `401` in the logs.
 
 ## Binary distribution
 
-Windows builds are unsigned, which is the main reason Defender's ML
-classifier flags them — see `installer/CODESIGNING.md`. 0.5.6 also removed
-the in-process RNDR supervisor (hidden launch from `%LOCALAPPDATA%`,
-`taskkill` of a system-named process), which was the strongest
-miner-like behaviour signal in the binary, and restricted `mr-restart.exe`
-to relaunching its sibling `minRender.exe` only. macOS builds are signed and notarized, and
-updates on both platforms are Ed25519-verified by Sparkle/WinSparkle.
+The primary Windows channel is the Microsoft Store: MSIX packages are signed
+by Microsoft during ingestion and updated by the Store (Store builds exclude
+the self-updater — `MINRENDER_STORE_BUILD`; see `installer/STORE.md`). A
+direct-download Inno installer remains as an unsigned fallback, which is why
+Defender's ML classifier may flag it — see `installer/CODESIGNING.md`. 0.5.6
+removed the in-process RNDR supervisor (hidden launch from
+`%LOCALAPPDATA%`, `taskkill` of a system-named process), which was the
+strongest miner-like behaviour signal in the binary, and restricted
+`mr-restart.exe` to relaunching its sibling `minRender.exe` only. macOS
+builds are signed and notarized, with updates Ed25519-verified by Sparkle.
 
 ## Reporting
 
