@@ -94,6 +94,7 @@ ApplicationWindow {
         }
 
         Menu {
+            id: aboutMenu
             title: qsTr("&About")
             // Version line stays disabled — it's a label, not an action.
             // Qt.application.version is fed by main_qt.cpp's
@@ -105,16 +106,21 @@ ApplicationWindow {
             }
             MenuSeparator {}
             Action {
+                id: checkUpdatesAction
                 text: qsTr("Check for &Updates…")
-                // Greyed out when no updater backend is compiled in: dev
-                // builds without the vendored framework, and Store builds,
-                // where the Microsoft Store delivers updates itself.
-                enabled: appUpdater.available
                 onTriggered: appUpdater.checkForUpdates()
             }
             Action {
                 text: qsTr("Docs")
                 onTriggered: Qt.openUrlExternally("https://minrender.com/")
+            }
+            // No manual update check on Windows (the Microsoft Store owns
+            // updates there) or in builds with no updater compiled in —
+            // appUpdater.available is compile-time constant, so remove the
+            // item once rather than shipping a permanently dead menu entry.
+            Component.onCompleted: {
+                if (!appUpdater.available)
+                    aboutMenu.removeAction(checkUpdatesAction)
             }
         }
     }
