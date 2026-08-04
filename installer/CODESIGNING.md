@@ -1,5 +1,12 @@
 # Windows code signing & Defender false positives
 
+> **Status:** the primary Windows channel is now the **Microsoft Store**
+> (see `STORE.md`) — Store packages are signed by Microsoft during
+> ingestion, so nothing below applies to them. This document remains for
+> the unsigned fallback Inno installer: the Defender false-positive
+> submission routine still applies to it, and the certificate options are
+> kept in case a signed direct-download channel is ever wanted again.
+
 MinRender's Windows builds get flagged by Windows Defender as
 `Trojan:Win32/Bearfoos.B!ml`. The `!ml` suffix means it is a machine-learning
 heuristic verdict, not a real signature match — a well-known false-positive

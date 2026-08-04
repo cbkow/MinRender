@@ -326,6 +326,15 @@ endif()
 # ===========================================================================
 # Auto-update (Sparkle on macOS, WinSparkle on Windows) — GUI target only
 # ===========================================================================
+# MINRENDER_STORE_BUILD: Microsoft Store packages must not self-update (Store
+# policy, and the WindowsApps install dir is read-only anyway), so this skips
+# WinSparkle even when external/winsparkle is vendored. The updater seam then
+# compiles to its no-op shim and MR::kUpdaterAvailable greys out the
+# "Check for Updates…" menu item. scripts/make_msix.ps1 refuses to package a
+# build that shipped WinSparkle.dll, so forgetting this option fails loudly at
+# packaging rather than at certification. macOS/Sparkle is unaffected.
+option(MINRENDER_STORE_BUILD
+    "Build for Microsoft Store distribution (exclude the self-updater)" OFF)
 # Both updaters are vendored under external/ (gitignored) and OPTIONAL: when the
 # framework/lib is absent the bridge compiles to the header's inline no-ops and
 # the app still builds (dev builds without update support). The headless sidecar
@@ -372,7 +381,9 @@ elseif(WIN32)
     # updater's compare value) + the shared Ed25519 public key, link the import
     # lib, and copy WinSparkle.dll next to the exe.
     set(MR_WINSPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/winsparkle")
-    if(EXISTS "${MR_WINSPARKLE_DIR}/include/winsparkle.h")
+    if(MINRENDER_STORE_BUILD)
+        message(STATUS "minRender: Store build — WinSparkle excluded (Store handles updates)")
+    elseif(EXISTS "${MR_WINSPARKLE_DIR}/include/winsparkle.h")
         target_sources(minrender PRIVATE src/ui/updater/winsparkle_updater_windows.cpp)
         target_compile_definitions(minrender PRIVATE
             MINRENDER_HAVE_WINSPARKLE

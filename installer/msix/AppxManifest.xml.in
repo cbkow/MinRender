@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template for the Microsoft Store build.
+
+  Tokens ($MR...$) are substituted by scripts/make_msix.ps1:
+    $MRIDENTITYNAME$      Package/Identity/Name        - from Partner Center
+    $MRPUBLISHER$         Package/Identity/Publisher   - from Partner Center (CN=GUID)
+    $MRPUBLISHERDISPLAY$  PublisherDisplayName         - from Partner Center
+    $MRVERSION$           four-part version, read from CMakeLists.txt project()
+  The three identity values live on the app's "Product identity" page in
+  Partner Center and MUST match exactly or Store ingestion rejects the
+  package. See installer/STORE.md for the full submission runbook.
+
+  Design notes (why this manifest looks the way it does):
+
+  - runFullTrust: Win32 Qt app that spawns DCC renderers and the mr-agent
+    sidecar as child processes.
+  - unvirtualizedResources + the two Properties below: keep config, node
+    identity, and render staging in the real %APPDATA%\MinRender instead of
+    the package's virtualized LocalCache. Farm nodes upgraded from the Inno
+    installer keep their node identity; Store and fallback installs are
+    interchangeable. Requires the 2004 (19041) baseline set in Dependencies.
+  - windows.firewallRules replaces the installer's netsh calls: inbound
+    TCP 8420 (HTTP mesh) + UDP 4243 (multicast heartbeats), all profiles,
+    matching the deliberate any-remote-address stance in SECURITY.md.
+    Declared for minRender.exe only - the headless sidecar is used for
+    same-machine sandbox farms (loopback is firewall-exempt).
+  - windows.startupTask replaces the installer's Startup-folder shortcut.
+    Startup tasks cannot pass arguments, so the task launches mr-restart.exe,
+    which (when invoked with no arguments) launches minRender.exe minimized
+    from its own directory. Users toggle it in Task Manager > Startup.
+  - The second Application entry exists only to give minrender-headless.exe
+    an execution alias (AppListEntry="none" hides it from Start).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop desktop2 desktop6 rescap">
+
+  <Identity
+    Name="$MRIDENTITYNAME$"
+    Publisher="$MRPUBLISHER$"
+    Version="$MRVERSION$"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>minRender</DisplayName>
+    <PublisherDisplayName>$MRPUBLISHERDISPLAY$</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.19041.0"
+                        MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Capabilities>
+    <Capability Name="internetClientServer" />
+    <Capability Name="privateNetworkClientServer" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+
+  <Applications>
+    <Application Id="minRender"
+                 Executable="minRender.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="minRender"
+        Description="Lightweight render-farm monitor for Blender and After Effects"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask"
+                           Executable="mr-restart.exe"
+                           EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask
+            TaskId="minRenderStartup"
+            Enabled="true"
+            DisplayName="minRender" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+
+    <Application Id="minRenderHeadless"
+                 Executable="minrender-headless.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="minRender headless"
+        Description="minRender headless node (command-line)"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png"
+        BackgroundColor="transparent"
+        AppListEntry="none" />
+      <Extensions>
+        <uap3:Extension Category="windows.appExecutionAlias"
+                        Executable="minrender-headless.exe"
+                        EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="minrender-headless.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Extensions>
+    <desktop2:Extension Category="windows.firewallRules">
+      <desktop2:FirewallRules Executable="minRender.exe">
+        <desktop2:Rule Direction="in" IPProtocol="TCP"
+                       LocalPortMin="8420" LocalPortMax="8420" Profile="all" />
+        <desktop2:Rule Direction="in" IPProtocol="UDP"
+                       LocalPortMin="4243" LocalPortMax="4243" Profile="all" />
+      </desktop2:FirewallRules>
+    </desktop2:Extension>
+  </Extensions>
+</Package>

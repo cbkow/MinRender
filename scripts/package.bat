@@ -8,7 +8,11 @@ REM   cd mr-agent && cargo build --release && cd ..    (if agent needs rebuildin
 REM
 REM Usage:
 REM   scripts\package.bat          — just stage to build\deploy
-REM   scripts\package.bat --iss    — stage and compile the installer
+REM   scripts\package.bat --iss    — stage and compile the fallback installer
+REM   scripts\package.bat --msix   — stage and pack the Microsoft Store MSIX
+REM                                  (build must be configured with
+REM                                  -DMINRENDER_STORE_BUILD=ON; identity env
+REM                                  vars per installer\STORE.md)
 
 setlocal
 
@@ -109,6 +113,7 @@ for %%F in (minRender.exe minrender-headless.exe mr-restart.exe mr-agent.exe Win
 )
 :after_sign
 
+if /I "%~1"=="--msix" goto :msix
 if /I not "%~1"=="--iss" goto :done
 
 REM Inno Setup compile step. Hoisted out of a nested if-block because
@@ -131,6 +136,14 @@ if errorlevel 1 exit /b %errorlevel%
 :done
 endlocal
 exit /b 0
+
+:msix
+REM Store packaging lives in PowerShell (token substitution + makeappx
+REM discovery are miserable in batch). It re-validates the deploy folder,
+REM including refusing a build that links WinSparkle.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\scripts\make_msix.ps1"
+if errorlevel 1 exit /b %errorlevel%
+goto :done
 
 :no_iscc
 echo ERROR: Inno Setup ISCC.exe not found at %ISCC%

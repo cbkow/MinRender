@@ -113,9 +113,12 @@ read it at farm start; mixed secrets show up as `401` in the logs.
 
 ## Binary distribution
 
-Windows builds are unsigned as of 0.5.2, which is also why Defender flags them
-— see `installer/CODESIGNING.md`. macOS builds are signed and notarized, and
-updates on both platforms are Ed25519-verified by Sparkle/WinSparkle.
+The primary Windows channel is the Microsoft Store: MSIX packages are signed
+by Microsoft during ingestion and updated by the Store (Store builds exclude
+the self-updater — `MINRENDER_STORE_BUILD`; see `installer/STORE.md`). A
+direct-download Inno installer remains as an unsigned fallback, which is why
+Defender may flag it — see `installer/CODESIGNING.md`. macOS builds are
+signed and notarized, with updates Ed25519-verified by Sparkle.
 
 ## Reporting
 
