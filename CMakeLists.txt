@@ -459,6 +459,30 @@ if(APPLE)
             "`cargo build --release` from mr-agent/ and re-run cmake.")
     endif()
 endif()
+
+# Same for Windows dev builds: AgentSupervisor spawns `mr-agent.exe` next to
+# the monitor exe, but cargo leaves it in mr-agent/target/release/, so running
+# from build\ used to log "mr-agent.exe not found" until it was copied by
+# hand. (Installers were never affected — package.bat stages the agent
+# straight from the cargo output.) As on macOS, CMake doesn't drive cargo:
+# build the agent first, then re-run cmake to pick it up.
+if(WIN32)
+    set(MR_AGENT_RELEASE_BIN
+        "${CMAKE_CURRENT_SOURCE_DIR}/mr-agent/target/release/mr-agent.exe")
+    if(EXISTS "${MR_AGENT_RELEASE_BIN}")
+        add_custom_command(TARGET minrender POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MR_AGENT_RELEASE_BIN}"
+                "$<TARGET_FILE_DIR:minrender>/mr-agent.exe"
+            COMMENT "Sync mr-agent.exe next to minRender.exe" VERBATIM)
+    else()
+        message(WARNING
+            "mr-agent release binary not found at ${MR_AGENT_RELEASE_BIN}. "
+            "Dev builds run from build\\ won't render locally until you run "
+            "`cargo build --release` from mr-agent\\ and re-run cmake.")
+    endif()
+endif()
+
 if(MSVC)
     target_compile_options(minrender PRIVATE /W4)
 endif()
