@@ -8,6 +8,30 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.3</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.3</sparkle:version>
+      <sparkle:shortVersionString>0.5.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+      <h3>minRender 0.5.3</h3>
+      <ul>
+        <li><b>API hardening</b> — the /api/config endpoints now require the farm token (the old exemption let any LAN host read and rewrite farm settings), auth fails closed when the farm secret can't be read, token comparison is constant-time, and log/output routes reject path-traversal segments.</li>
+        <li><b>Peer endpoint hardening</b> — UDP heartbeats can no longer create peers or change a peer's address; endpoint.json on the farm share is the sole authority, so a spoofed packet can't redirect leader traffic (and the farm secret) to an attacker-chosen host.</li>
+        <li><b>Secret fingerprint</b> — Settings and /api/status now show a short fingerprint of the farm secret, so nodes that disagree about the secret are easy to spot instead of producing a wall of 401s.</li>
+        <li><b>Windows binaries</b> — every shipped executable now embeds full version metadata, reducing Windows Defender false positives on unsigned builds.</li>
+        <li><b>Launch fixes</b> — the launch-at-login shortcut's --minimized flag is honored (the window no longer opens on every login; use the tray icon to open it), and "Check for Updates…" is greyed out in builds without an updater.</li>
+        <li><b>Action needed</b> — update all farm nodes: the auth and peer-endpoint fixes only protect nodes running 0.5.3.</li>
+      </ul>
+      ]]></description>
+      <pubDate>Tue, 18 Aug 2026 10:03:21 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.3/minRender-0.5.3-macOS.dmg"
+        sparkle:edSignature="gbpEQhRsTUl5LuGy4B4U/SOXuc9N9Q6L4cRmCaeQ5R8zkF2bFRewDOeqMjUpL7rrm3w7ReuJ+A/4stkxkpPYCQ=="
+        length="84714064"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.5.2</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.5.2</sparkle:version>
