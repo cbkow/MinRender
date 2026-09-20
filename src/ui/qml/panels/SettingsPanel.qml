@@ -210,14 +210,32 @@ Item {
                 onToggled: appBridge.rndrDualMode = checked
             }
             // Live supervisor status, indented under the toggle. Shows the
-            // current state (Inactive / Running / Cooldown (Ns) / etc.) when
-            // the RNDR client is present, or a hint when it isn't installed.
+            // current state (Inactive / Running / Cooldown (Ns) / Blocked /
+            // Settling) when the RNDR client is present, or a hint when it
+            // isn't installed.
             Label {
                 Layout.fillWidth: true
                 Layout.leftMargin: 28
                 text: appBridge.rndrAvailable
                       ? qsTr("Status: %1").arg(appBridge.rndrStatus)
                       : qsTr("RNDR client not found on this machine.")
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontSizeSmall
+                wrapMode: Text.WordWrap
+            }
+
+            CheckBox {
+                Layout.leftMargin: 20
+                text: qsTr("Pause while a creative app is open")
+                enabled: rndrDualModeCheck.checked
+                checked: appBridge.rndrDccGate
+                onToggled: appBridge.rndrDccGate = checked
+            }
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 48
+                enabled: rndrDualModeCheck.checked
+                text: qsTr("Blender, After Effects · 10 min settle")
                 color: Theme.textMuted
                 font.pixelSize: Theme.fontSizeSmall
                 wrapMode: Text.WordWrap

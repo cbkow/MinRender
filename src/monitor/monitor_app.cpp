@@ -123,6 +123,10 @@ void MonitorApp::update()
         m_lastJobCacheRefresh = now;
     }
 
+    // Mirror the leader's suspension verdicts (self-throttled to 3s) so
+    // this node's UI can show who is benched — including itself.
+    refreshSuspendedNodes();
+
     // Poll local submission dropbox
     m_submissionWatcher.poll();
 
@@ -133,7 +137,8 @@ void MonitorApp::update()
     // Note: completion/frame reports are flushed by the background HTTP worker thread.
 
     // RNDR dual mode — run the RNDR client while idle, kill it during renders
-    m_rndrSupervisor.update(m_renderCoordinator.isRendering(), m_config.rndr_dual_mode);
+    m_rndrSupervisor.update(m_renderCoordinator.isRendering(), m_config.rndr_dual_mode,
+                            m_config.rndr_dcc_gate, m_config.rndr_block_processes);
 
     // Update render state on PeerManager
     if (m_renderCoordinator.isRendering())
@@ -1236,6 +1241,122 @@ void MonitorApp::unsuspendNode(const std::string& nodeId)
     {
         postToLeaderAsync("/api/nodes/" + nodeId + "/unsuspend", "");
     }
+}
+
+void MonitorApp::unsuspendThisNode()
+{
+    const std::string me = m_identity.nodeId();
+    unsuspendNode(me);
+
+    // Drop the mirror entry optimistically so the banner clears on the
+    // next UI tick instead of after the 3s refresh. If the leader didn't
+    // actually clear it (POST lost, leader unreachable), the next
+    // refreshSuspendedNodes() puts it back.
+    {
+        std::lock_guard<std::mutex> lock(m_suspendedMutex);
+        m_suspendedNodes.erase(me);
+    }
+}
+
+bool MonitorApp::isThisNodeSuspended() const
+{
+    return isNodeSuspended(m_identity.nodeId());
+}
+
+int MonitorApp::thisNodeSuspendFailureCount() const
+{
+    std::lock_guard<std::mutex> lock(m_suspendedMutex);
+    auto it = m_suspendedNodes.find(m_identity.nodeId());
+    return it == m_suspendedNodes.end() ? 0 : it->second.failure_count;
+}
+
+std::unordered_map<std::string, MonitorApp::SuspensionInfo>
+MonitorApp::suspendedNodes() const
+{
+    std::lock_guard<std::mutex> lock(m_suspendedMutex);
+    return m_suspendedNodes;
+}
+
+bool MonitorApp::isNodeSuspended(const std::string& nodeId) const
+{
+    std::lock_guard<std::mutex> lock(m_suspendedMutex);
+    return m_suspendedNodes.find(nodeId) != m_suspendedNodes.end();
+}
+
+void MonitorApp::refreshSuspendedNodes()
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - m_lastSuspendedRefresh).count() < SUSPENDED_REFRESH_MS)
+        return;
+    m_lastSuspendedRefresh = now;
+
+    std::unordered_map<std::string, SuspensionInfo> next;
+
+    if (isLeader())
+    {
+        // We own the tracker — read it directly, no HTTP.
+        for (const auto& [nodeId, rec] : m_dispatchManager.failureTracker().getSuspended())
+            next.emplace(nodeId, SuspensionInfo{rec.failure_count, rec.last_failure_ms});
+    }
+    else if (m_farmRunning)
+    {
+        // Worker: mirror the leader's verdicts. Shares
+        // m_leaderContactCooldown with refreshCachedJobs so an
+        // unreachable leader backs both polls off together rather than
+        // stalling update() twice per cycle.
+        if (now < m_leaderContactCooldown)
+            return;   // keep the last known mirror rather than blanking it
+
+        const std::string leaderEp = getLeaderEndpoint();
+        if (leaderEp.empty())
+            return;
+        auto [host, port] = parseEndpoint(leaderEp);
+        if (host.empty())
+            return;
+
+        try
+        {
+            httplib::Client cli(host, port);
+            cli.set_connection_timeout(0, 500000); // 500ms
+            cli.set_read_timeout(1);
+
+            auto res = cli.Get("/api/nodes/suspended", authHeaders(m_farmSecret));
+            if (!res || res->status != 200)
+            {
+                // A non-200 is also how an older leader answers a route
+                // it doesn't have; either way keep the previous mirror.
+                if (!res)
+                    m_leaderContactCooldown = std::chrono::steady_clock::now()
+                                            + std::chrono::seconds(5);
+                return;
+            }
+
+            auto arr = nlohmann::json::parse(res->body);
+            if (!arr.is_array())
+                return;
+
+            for (const auto& e : arr)
+            {
+                const std::string id = e.value("node_id", "");
+                if (id.empty())
+                    continue;
+                next.emplace(id, SuspensionInfo{
+                    e.value("failure_count", 0),
+                    e.value("last_failure_ms", int64_t(0))});
+            }
+        }
+        catch (...)
+        {
+            m_leaderContactCooldown = std::chrono::steady_clock::now()
+                                    + std::chrono::seconds(5);
+            return;
+        }
+    }
+    // else: farm stopped — fall through so the mirror clears.
+
+    std::lock_guard<std::mutex> lock(m_suspendedMutex);
+    m_suspendedNodes = std::move(next);
 }
 
 void MonitorApp::setPeerNodeActive(const std::string& nodeId, bool active)

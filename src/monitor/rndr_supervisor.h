@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <chrono>
 
 #ifdef _WIN32
@@ -25,7 +26,9 @@ public:
     RndrSupervisor& operator=(const RndrSupervisor&) = delete;
 
     void detectBinary();
-    void update(bool isRendering, bool dualModeEnabled);
+    void update(bool isRendering, bool dualModeEnabled,
+                bool dccGateEnabled,
+                const std::vector<std::string>& blockProcesses);
     void shutdown();
 
     bool isBinaryAvailable() const { return m_binaryAvailable; }
@@ -36,6 +39,17 @@ public:
 private:
     bool launchRndr();
     void killRndr();
+
+    // Returns the image name of a listed creative app running from
+    // Program Files, or empty if none. Program Files is the whole
+    // discriminator: writing there needs admin, and the dual-mode client
+    // is a per-user install, so its own child processes can never be
+    // mistaken for an artist's session however the vendor rearranges
+    // their layout.
+    std::string scanDccPresence(const std::vector<std::string>& names) const;
+    void updateDccOccupancy(bool gateEnabled,
+                            const std::vector<std::string>& names,
+                            std::chrono::steady_clock::time_point now);
 
     // Process-name-based checks (no handle tracking)
     bool isTcpsvcsRunning() const;
@@ -69,6 +83,20 @@ private:
     // giving MinRender's own dispatch a chance to claim the GPU first.
     std::chrono::steady_clock::time_point m_constructedTime;
     static constexpr int STARTUP_DELAY_SECONDS = 120;
+
+    // --- Creative-app gate (opt-in) ---------------------------------
+    // Occupancy is sampled, never inferred from open/close events: an
+    // app can vanish by crashing, by being killed, or because we were
+    // restarted while it was running, and none of those produce a close
+    // to observe. Stamping a timestamp whenever one is *seen* collapses
+    // the hard block and the settle window into one comparison.
+    std::chrono::steady_clock::time_point m_lastOccupiedSeen;
+    std::chrono::steady_clock::time_point m_lastDccPoll;
+    bool m_dccGateEnabled = false;
+    bool m_dccPresent = false;
+    std::string m_dccName;          // what we last saw, for status + logs
+    static constexpr int DCC_POLL_SECONDS = 5;
+    static constexpr int DCC_SETTLE_SECONDS = 600;   // 10 min
 };
 
 } // namespace MR

@@ -37,6 +37,8 @@ bool peerSameFields(const PeerInfo& a, const PeerInfo& b)
         && a.is_alive       == b.is_alive
         && a.is_leader      == b.is_leader
         && a.is_local       == b.is_local
+        && a.is_suspended   == b.is_suspended
+        && a.suspend_failure_count == b.suspend_failure_count
         && a.last_seen_ms   == b.last_seen_ms;
 }
 
@@ -85,6 +87,8 @@ QVariant NodesModel::data(const QModelIndex& index, int role) const
     case EndpointRole:     return QString::fromStdString(p.endpoint);
     case RenderStateRole:  return QString::fromStdString(p.render_state);
     case ActiveJobRole:    return QString::fromStdString(p.active_job);
+    case IsSuspendedRole:  return p.is_suspended;
+    case SuspendFailuresRole: return p.suspend_failure_count;
     }
     return {};
 }
@@ -106,6 +110,8 @@ QHash<int, QByteArray> NodesModel::roleNames() const
         { EndpointRole,    "endpoint" },
         { RenderStateRole, "renderState" },
         { ActiveJobRole,   "activeJob" },
+        { IsSuspendedRole, "isSuspended" },
+        { SuspendFailuresRole, "suspendFailures" },
     };
 }
 

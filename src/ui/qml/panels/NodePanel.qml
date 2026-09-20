@@ -115,6 +115,66 @@ Item {
                     }
                 }
 
+                // Suspension warning. The leader benches a node after 5
+                // chunk failures in 5 minutes, and the suspension never
+                // expires on its own, so without this the node looks
+                // healthy while silently receiving no work forever.
+                Rectangle {
+                    visible: appBridge.thisNodeSuspended
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    Layout.preferredHeight: suspendColumn.implicitHeight + 12
+                    color: Qt.darker(Theme.error, 3.0)
+                    border.width: 1
+                    border.color: Theme.error
+                    radius: Theme.radiusSmall
+
+                    ColumnLayout {
+                        id: suspendColumn
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            top: parent.top
+                            margins: 6
+                        }
+                        spacing: 4
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Icon {
+                                name: "warning"
+                                size: 14
+                                color: Theme.error
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            Label {
+                                text: qsTr("SUSPENDED")
+                                color: Theme.error
+                                font.bold: true
+                                font.pixelSize: Theme.fontSizeBase
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.textSecondary
+                            text: qsTr("The leader benched this node after %1 chunk failures within 5 minutes. It will not be given work until unsuspended, and the suspension does not clear on its own.")
+                                  .arg(appBridge.thisNodeSuspendFailures)
+                        }
+
+                        FlatButton {
+                            Layout.fillWidth: true
+                            iconName: "arrow-counter-clockwise"
+                            text: qsTr("Unsuspend this node")
+                            variant: "danger"
+                            onClicked: appBridge.unsuspendThisNode()
+                        }
+                    }
+                }
+
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 4
@@ -171,6 +231,8 @@ Item {
                 required property var    tags
                 required property string renderState
                 required property string activeJob
+                required property bool   isSuspended
+                required property int    suspendFailures
                 required property int    index
 
                 width: peerList.width
@@ -185,13 +247,19 @@ Item {
                     anchors.rightMargin: Theme.padding + Theme.scrollBarWidth
                     spacing: 10
 
-                    // Health dot
+                    // Health dot. Suspension outranks agent health: a
+                    // suspended node keeps reporting "ok" (the leader's
+                    // verdict is invisible to the node itself), so
+                    // without this it would sit here green and idle
+                    // while never being given work.
                     Rectangle {
                         Layout.alignment: Qt.AlignVCenter
                         width: 10; height: 10; radius: 5
-                        color: !isAlive
-                               ? Theme.textMuted
-                               : root.agentHealthColor(agentHealth)
+                        color: isSuspended
+                               ? Theme.error
+                               : (!isAlive
+                                  ? Theme.textMuted
+                                  : root.agentHealthColor(agentHealth))
                     }
 
                     ColumnLayout {
@@ -217,15 +285,25 @@ Item {
                                 font.pixelSize: 9
                                 font.bold: true
                             }
+                            Icon {
+                                visible: isSuspended
+                                name: "warning"
+                                size: 12
+                                color: Theme.error
+                                Layout.alignment: Qt.AlignVCenter
+                            }
                         }
 
                         Label {
-                            text: !isAlive
-                                  ? qsTr("offline")
-                                  : (renderState === "rendering"
-                                     ? qsTr("rendering · %1").arg(activeJob)
-                                     : (isActive ? qsTr("idle") : qsTr("stopped")))
-                            color: Theme.textSecondary
+                            text: isSuspended
+                                  ? qsTr("suspended · %1 failures · no work assigned")
+                                    .arg(suspendFailures)
+                                  : (!isAlive
+                                     ? qsTr("offline")
+                                     : (renderState === "rendering"
+                                        ? qsTr("rendering · %1").arg(activeJob)
+                                        : (isActive ? qsTr("idle") : qsTr("stopped"))))
+                            color: isSuspended ? Theme.error : Theme.textSecondary
                             font.pixelSize: Theme.fontSizeSmall
                             elide: Text.ElideRight
                             Layout.fillWidth: true
@@ -242,8 +320,9 @@ Item {
                             return
                         if (isAlive)
                         {
-                            livePeerMenu.targetNodeId   = nodeId
-                            livePeerMenu.targetIsActive = isActive
+                            livePeerMenu.targetNodeId    = nodeId
+                            livePeerMenu.targetIsActive  = isActive
+                            livePeerMenu.targetSuspended = isSuspended
                             livePeerMenu.popup()
                         }
                         else
@@ -260,8 +339,9 @@ Item {
             // children, leaving gaps at popup time. Choose at popup.
             Menu {
                 id: livePeerMenu
-                property string targetNodeId:   ""
-                property bool   targetIsActive: false
+                property string targetNodeId:    ""
+                property bool   targetIsActive:  false
+                property bool   targetSuspended: false
 
                 // Non-interactive header naming the target node.
                 MenuItem {
@@ -280,8 +360,12 @@ Item {
                     text: qsTr("Restart App")
                     onTriggered: appBridge.restartPeerApp(livePeerMenu.targetNodeId)
                 }
+                // Disabled rather than hidden when the node is not
+                // suspended, so the row still reads as "not suspended"
+                // instead of the item silently vanishing.
                 MenuItem {
                     text: qsTr("Unsuspend")
+                    enabled: livePeerMenu.targetSuspended
                     onTriggered: appBridge.unsuspendNode(livePeerMenu.targetNodeId)
                 }
             }

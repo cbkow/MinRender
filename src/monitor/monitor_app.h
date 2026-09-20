@@ -22,6 +22,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 #include <mutex>
 
@@ -141,6 +142,27 @@ public:
     std::string resubmitIncomplete(const std::string& jobId);
     void unsuspendNode(const std::string& nodeId);
 
+    // --- Suspension mirror ---------------------------------------------
+    // The failure tracker lives only on the leader, so without this a
+    // suspended node has no idea it has been benched and the UI shows it
+    // as a healthy idle node that silently never gets work. Every node
+    // mirrors the leader's verdicts here: the leader reads its own
+    // tracker directly, workers poll GET /api/nodes/suspended.
+    struct SuspensionInfo
+    {
+        int failure_count = 0;
+        int64_t last_failure_ms = 0;
+    };
+    std::unordered_map<std::string, SuspensionInfo> suspendedNodes() const;
+    bool isNodeSuspended(const std::string& nodeId) const;
+
+    // Self-service recovery. unsuspendNode() already proxies to the
+    // leader when this node isn't it, so a benched node can clear its own
+    // entry without needing someone at another machine to do it.
+    void unsuspendThisNode();
+    bool isThisNodeSuspended() const;
+    int thisNodeSuspendFailureCount() const;
+
     // Peer remote-control actions. Each looks up the peer's endpoint
     // from PeerManager and queues an HTTP POST on the shared worker
     // thread (no blocking from callers). No-op if the peer is unknown
@@ -250,6 +272,7 @@ private:
     void pollFarmCommands();
     std::chrono::steady_clock::time_point m_lastCommandPoll{};
     void refreshCachedJobs();
+    void refreshSuspendedNodes();
     void abortRenderIfJobGone();
     void reportCompletion(const std::string& jobId, const ChunkRange& chunk,
                           const std::string& state, int64_t editEpoch);
@@ -303,6 +326,14 @@ private:
 
     // Leader contact cooldown — after any failed HTTP to leader, skip for 5s
     std::chrono::steady_clock::time_point m_leaderContactCooldown;
+
+    // Mirror of the leader's suspension verdicts (see suspendedNodes()).
+    // Guarded by its own mutex: written on the main thread by
+    // refreshSuspendedNodes(), read from the UI thread via AppBridge.
+    mutable std::mutex m_suspendedMutex;
+    std::unordered_map<std::string, SuspensionInfo> m_suspendedNodes;
+    std::chrono::steady_clock::time_point m_lastSuspendedRefresh;
+    static constexpr int SUSPENDED_REFRESH_MS = 3000;
 
     // Pending completion reports (worker -> leader, buffered on failure)
     struct PendingReport

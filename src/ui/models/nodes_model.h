@@ -36,6 +36,8 @@ public:
         EndpointRole,
         RenderStateRole,
         ActiveJobRole,
+        IsSuspendedRole,       // leader has benched this node (5 fails / 5 min)
+        SuspendFailuresRole,   // failure count behind the suspension
     };
 
     explicit NodesModel(QObject* parent = nullptr);

@@ -78,6 +78,15 @@ struct PeerInfo
     // builds predating it, and on a node with no secret loaded.
     std::string secret_fingerprint;
 
+    // Suspension — the leader's verdict about this node, not something
+    // the node reports about itself, so it is deliberately absent from
+    // to_json/from_json below. Mirrored onto every node's snapshot by
+    // MonitorApp::refreshSuspendedNodes() so the UI can show it and a
+    // suspended node can clear itself.
+    bool is_suspended = false;
+    int suspend_failure_count = 0;
+    int64_t suspend_last_failure_ms = 0;
+
     // Runtime (not serialized over HTTP, computed locally by PeerManager)
     bool is_local = false;
     bool is_alive = true;

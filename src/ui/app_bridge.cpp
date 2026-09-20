@@ -60,6 +60,31 @@ QStringList splitTagsCsv(const QString& csv)
     return out;
 }
 
+// PeerInfo carries no suspension of its own — it is the leader's verdict
+// about a node, not something the node reports — so stamp it on from
+// MonitorApp's mirror just before the model sees it. Without this a
+// benched node renders as a healthy idle node that silently never gets
+// work.
+std::vector<MR::PeerInfo> withSuspension(MR::MonitorApp* monitor,
+                                         std::vector<MR::PeerInfo> peers)
+{
+    if (!monitor)
+        return peers;
+    const auto suspended = monitor->suspendedNodes();
+    if (suspended.empty())
+        return peers;
+    for (auto& p : peers)
+    {
+        auto it = suspended.find(p.node_id);
+        if (it == suspended.end())
+            continue;
+        p.is_suspended = true;
+        p.suspend_failure_count = it->second.failure_count;
+        p.suspend_last_failure_ms = it->second.last_failure_ms;
+    }
+    return peers;
+}
+
 } // namespace
 
 AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
@@ -79,7 +104,8 @@ AppBridge::AppBridge(MonitorApp* monitor, QObject* parent)
     if (m_monitor)
     {
         m_jobsModel->setJobs(m_monitor->cachedJobs());
-        m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
+        m_nodesModel->setPeers(
+            withSuspension(m_monitor, m_monitor->peerManager().getPeerSnapshot()));
         m_templatesModel->setTemplates(m_monitor->cachedTemplates());
     }
     // attach() seeds from MonitorLog's existing ring and installs the
@@ -266,6 +292,19 @@ void AppBridge::setRndrDualMode(bool v)
     if (m_monitor->config().rndr_dual_mode == v) return;
     m_monitor->config().rndr_dual_mode = v;
     emit rndrDualModeChanged();
+}
+
+bool AppBridge::rndrDccGate() const
+{
+    return m_monitor ? m_monitor->config().rndr_dcc_gate : false;
+}
+
+void AppBridge::setRndrDccGate(bool v)
+{
+    if (!m_monitor) return;
+    if (m_monitor->config().rndr_dcc_gate == v) return;
+    m_monitor->config().rndr_dcc_gate = v;
+    emit rndrDccGateChanged();
 }
 
 bool AppBridge::rndrAvailable() const
@@ -782,6 +821,24 @@ void AppBridge::refresh()
         emit thisNodeActiveChanged();
     }
 
+    // This node's own suspension, mirrored from the leader. Drives the
+    // warning banner + self-unsuspend button in the NodePanel.
+    const bool suspendedNow = thisNodeSuspended();
+    const int  suspendFailsNow = thisNodeSuspendFailures();
+    if (suspendedNow != m_lastThisNodeSuspended
+        || suspendFailsNow != m_lastThisNodeSuspendFailures)
+    {
+        if (suspendedNow && !m_lastThisNodeSuspended)
+            MR::MonitorLog::instance().warn("node",
+                "This node has been suspended by the leader after "
+                + std::to_string(suspendFailsNow)
+                + " chunk failures in 5 minutes — it will not receive work "
+                  "until unsuspended");
+        m_lastThisNodeSuspended = suspendedNow;
+        m_lastThisNodeSuspendFailures = suspendFailsNow;
+        emit thisNodeSuspensionChanged();
+    }
+
     // RNDR supervisor status text changes as it cycles through its state
     // machine; surface it live under the Settings-panel toggle.
     const QString rndrNow = rndrStatus();
@@ -837,7 +894,8 @@ void AppBridge::refresh()
 
     // PeerManager::getPeerSnapshot takes a mutex under the hood so it's
     // safe from any thread; we call it from the UI thread anyway.
-    m_nodesModel->setPeers(m_monitor->peerManager().getPeerSnapshot());
+    m_nodesModel->setPeers(
+            withSuspension(m_monitor, m_monitor->peerManager().getPeerSnapshot()));
 
     // Template cache is refreshed alongside jobs (every 2 s in
     // MonitorApp::update). TemplatesModel short-circuits when the set
@@ -1004,6 +1062,30 @@ void AppBridge::toggleNodeActive()
         m_monitor->nodeState() == MR::NodeState::Active
             ? MR::NodeState::Stopped
             : MR::NodeState::Active);
+}
+
+bool AppBridge::thisNodeSuspended() const
+{
+    return m_monitor ? m_monitor->isThisNodeSuspended() : false;
+}
+
+int AppBridge::thisNodeSuspendFailures() const
+{
+    return m_monitor ? m_monitor->thisNodeSuspendFailureCount() : 0;
+}
+
+void AppBridge::unsuspendThisNode()
+{
+    if (!m_monitor) return;
+    m_monitor->unsuspendThisNode();
+    // MonitorApp clears its mirror optimistically; reflect that now
+    // rather than waiting for the next refresh() tick.
+    if (m_lastThisNodeSuspended)
+    {
+        m_lastThisNodeSuspended = false;
+        m_lastThisNodeSuspendFailures = 0;
+        emit thisNodeSuspensionChanged();
+    }
 }
 
 void AppBridge::unsuspendNode(const QString& nodeId)

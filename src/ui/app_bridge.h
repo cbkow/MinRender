@@ -104,6 +104,11 @@ class AppBridge : public QObject
     Q_PROPERTY(qint64  thisNodeRamMb    READ thisNodeRamMb    CONSTANT)
     Q_PROPERTY(bool    thisNodeIsLeader READ thisNodeIsLeader NOTIFY thisNodeIsLeaderChanged)
     Q_PROPERTY(bool    thisNodeActive   READ thisNodeActive   NOTIFY thisNodeActiveChanged)
+    // Leader-assigned suspension for THIS node. Mirrored from the leader
+    // by MonitorApp so a benched node can see and clear its own state
+    // instead of needing someone at another machine to do it.
+    Q_PROPERTY(bool    thisNodeSuspended       READ thisNodeSuspended       NOTIFY thisNodeSuspensionChanged)
+    Q_PROPERTY(int     thisNodeSuspendFailures READ thisNodeSuspendFailures NOTIFY thisNodeSuspensionChanged)
 
     Q_PROPERTY(QString syncRoot           READ syncRoot           WRITE setSyncRoot           NOTIFY syncRootChanged)
     Q_PROPERTY(QString tagsCsv            READ tagsCsv            WRITE setTagsCsv            NOTIFY tagsCsvChanged)
@@ -114,6 +119,9 @@ class AppBridge : public QObject
     Q_PROPERTY(bool    showNotifications  READ showNotifications  WRITE setShowNotifications  NOTIFY showNotificationsChanged)
     Q_PROPERTY(bool    stagingEnabled     READ stagingEnabled     WRITE setStagingEnabled     NOTIFY stagingEnabledChanged)
     Q_PROPERTY(bool    rndrDualMode       READ rndrDualMode       WRITE setRndrDualMode       NOTIFY rndrDualModeChanged)
+    // Sub-option of dual mode: hold the client off while a creative app
+    // is open on this machine. Meaningless with dual mode off.
+    Q_PROPERTY(bool    rndrDccGate        READ rndrDccGate        WRITE setRndrDccGate        NOTIFY rndrDccGateChanged)
     // Read-only RNDR supervisor status, surfaced under the toggle in the
     // Settings panel. rndrAvailable is constant for a session (binary
     // present or not); rndrStatus is polled live by refresh().
@@ -188,9 +196,14 @@ public:
     qint64  thisNodeRamMb() const;
     bool    thisNodeIsLeader() const;
     bool    thisNodeActive() const;
+    bool    thisNodeSuspended() const;
+    int     thisNodeSuspendFailures() const;
 
     Q_INVOKABLE void toggleNodeActive();
     Q_INVOKABLE void unsuspendNode(const QString& nodeId);
+    // Self-service: clear this node's own suspension (proxied to the
+    // leader when this node isn't it).
+    Q_INVOKABLE void unsuspendThisNode();
 
     // Peer remote-control actions — forwarded to MonitorApp which
     // queues HTTP to the peer's endpoint (no blocking).
@@ -369,7 +382,9 @@ public:
     void setStagingEnabled(bool v);
 
     bool rndrDualMode() const;
+    bool rndrDccGate() const;
     void setRndrDualMode(bool v);
+    void setRndrDccGate(bool v);
     bool rndrAvailable() const;
     QString rndrStatus() const;
 
@@ -419,6 +434,7 @@ signals:
     void showNotificationsChanged();
     void stagingEnabledChanged();
     void rndrDualModeChanged();
+    void rndrDccGateChanged();
     void rndrAvailableChanged();
     void rndrStatusChanged();
     void farmSecretFingerprintChanged();
@@ -429,6 +445,7 @@ signals:
     void currentJobChanged();
     void thisNodeIsLeaderChanged();
     void thisNodeActiveChanged();
+    void thisNodeSuspensionChanged();
     void logSourceIdChanged();
     void remoteLogLinesChanged();
     void logSourcesChanged();
@@ -544,6 +561,8 @@ private:
     bool m_lastFarmRunning  = false;
     bool m_lastIsLeader     = false;
     bool m_lastNodeActive   = true;
+    bool m_lastThisNodeSuspended = false;
+    int  m_lastThisNodeSuspendFailures = 0;
     QString m_lastRndrStatus;
     QString m_lastSecretFingerprint;
     int     m_secretMismatchCount = 0;

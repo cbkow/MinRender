@@ -1,6 +1,7 @@
 #include "monitor/rndr_supervisor.h"
 #include "core/monitor_log.h"
 
+#include <algorithm>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -15,6 +16,10 @@ RndrSupervisor::RndrSupervisor()
     , m_hangDetectedTime()
     , m_launchTime()
     , m_constructedTime(std::chrono::steady_clock::now())
+    // Assume recently occupied: we have no idea what was running before
+    // we started, so serve a full settle before the first launch.
+    , m_lastOccupiedSeen(std::chrono::steady_clock::now())
+    , m_lastDccPoll()
 {
 }
 
@@ -49,7 +54,9 @@ void RndrSupervisor::detectBinary()
 #endif
 }
 
-void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
+void RndrSupervisor::update(bool isRendering, bool dualModeEnabled,
+                            bool dccGateEnabled,
+                            const std::vector<std::string>& blockProcesses)
 {
 #ifdef _WIN32
     if (!m_binaryAvailable)
@@ -70,6 +77,15 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
 
     auto now = std::chrono::steady_clock::now();
 
+    updateDccOccupancy(dccGateEnabled, blockProcesses, now);
+
+    // One comparison covers both tiers: a creative app running right now
+    // makes this zero, and the same expression keeps holding for the
+    // settle window after it disappears.
+    const bool dccBlocked = m_dccGateEnabled
+        && std::chrono::duration_cast<std::chrono::seconds>(
+               now - m_lastOccupiedSeen).count() < DCC_SETTLE_SECONDS;
+
     switch (m_state)
     {
     case RndrState::Inactive:
@@ -79,6 +95,10 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
             auto startupElapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 now - m_constructedTime).count();
             if (startupElapsed < STARTUP_DELAY_SECONDS)
+                break;
+
+            // Someone is working on this machine (or was, recently).
+            if (dccBlocked)
                 break;
 
             // Check if TCPSVCS is already running (user or previous session)
@@ -105,6 +125,17 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
             // Render started — kill RNDR immediately
             killRndr();
             m_state = RndrState::RenderActive;
+            m_hangDetected = false;
+            break;
+        }
+
+        // A creative app appeared — stand down immediately. Presence, not
+        // the settle window, is the kill trigger: the settle only gates
+        // relaunching.
+        if (m_dccPresent)
+        {
+            killRndr();
+            m_state = RndrState::Inactive;
             m_hangDetected = false;
             break;
         }
@@ -184,6 +215,12 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
             break;
         }
 
+        if (dccBlocked)
+        {
+            m_state = RndrState::Inactive;
+            break;
+        }
+
         {
             auto cooldownElapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 now - m_cooldownStart).count();
@@ -207,6 +244,147 @@ void RndrSupervisor::update(bool isRendering, bool dualModeEnabled)
 #else
     (void)isRendering;
     (void)dualModeEnabled;
+    (void)dccGateEnabled;
+    (void)blockProcesses;
+#endif
+}
+
+void RndrSupervisor::updateDccOccupancy(
+    bool gateEnabled,
+    const std::vector<std::string>& names,
+    std::chrono::steady_clock::time_point now)
+{
+#ifdef _WIN32
+    // Turning the gate on mid-session starts a fresh settle, for the same
+    // reason construction does: we don't know what has been running.
+    if (gateEnabled && !m_dccGateEnabled)
+        m_lastOccupiedSeen = now;
+    m_dccGateEnabled = gateEnabled;
+
+    if (!gateEnabled)
+    {
+        m_dccPresent = false;
+        m_dccName.clear();
+        return;
+    }
+
+    if (std::chrono::duration_cast<std::chrono::seconds>(
+            now - m_lastDccPoll).count() < DCC_POLL_SECONDS)
+        return;
+    m_lastDccPoll = now;
+
+    const std::string found = scanDccPresence(names);
+    const bool present = !found.empty();
+
+    if (present)
+    {
+        m_lastOccupiedSeen = now;
+        if (!m_dccPresent || m_dccName != found)
+            MonitorLog::instance().info("dcc", "DCC detected: " + found);
+        m_dccName = found;
+    }
+    else if (m_dccPresent)
+    {
+        MonitorLog::instance().info("dcc", "DCC no longer detected: " + m_dccName +
+            " (settling for " + std::to_string(DCC_SETTLE_SECONDS / 60) + " min)");
+        m_dccName.clear();
+    }
+
+    m_dccPresent = present;
+#else
+    (void)gateEnabled; (void)names; (void)now;
+#endif
+}
+
+std::string RndrSupervisor::scanDccPresence(const std::vector<std::string>& names) const
+{
+#ifdef _WIN32
+    if (names.empty())
+        return {};
+
+    // Program Files roots, resolved once per scan. A 64-bit process sees
+    // both of these unredirected.
+    std::wstring roots[2];
+    {
+        wchar_t buf[MAX_PATH];
+        if (GetEnvironmentVariableW(L"ProgramFiles", buf, MAX_PATH) > 0)
+            roots[0] = buf;
+        if (GetEnvironmentVariableW(L"ProgramFiles(x86)", buf, MAX_PATH) > 0)
+            roots[1] = buf;
+    }
+    auto lower = [](std::wstring v) {
+        std::transform(v.begin(), v.end(), v.begin(), ::towlower);
+        return v;
+    };
+    for (auto& r : roots)
+    {
+        if (r.empty())
+            continue;
+        if (r.back() != L'\\')
+            r.push_back(L'\\');   // so "Program FilesX" can't prefix-match
+        r = lower(std::move(r));
+    }
+    if (roots[0].empty() && roots[1].empty())
+        return {};
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return {};
+
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    std::string hit;
+
+    if (Process32FirstW(snap, &pe))
+    {
+        do
+        {
+            // Exact image-name match only — never a prefix. Adobe and
+            // others leave permanent background helpers running whose
+            // names share a stem with the app itself.
+            bool nameMatch = false;
+            for (const auto& n : names)
+            {
+                std::wstring wn(n.begin(), n.end());
+                if (_wcsicmp(pe.szExeFile, wn.c_str()) == 0)
+                {
+                    nameMatch = true;
+                    break;
+                }
+            }
+            if (!nameMatch)
+                continue;
+
+            HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,
+                                      FALSE, pe.th32ProcessID);
+            if (!proc)
+                continue;   // another user's process — can't verify, don't count
+
+            wchar_t path[MAX_PATH];
+            DWORD len = MAX_PATH;
+            const bool gotPath = QueryFullProcessImageNameW(proc, 0, path, &len) != 0;
+            CloseHandle(proc);
+            if (!gotPath)
+                continue;
+
+            const std::wstring lowered = lower(std::wstring(path, len));
+            for (const auto& r : roots)
+            {
+                if (!r.empty() && lowered.rfind(r, 0) == 0)
+                {
+                    std::wstring exe(pe.szExeFile);
+                    hit.assign(exe.begin(), exe.end());
+                    break;
+                }
+            }
+        } while (hit.empty() && Process32NextW(snap, &pe));
+    }
+
+    CloseHandle(snap);
+    return hit;
+#else
+    (void)names;
+    return {};
 #endif
 }
 
@@ -246,6 +424,17 @@ std::string RndrSupervisor::statusText() const
     }
     case RndrState::Inactive:
     default:
+        if (m_dccGateEnabled && m_dccPresent)
+            return "Blocked (" + m_dccName + ")";
+        if (m_dccGateEnabled)
+        {
+            auto now = std::chrono::steady_clock::now();
+            auto remaining = DCC_SETTLE_SECONDS
+                - std::chrono::duration_cast<std::chrono::seconds>(
+                      now - m_lastOccupiedSeen).count();
+            if (remaining > 0)
+                return "Settling (" + std::to_string((remaining + 59) / 60) + "m)";
+        }
         return "Inactive";
     }
 }
