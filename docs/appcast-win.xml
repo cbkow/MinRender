@@ -8,6 +8,29 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.5</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.5</sparkle:version>
+      <sparkle:shortVersionString>0.5.5</sparkle:shortVersionString>
+      <sparkle:os>windows</sparkle:os>
+      <description><![CDATA[
+      <h3>minRender 0.5.5</h3>
+      <p>Includes everything from 0.5.4, which was never published as a release.</p>
+      <ul>
+        <li><b>Node suspension is now visible</b> &mdash; a node benched by the leader after repeated chunk failures used to keep reporting "ok" and looked like a healthy idle peer that silently never received work. Peer rows now show a red dot, a warning glyph and the failure count instead of "idle", and This Node grows a banner with an Unsuspend button. Workers mirror the leader's verdict by polling it every few seconds; a failed poll keeps the last known state rather than blanking it.</li>
+        <li><b>Unsuspend from any machine</b> &mdash; the peer menu's Unsuspend is enabled only for nodes that are actually suspended, so clearing a bench no longer means walking to another workstation.</li>
+        <li><b>RNDR creative-app gate</b> (opt-in, off by default) &mdash; holds the dual-mode client off while Blender or After Effects is running from Program Files, plus a 10 minute settle before it may relaunch. Occupancy is sampled rather than inferred from open/close events, so an app that crashes or is killed still clears the gate correctly. Enable it in Settings.</li>
+        <li><b>Packaging</b> &mdash; 0.5.4's installer was packaged from a tree that didn't match any commit on main; 0.5.5 is rebuilt clean so the shipped artifact corresponds to a real commit.</li>
+      </ul>
+      ]]></description>
+      <pubDate>Sun, 20 Sep 2026 10:29:39 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.5/minRender-0.5.5-Setup-x64.exe"
+        sparkle:edSignature="CpCZ4ztl6rzIiV0P4vn6Pjwt3Vu6EfJvL4CT2GmGwFQwXmZBw5qJot9kk9aHYN5zj6RjskOkYwPN8BSNQZA+Bw=="
+        length="58086102"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.5.3</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.5.3</sparkle:version>
