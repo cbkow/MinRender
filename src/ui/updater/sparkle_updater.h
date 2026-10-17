@@ -1,15 +1,13 @@
-// Sparkle / WinSparkle auto-updater seam — a C++-only interface over the
-// platform updater (Sparkle 2's SPUStandardUpdaterController on macOS,
-// WinSparkle on Windows). Both drive the standard update UI: check / download
-// progress / release notes / install + relaunch.
+// Sparkle auto-updater seam — a C++-only interface over Sparkle 2's
+// SPUStandardUpdaterController on macOS: check / download progress / release
+// notes / install + relaunch.
 //
 // The macOS implementation lives in sparkle_updater_macos.mm (compiled only
 // when Sparkle is vendored — CMake defines MINRENDER_HAVE_SPARKLE when
-// external/Sparkle/Sparkle.framework exists). The Windows implementation lives
-// in winsparkle_updater_windows.cpp (compiled only when WinSparkle is vendored
-// — CMake defines MINRENDER_HAVE_WINSPARKLE when external/winsparkle exists).
-// On every other configuration the calls compile to inline no-ops so callers
-// can invoke them unconditionally.
+// external/Sparkle/Sparkle.framework exists). Windows has no self-updater:
+// the Microsoft Store is the only Windows channel and delivers updates
+// itself. On every other configuration the calls compile to inline no-ops so
+// callers can invoke them unconditionally.
 //
 // Only the `minrender` GUI target links the updater. The headless sidecar and
 // mr-agent never check for updates: a render node must not interrupt a job with
@@ -28,29 +26,17 @@ void startSparkleUpdater();
 // User-initiated "Check for Updates…" — shows Sparkle's standard UI.
 void checkForUpdatesNow();
 
-#elif defined(_WIN32) && defined(MINRENDER_HAVE_WINSPARKLE)
-
-// Same seam, WinSparkle-backed (see winsparkle_updater_windows.cpp). Configures
-// the feed / app-details / EdDSA key + automatic checks, then win_sparkle_init().
-// Idempotent.
-void startSparkleUpdater();
-
-// User-initiated "Check for Updates…" — shows WinSparkle's standard UI.
-void checkForUpdatesNow();
-
-#else  // updater not vendored (dev builds / other platforms) — inline no-ops.
+#else  // updater not vendored, or Windows — inline no-ops.
 
 inline void startSparkleUpdater() {}
 inline void checkForUpdatesNow() {}
 
 #endif
 
-// True when a real updater backend is compiled in. Drives the enabled state
-// of the "Check for Updates…" menu item, so dev builds and Store builds
-// (MINRENDER_STORE_BUILD — the Store delivers updates itself) show it greyed
-// out instead of silently doing nothing.
-#if (defined(__APPLE__) && defined(MINRENDER_HAVE_SPARKLE)) || \
-    (defined(_WIN32) && defined(MINRENDER_HAVE_WINSPARKLE))
+// True when a real updater backend is compiled in. Drives whether the
+// "Check for Updates…" menu item exists at all (Main.qml removes it when
+// false): dev builds without Sparkle and every Windows build.
+#if defined(__APPLE__) && defined(MINRENDER_HAVE_SPARKLE)
 inline constexpr bool kUpdaterAvailable = true;
 #else
 inline constexpr bool kUpdaterAvailable = false;

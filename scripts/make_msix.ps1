@@ -53,14 +53,6 @@ $Version = '{0}.{1}.{2}.0' -f $Matches[1], $Matches[2], $Matches[3]
 if (-not (Test-Path (Join-Path $Deploy 'minRender.exe'))) {
     throw "$Deploy\minRender.exe missing - run scripts\package.bat first (MR_BUILD_DIR=$BuildDir)."
 }
-# WinSparkle.lib is a load-time import: if the DLL was staged, the exe was
-# built with the self-updater linked in. Store policy forbids self-updating,
-# and deleting the DLL here would just make the exe fail to launch.
-if (Test-Path (Join-Path $Deploy 'WinSparkle.dll')) {
-    throw ("$Deploy contains WinSparkle.dll - this build links the self-updater. " +
-           "Configure a separate tree with -DMINRENDER_STORE_BUILD=ON (MR_BUILD_DIR), " +
-           "rebuild, and re-run package.bat --msix.")
-}
 foreach ($exe in 'mr-restart.exe', 'mr-agent.exe') {
     if (-not (Test-Path (Join-Path $Deploy $exe))) {
         throw "$Deploy\$exe missing - the app needs it at runtime; rebuild before packaging."
@@ -70,6 +62,10 @@ foreach ($exe in 'mr-restart.exe', 'mr-agent.exe') {
 # --- Stage ----------------------------------------------------------------
 if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 Copy-Item $Deploy $Stage -Recurse
+# windeployqt --compiler-runtime stages vc_redist.x64.exe next to the runtime
+# DLLs it also stages; the package carries the DLLs, so the 25 MB installer
+# would be dead weight inside the MSIX.
+Remove-Item (Join-Path $Stage 'vc_redist.x64.exe') -ErrorAction SilentlyContinue
 Copy-Item (Join-Path $Repo 'installer\msix\Assets') (Join-Path $Stage 'Assets') -Recurse
 
 $manifest = Get-Content (Join-Path $Repo 'installer\msix\AppxManifest.xml.in') -Raw

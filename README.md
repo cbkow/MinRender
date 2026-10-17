@@ -18,7 +18,7 @@ Built with C++ (Qt 6 Quick / QML) and Rust.
 
 ## Install + docs
 
-Grab the latest installer from the [releases page](https://github.com/cbkow/minrender/releases) and head to **[minrender.com](https://minrender.com)** for the full manual — install, configuration, job submission, monitoring, and the job template reference.
+Get it from the Microsoft Store on Windows, or the latest `.dmg` from the [releases page](https://github.com/cbkow/minrender/releases) on macOS, and head to **[minrender.com](https://minrender.com)** for the full manual — install, configuration, job submission, monitoring, and the job template reference.
 
 ## Build from source
 
@@ -29,7 +29,7 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/Qt/6.11.1/<platform>
 cmake --build build --target minrender -j8
 ```
 
-The macOS release script (signs + notarizes + builds a DMG) is at `scripts/macos-release.sh`. The Windows installer is built with Inno Setup from `installer/minrender_installer.iss` after `scripts/build_msvc.bat`.
+The macOS release script (signs + notarizes + builds a DMG) is at `scripts/macos-release.sh`. The Windows build is packaged for the Microsoft Store with `scripts\package.bat --msix` after `scripts\build_msvc.bat` — see `installer/STORE.md`.
 
 ## License
 

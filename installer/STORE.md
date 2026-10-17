@@ -1,11 +1,12 @@
-# Microsoft Store distribution (primary Windows channel)
+# Microsoft Store distribution (the Windows channel)
 
-The Store signs MSIX packages with Microsoft's certificate during ingestion,
-which is what makes this the primary Windows channel: no Authenticode
-certificate to buy, and the Defender `Bearfoos.B!ml` false-positive problem
-(see `CODESIGNING.md`) goes away for Store installs. The Store also delivers
-updates, replacing WinSparkle on this channel. The Inno installer remains as
-an unsigned manual fallback.
+Windows ships only through the Microsoft Store. The Store signs the MSIX
+with Microsoft's certificate during ingestion (no Authenticode certificate
+to buy, no Defender `!ml` false positives on unsigned binaries) and delivers
+updates, so the Windows build contains no self-updater. The former
+direct-download Inno installer and WinSparkle feed were retired in 0.5.6;
+`docs/appcast-win.xml` stays frozen at 0.5.5 so old installs polling it see
+no update rather than an error.
 
 ## One-time setup (Partner Center)
 
@@ -26,31 +27,21 @@ an unsigned manual fallback.
 
 ## Building a Store package
 
-The Store configure lives in its own tree (`build-store`) so it never shares
-a `deploy\` folder with the WinSparkle build in `build\`. `MR_BUILD_DIR`
-points both `package.bat` and `make_msix.ps1` at it.
-
 ```bat
-scripts\build_msvc.bat -S . -B build-store -G Ninja -DCMAKE_BUILD_TYPE=Release -DMINRENDER_STORE_BUILD=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/msvc2022_64
-scripts\build_msvc.bat --build build-store --target minrender mr-restart minrender-headless --config Release
+scripts\build_msvc.bat -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/msvc2022_64
+scripts\build_msvc.bat --build build --target minrender mr-restart minrender-headless --config Release
 cd mr-agent && cargo build --release && cd ..
-set MR_BUILD_DIR=%CD%\build-store
 scripts\package.bat --msix
 ```
 
-Output: `build-store\minRender-<version>-x64.msix`, version read from
+Output: `build\minRender-<version>-x64.msix`, version read from
 `project(MinRender VERSION …)` in CMakeLists.txt (MSIX versions are 4-part;
-the script appends `.0`).
+the script appends `.0`). `MR_BUILD_DIR` points `package.bat` and
+`make_msix.ps1` at another build tree if you keep several.
 
-Notes:
-
-- `MINRENDER_STORE_BUILD=ON` excludes WinSparkle and defines
-  `MINRENDER_STORE_BUILD` for the app, which drops the "Check for Updates…"
-  menu item. `make_msix.ps1` refuses a deploy folder that contains
-  `WinSparkle.dll`, so packaging the wrong tree fails loudly.
-- `MR_SIGN_CMD` is irrelevant on this channel; leave it unset.
-- The fallback installer keeps using `build\` and `package.bat --iss`
-  without `MR_BUILD_DIR`.
+The staged `deploy\` folder is what goes into the package minus
+`vc_redist.x64.exe` (windeployqt stages the runtime DLLs the app actually
+needs; the redistributable installer is dropped).
 
 ## Local testing before submission
 
@@ -58,18 +49,17 @@ With Developer Mode enabled, register the staged loose files — no signing
 needed:
 
 ```powershell
-$env:MR_BUILD_DIR = "$PWD\build-store"
 powershell -File scripts\make_msix.ps1 -Sideload -SkipPack
-Add-AppxPackage -Register build-store\msix\AppxManifest.xml
+Add-AppxPackage -Register build\msix\AppxManifest.xml
 ```
 
 This installs the packaged app for real (start menu entry, startup task,
-firewall rules, package identity), running from `build-store\msix`.
+firewall rules, package identity), running from `build\msix`.
 
 The Store build has no `minrender-headless.exe` execution alias: giving the
 headless exe its own Application entry hidden from Start requires the
 `HeadlessAppBypass` waiver, which Partner Center refused on first upload.
-Headless stays a direct-download-installer feature.
+On Windows, headless is a dev-build feature only.
 
 `Add-AppxPackage -Register` (and `Remove-AppxPackage`) must run in the
 **interactive desktop session**. From an SSH or other non-interactive logon
@@ -155,7 +145,7 @@ timing against the farm.
 
 ## Farm rollout
 
-Per node, one-time migration from the Inno install:
+Per node, one-time migration from a pre-0.5.6 direct install:
 
 1. Exit minRender, uninstall the old version (Settings → Apps). Node
    identity/config in `%APPDATA%\MinRender` and the farm share are untouched
@@ -179,11 +169,12 @@ machinery tolerates brief version skew either way.
 
 ## Per-release routine
 
-1. Bump `project(MinRender VERSION x.y.z)` (CMakeLists) — flows into the
-   MSIX version automatically. Keep the `.iss` `MyAppVersion` in sync for
-   the fallback installer.
+1. Bump `project(MinRender VERSION x.y.z)` (CMakeLists), `APP_VERSION` in
+   `src/core/config.h`, and the mr-agent `Cargo.toml`/`Cargo.lock` — the
+   MSIX version follows CMakeLists automatically.
 2. Build + `scripts\package.bat --msix`, sideload-smoke-test if the release
-   touched packaging.
-3. New submission in Partner Center, upload, publish when the farm is ready.
-4. Fallback channel (unsigned Inno + appcast) only when there's a reason;
-   that path keeps the Defender FP routine in `CODESIGNING.md`.
+   touched packaging. Defender-scan the result on the build box.
+3. New submission in Partner Center, upload, publish when the farm is ready
+   (manual publish, so certification passing never lands on nodes mid-job).
+4. macOS ships separately through `scripts/macos-release.sh` + the Sparkle
+   appcast as before.

@@ -17,15 +17,15 @@
     sidecar as child processes.
   - unvirtualizedResources + the two Properties below: keep config, node
     identity, and render staging in the real %APPDATA%\MinRender instead of
-    the package's virtualized LocalCache. Farm nodes upgraded from the Inno
-    installer keep their node identity; Store and fallback installs are
-    interchangeable. Requires the 2004 (19041) baseline set in Dependencies.
-  - windows.firewallRules replaces the installer's netsh calls: inbound
+    the package's virtualized LocalCache. Farm nodes migrated from the
+    pre-0.5.6 direct installer keep their node identity, and the DCC
+    plug-ins and companion script can read config.json / the status key. Requires the 2004 (19041) baseline set in Dependencies.
+  - windows.firewallRules: inbound
     TCP 8420 (HTTP mesh) + UDP 4243 (multicast heartbeats), all profiles,
     matching the deliberate any-remote-address stance in SECURITY.md.
     Declared for minRender.exe only - the headless sidecar is used for
     same-machine sandbox farms (loopback is firewall-exempt).
-  - windows.startupTask replaces the installer's Startup-folder shortcut.
+  - windows.startupTask: launches the app at logon.
     Startup tasks cannot pass arguments, so the task launches mr-restart.exe,
     which (when invoked with no arguments) launches minRender.exe minimized
     from its own directory. Users toggle it in Task Manager > Startup.
@@ -33,7 +33,7 @@
     needs one, and hiding it from Start (AppListEntry="none") marks the app
     as "headless", which Partner Center rejects without a HeadlessAppBypass
     waiver (seen 2026-10-17). So the Store build has no headless alias;
-    the direct-download installer keeps headless. The exe still ships in
+    headless is a dev-build feature on Windows. The exe still ships in
     the package, unused.
 -->
 <Package

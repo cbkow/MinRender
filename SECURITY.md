@@ -74,7 +74,7 @@ natural next step if the threat model tightens.
 ## Network exposure
 
 The HTTP server binds `0.0.0.0`, so reachability is bounded by the firewall
-rather than the bind address. The installer opens TCP 8420 and UDP 4243 for
+rather than the bind address. The Windows package declares inbound rules for TCP 8420 and UDP 4243 for
 **all profiles and any remote address**, and that is a deliberate choice
 rather than an oversight.
 
@@ -166,16 +166,14 @@ read it at farm start; mixed secrets show up as `401` in the logs.
 
 ## Binary distribution
 
-The primary Windows channel is the Microsoft Store: MSIX packages are signed
-by Microsoft during ingestion and updated by the Store (Store builds exclude
-the self-updater — `MINRENDER_STORE_BUILD`; see `installer/STORE.md`). A
-direct-download Inno installer remains as an unsigned fallback, which is why
-Defender's ML classifier may flag it — see `installer/CODESIGNING.md`. 0.5.6
-removed the in-process RNDR supervisor (hidden launch from
-`%LOCALAPPDATA%`, `taskkill` of a system-named process), which was the
-strongest miner-like behaviour signal in the binary, and restricted
-`mr-restart.exe` to relaunching its sibling `minRender.exe` only. macOS
-builds are signed and notarized, with updates Ed25519-verified by Sparkle.
+Windows ships only through the Microsoft Store: the package is signed by
+Microsoft during ingestion and updated by the Store, and the app contains no
+self-updater on Windows (see `installer/STORE.md`). macOS builds are signed
+and notarized, with updates Ed25519-verified by Sparkle. 0.5.6 removed the
+in-process RNDR supervisor (hidden launch from `%LOCALAPPDATA%`, `taskkill`
+of a system-named process), which was the strongest miner-like behaviour
+signal in the binary, and restricted `mr-restart.exe` to relaunching its
+sibling `minRender.exe` only.
 
 ## Reporting
 

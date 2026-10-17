@@ -1,35 +1,31 @@
 @echo off
-REM scripts\package.bat — stage everything Inno Setup needs under
-REM build\deploy\ and optionally run the Inno Setup compiler.
+REM scripts\package.bat — stage everything the Microsoft Store package needs
+REM under <build>\deploy\ and optionally pack the MSIX.
 REM
 REM Prerequisites (run these first):
 REM   scripts\build_msvc.bat --build build --target minrender mr-restart minrender-headless --config Release
 REM   cd mr-agent && cargo build --release && cd ..    (if agent needs rebuilding)
 REM
 REM Usage:
-REM   scripts\package.bat          — just stage to build\deploy
-REM   scripts\package.bat --iss    — stage and compile the fallback installer
+REM   scripts\package.bat          — just stage to <build>\deploy
 REM   scripts\package.bat --msix   — stage and pack the Microsoft Store MSIX
-REM                                  (build must be configured with
-REM                                  -DMINRENDER_STORE_BUILD=ON; identity env
-REM                                  vars per installer\STORE.md)
+REM                                  (identity env vars per installer\STORE.md)
+REM
+REM MR_BUILD_DIR overrides the build tree (default: build).
 
 setlocal
 
 set "REPO=%~dp0.."
-REM MR_BUILD_DIR lets the Store configure (-DMINRENDER_STORE_BUILD=ON) live
-REM in its own tree, e.g. build-store, so switching channels never means
-REM wiping build\ to flush a stale WinSparkle.dll.
 set "BUILD=%REPO%\build"
 if defined MR_BUILD_DIR set "BUILD=%MR_BUILD_DIR%"
 set "DEPLOY=%BUILD%\deploy"
 set "QT_BIN=C:\Qt\6.11.1\msvc2022_64\bin"
-REM windeployqt needs VCINSTALLDIR to locate the VC++ runtime redist DLLs
-REM (vcruntime140, msvcp140) and vc_redist.x64.exe, which the installer
-REM requires. Without it they're silently skipped and the .iss fails on the
-REM missing redist. Resolve the VS install the same way build_msvc.bat does
-REM (vswhere, latest VS with the C++ tools) so a VS version change on the
-REM build box doesn't silently point at a path that no longer exists.
+REM windeployqt needs VCINSTALLDIR to locate the VC++ runtime DLLs
+REM (vcruntime140, msvcp140). Without it they're silently skipped and the
+REM app won't launch on machines without the VC++ redistributable. Resolve
+REM the VS install the same way build_msvc.bat does (vswhere, latest VS with
+REM the C++ tools) so a VS version change on the build box doesn't silently
+REM point at a path that no longer exists.
 if defined VCINSTALLDIR goto :vc_done
 set "VSWHERE_DIR=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
 if not exist "%VSWHERE_DIR%\vswhere.exe" goto :vc_fallback
@@ -40,9 +36,8 @@ if defined VCINSTALLDIR goto :vc_done
 :vc_fallback
 set "VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\"
 :vc_done
-if not exist "%VCINSTALLDIR%Redist" echo WARN: VCINSTALLDIR=%VCINSTALLDIR% has no Redist folder - vc_redist.x64.exe will be missing.
+if not exist "%VCINSTALLDIR%Redist" echo WARN: VCINSTALLDIR=%VCINSTALLDIR% has no Redist folder - VC++ runtime DLLs will be missing.
 set "AGENT=%REPO%\mr-agent\target\release\mr-agent.exe"
-set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
 REM --- Sanity checks ---
 if not exist "%BUILD%\minRender.exe" (
@@ -66,15 +61,6 @@ REM --- Executables ---
 copy /Y "%BUILD%\minRender.exe"          "%DEPLOY%\" >nul || exit /b 1
 copy /Y "%BUILD%\minrender-headless.exe" "%DEPLOY%\" >nul || exit /b 1
 copy /Y "%BUILD%\mr-restart.exe"         "%DEPLOY%\" >nul || exit /b 1
-
-REM WinSparkle.dll — CMake's POST_BUILD drops it next to minRender.exe when
-REM external\winsparkle is vendored (auto-update enabled). Optional: absent in
-REM dev builds without the updater. Must ship beside the exe so the app loads it.
-if exist "%BUILD%\WinSparkle.dll" (
-  copy /Y "%BUILD%\WinSparkle.dll" "%DEPLOY%\" >nul || exit /b 1
-) else (
-  echo WARN: %BUILD%\WinSparkle.dll not found - auto-update disabled in this build.
-)
 
 REM Frame-preview decode DLLs (OpenEXR/Imath/png/jpeg-turbo/tiff + deps) —
 REM vendored at external\install-win64 (vcpkg export, see CMakeLists). Optional:
@@ -115,54 +101,13 @@ REM because minrender uses them — no separate windeployqt run needed.
 echo.
 echo Deploy folder ready: %DEPLOY%
 
-REM --- Authenticode signing (opt-in; see installer\CODESIGNING.md) ---
-REM Set MR_SIGN_CMD to a signtool command line minus the target file, e.g.
-REM   set MR_SIGN_CMD=signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a
-REM Every shipped exe must be signed or Defender's ML keeps flagging the
-REM unsigned ones (Bearfoos.B!ml). WinSparkle.dll ships unsigned upstream,
-REM so it gets our signature too.
-if not defined MR_SIGN_CMD goto :after_sign
-echo.
-echo Signing binaries...
-for %%F in (minRender.exe minrender-headless.exe mr-restart.exe mr-agent.exe WinSparkle.dll) do (
-  if exist "%DEPLOY%\%%F" %MR_SIGN_CMD% "%DEPLOY%\%%F"
-  if errorlevel 1 exit /b 1
-)
-:after_sign
+if /I not "%~1"=="--msix" goto :done
 
-if /I "%~1"=="--msix" goto :msix
-if /I not "%~1"=="--iss" goto :done
-
-REM Inno Setup compile step. Hoisted out of a nested if-block because
-REM the ISCC path contains "(x86)" which breaks nested-parens parsing.
-if not exist "%ISCC%" goto :no_iscc
-echo.
-echo Compiling installer...
-REM With MR_SIGN_CMD set, hand Inno a "signtool" definition so the installer
-REM (and its uninstaller stub) get signed as well — an unsigned setup exe
-REM undoes most of the goodwill from signing the payload.
-if defined MR_SIGN_CMD goto :iss_signed
-"%ISCC%" "%REPO%\installer\minrender_installer.iss"
-if errorlevel 1 exit /b %errorlevel%
-goto :done
-
-:iss_signed
-"%ISCC%" /DSIGN "/Ssigntool=%MR_SIGN_CMD% $f" "%REPO%\installer\minrender_installer.iss"
+REM Store packaging lives in PowerShell (token substitution + makeappx
+REM discovery are miserable in batch). It re-validates the deploy folder.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\scripts\make_msix.ps1"
 if errorlevel 1 exit /b %errorlevel%
 
 :done
 endlocal
 exit /b 0
-
-:msix
-REM Store packaging lives in PowerShell (token substitution + makeappx
-REM discovery are miserable in batch). It re-validates the deploy folder,
-REM including refusing a build that links WinSparkle.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\scripts\make_msix.ps1"
-if errorlevel 1 exit /b %errorlevel%
-goto :done
-
-:no_iscc
-echo ERROR: Inno Setup ISCC.exe not found at %ISCC%
-endlocal
-exit /b 1

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Frozen at 0.5.5: Windows moved to the Microsoft Store in 0.5.6. This feed
+     stays so pre-0.5.6 installs polling it get a quiet "no update" rather
+     than an error; it will never list a newer version. -->
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
      xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>

@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # (SUPublicEDKey) and the Windows updater (MINRENDER_UPDATE_PUBLIC_KEY) so both
 # platforms verify against the same key.
 set(MINRENDER_UPDATE_PUBLIC_KEY "+Xlrad3WswxIRTyzBTp8KaTEjyfPO5Ap4llmPdZf3RQ="
-    CACHE STRING "Ed25519 public key for Sparkle/WinSparkle update verification")
+    CACHE STRING "Ed25519 public key for Sparkle update verification (macOS)")
 
 # --- FetchContent dependencies (backend-only, no UI toolkit) ---
 include(FetchContent)
@@ -69,11 +69,11 @@ qt_standard_project_setup(REQUIRES 6.8)
 # libtiff). When every package resolves, the minrender target compiles
 # src/preview/ (also vendored from QCView) and defines
 # MINRENDER_HAVE_PREVIEW; otherwise the preview pane is absent and the
-# build proceeds — same optional pattern as Sparkle/WinSparkle.
+# build proceeds — same optional pattern as Sparkle.
 # The prefixes are per-platform and must stay separate: external/install
 # holds macOS dylibs whose lib/cmake configs reference gitignored .a
 # files, so any other platform picking them up aborts configure.
-# external/install-win64 is gitignored (like external/winsparkle);
+# external/install-win64 is gitignored;
 # repopulate it with `vcpkg export openexr libpng libjpeg-turbo tiff
 # --raw` and copy installed/x64-windows/ whole — the vcpkg target
 # configs reference the debug/ import libs, so it must come along.
@@ -147,8 +147,8 @@ endif()
 # ===========================================================================
 # Every shipped exe gets an icon + full VERSIONINFO block (company, file
 # description, version). Defender's ML heuristics penalize metadata-less
-# binaries heavily — this is one of the two big false-positive levers, the
-# other being Authenticode signing (see installer/CODESIGNING.md).
+# binaries heavily; Windows ships only through the Microsoft Store, which
+# signs the package, so this metadata is the other half of staying clean.
 if(WIN32)
     function(mr_add_windows_rc target description original_filename)
         set(MR_RC_DESCRIPTION "${description}")
@@ -225,7 +225,7 @@ if(MR_HAVE_PREVIEW)
         TIFF::TIFF
     )
     # The vendored Windows decode libs are DLLs; sync them next to the
-    # exe (same pattern as WinSparkle.dll) so dev builds run from build\
+    # exe so dev builds run from build\
     # and package.bat's deploy stage can pick them up from one place.
     if(WIN32 AND EXISTS "${MR_VENDOR_PREFIX}/bin")
         file(GLOB MR_PREVIEW_DLLS "${MR_VENDOR_PREFIX}/bin/*.dll")
@@ -274,7 +274,7 @@ qt_add_qml_module(minrender
     RESOURCE_PREFIX /qt/qml
 )
 
-# Embed icons into the binary at :/icons/… — the Inno Setup payload still
+# Embed icons into the binary at :/icons/… — the deploy stage still
 # ships resources/ on disk for fonts, but the app window + tray read icons
 # from the embedded copy so a missing resources/ dir can't break either.
 qt_add_resources(minrender "app_icons"
@@ -304,7 +304,7 @@ target_link_libraries(minrender PRIVATE
 #   violate the bundle layout convention and break codesign on
 #   resource walks (codesign expects only Mach-O under MacOS).
 # - Windows/Linux: next to the executable at <bin>/resources/, matching
-#   the install layout the Inno Setup installer creates.
+#   the install layout the Store package creates.
 if(APPLE)
     set(MR_RUNTIME_RESOURCES_DEST
         "$<TARGET_BUNDLE_CONTENT_DIR:minrender>/Resources")
@@ -323,22 +323,19 @@ if(WIN32)
 endif()
 
 # ===========================================================================
-# Auto-update (Sparkle on macOS, WinSparkle on Windows) — GUI target only
+# Auto-update (Sparkle, macOS only) — GUI target only
 # ===========================================================================
-# MINRENDER_STORE_BUILD: Microsoft Store packages must not self-update (Store
-# policy, and the WindowsApps install dir is read-only anyway), so this skips
-# WinSparkle even when external/winsparkle is vendored. The updater seam then
-# compiles to its no-op shim and MR::kUpdaterAvailable greys out the
-# "Check for Updates…" menu item. scripts/make_msix.ps1 refuses to package a
-# build that shipped WinSparkle.dll, so forgetting this option fails loudly at
-# packaging rather than at certification. macOS/Sparkle is unaffected.
-option(MINRENDER_STORE_BUILD
-    "Build for Microsoft Store distribution (exclude the self-updater)" OFF)
-# Both updaters are vendored under external/ (gitignored) and OPTIONAL: when the
-# framework/lib is absent the bridge compiles to the header's inline no-ops and
-# the app still builds (dev builds without update support). The headless sidecar
-# and mr-agent never link the updater — only this `minrender` GUI target does,
-# so a render node can never interrupt a job with an update prompt.
+# Windows has no self-updater: the Microsoft Store is the only Windows
+# channel and delivers updates itself (Store policy forbids self-updating,
+# and the WindowsApps install dir is read-only). AppUpdater::available()
+# is false on Windows so the About menu carries no "Check for Updates…".
+#
+# Sparkle is vendored under external/ (gitignored) and OPTIONAL: when the
+# framework is absent the bridge compiles to the header's inline no-ops and
+# the app still builds (dev builds without update support). The headless
+# sidecar and mr-agent never link the updater — only this `minrender` GUI
+# target does, so a render node can never interrupt a job with an update
+# prompt.
 if(APPLE)
     # Sparkle 2 — fetched via scripts/fetch_sparkle.sh into external/Sparkle.
     # When present: compile the .mm bridge, define MINRENDER_HAVE_SPARKLE, link
@@ -372,35 +369,6 @@ if(APPLE)
         message(STATUS "minRender: Sparkle vendored — macOS auto-update enabled")
     else()
         message(STATUS "minRender: external/Sparkle absent — macOS auto-update disabled (no-op shim)")
-    endif()
-elseif(WIN32)
-    # WinSparkle — copy external/winsparkle from a sister project (ufb/minNotes:
-    # include/winsparkle.h, lib/WinSparkle.lib, bin/WinSparkle.dll). When present:
-    # compile the bridge, define MINRENDER_HAVE_WINSPARKLE + the app version (the
-    # updater's compare value) + the shared Ed25519 public key, link the import
-    # lib, and copy WinSparkle.dll next to the exe.
-    set(MR_WINSPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/winsparkle")
-    if(MINRENDER_STORE_BUILD)
-        message(STATUS "minRender: Store build — WinSparkle excluded (Store handles updates)")
-        # AppUpdater::available() reads this to drop the manual update
-        # check from the About menu in Store builds only.
-        target_compile_definitions(minrender PRIVATE MINRENDER_STORE_BUILD)
-    elseif(EXISTS "${MR_WINSPARKLE_DIR}/include/winsparkle.h")
-        target_sources(minrender PRIVATE src/ui/updater/winsparkle_updater_windows.cpp)
-        target_compile_definitions(minrender PRIVATE
-            MINRENDER_HAVE_WINSPARKLE
-            "MINRENDER_APP_VERSION=\"${PROJECT_VERSION}\""
-            "MINRENDER_UPDATE_PUBLIC_KEY=\"${MINRENDER_UPDATE_PUBLIC_KEY}\"")
-        target_include_directories(minrender PRIVATE "${MR_WINSPARKLE_DIR}/include")
-        target_link_libraries(minrender PRIVATE "${MR_WINSPARKLE_DIR}/lib/WinSparkle.lib")
-        add_custom_command(TARGET minrender POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${MR_WINSPARKLE_DIR}/bin/WinSparkle.dll"
-                "$<TARGET_FILE_DIR:minrender>/WinSparkle.dll"
-            COMMENT "Sync WinSparkle.dll next to minRender.exe" VERBATIM)
-        message(STATUS "minRender: WinSparkle vendored — Windows auto-update enabled")
-    else()
-        message(STATUS "minRender: external/winsparkle absent — Windows auto-update disabled (no-op shim)")
     endif()
 endif()
 

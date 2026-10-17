@@ -21,10 +21,10 @@ network.
 - **Network use.** Nodes talk to each other over HTTP on a port you
   configure and discover each other with local multicast. Those connections
   are confined to your network.
-- **Update check.** The direct-download build checks a file on our website
-  for new versions and downloads an installer when you ask it to. That
-  request carries no personal information. The Microsoft Store build does
-  not do this; the Store handles updates.
+- **Update check.** The macOS build checks a file on our website for new
+  versions and downloads an update when you ask it to. That request carries
+  no personal information. The Windows build does not do this; the
+  Microsoft Store handles updates.
 - **Render applications.** minRender launches the render software you have
   installed (Blender, After Effects, Cinema 4D). Their own network behaviour
   and privacy terms are theirs, not ours.

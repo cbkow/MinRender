@@ -5,9 +5,11 @@ nav_order: 2
 
 # Install
 
-Download the latest `.exe` or `.dmg` from the [releases page](https://github.com/cbkow/minrender/releases/latest) and run the installer on every node that will participate in the farm.
+**Windows:** install minRender from the Microsoft Store on every node that will participate in the farm. The Store keeps it updated.
 
-> The installer opens HTTP port **8420** and UDP port **4243** in the Windows Firewall and adds a startup shortcut so MinRender launches with the machine. MinRender, like all render farm coordinators, lets you launch executables remotely. That behavior is dangerous outside a trusted LAN — keep it inside one, test your flow thoroughly, and practice safe computing.
+**macOS:** download the latest `.dmg` from the [releases page](https://github.com/cbkow/minrender/releases/latest) and drag minRender to Applications. The app checks for updates itself.
+
+> On Windows the Store package declares firewall rules for HTTP port **8420** and UDP port **4243** and registers a startup task so minRender launches with the machine (toggle it in Task Manager → Startup). MinRender, like all render farm coordinators, lets you launch executables remotely. That behavior is dangerous outside a trusted LAN — keep it inside one, test your flow thoroughly, and practice safe computing.
 
 ## Point each node at the shared folder
 

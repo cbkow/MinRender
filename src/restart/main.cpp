@@ -17,8 +17,7 @@
 // Invoked with NO arguments it is the MSIX startup task instead: the
 // manifest's windows.startupTask extension cannot pass arguments to its
 // Executable, so it points here and this launches the sibling
-// minRender.exe with --minimized. (The Inno startup shortcut passes
-// --minimized to minRender.exe directly and doesn't use this path.)
+// minRender.exe with --minimized.
 
 static bool sameDirectoryAsSelf(const std::wstring& exe)
 {

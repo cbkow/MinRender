@@ -229,14 +229,14 @@ int main(int argc, char* argv[])
                             new qcv::ThumbnailImageProvider());
 #endif
 
-    // "Check for Updates…" in the About menu drives this. The underlying
-    // Sparkle/WinSparkle calls are inline no-ops unless the updater is vendored
-    // (see the CMake auto-update block).
+    // "Check for Updates…" in the About menu drives this (macOS only — the
+    // Store updates the Windows build). The Sparkle calls are inline no-ops
+    // unless the framework is vendored (see the CMake auto-update block).
     AppUpdater appUpdater;
     engine.rootContext()->setContextProperty(
         QStringLiteral("appUpdater"), &appUpdater);
 
-    // Start hidden in the tray. Passed by the Inno startup shortcut, by
+    // Start hidden in the tray. Passed by the MSIX startup task (via mr-restart), by
     // mr-restart (both directly and in its no-argument MSIX startup-task
     // mode — startup tasks can't carry arguments), and honored by Main.qml's
     // root window visibility. The tray icon is the way back in.
@@ -333,9 +333,9 @@ int main(int argc, char* argv[])
     pumpTimer.start();
 
     // Start the auto-updater once the event loop is running and the UI is up.
-    // On macOS this honors the Info.plist SU* keys (daily background check);
-    // on Windows it configures WinSparkle's feed + key. No-op when the updater
-    // isn't vendored. Deferred via singleShot so the first check never blocks
+    // On macOS this honors the Info.plist SU* keys (daily background check).
+    // No-op on Windows and when Sparkle isn't vendored. Deferred via
+    // singleShot so the first check never blocks
     // launch. GUI target only — the headless sidecar never calls this.
     QTimer::singleShot(0, &app, [] { MR::startSparkleUpdater(); });
 
