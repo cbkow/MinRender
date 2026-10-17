@@ -1,0 +1,86 @@
+# minRender RNDR companion
+
+Runs the OTOY Render Network client on a Windows farm node while minRender
+is idle, stops it the instant a render starts, and brings it back after a
+cooldown. It is the dual-mode supervisor that lived inside minRender until
+0.5.5, moved out of the app: the shipped binary no longer launches, kills or
+even knows about the RNDR client, and this script never touches the farm.
+
+**Not shipped with minRender.** It is a PowerShell script you install on
+the nodes that should run RNDR, nothing else.
+
+## How it follows the node
+
+minRender 0.5.6+ writes its state to `HKCU\Software\MinRender\Node`
+(`RenderState`, `NodeState`, `Pid`, `UpdatedMs`) on every transition. The
+companion blocks on a registry change notification for that key, so a
+render start reaches it immediately rather than on a poll. The `Pid` is
+checked against the process table; a dead or zero `Pid` means minRender is
+not running.
+
+If the key is absent (an app version before 0.5.6) it polls
+`GET http://127.0.0.1:<http_port>/api/status` once a second instead. The
+port comes from minRender's `config.json`.
+
+When minRender is unreachable the companion holds steady: it launches
+nothing and leaves a running client alone. When the app comes back, the
+startup settle applies before any launch, exactly as on a fresh start.
+
+## State machine
+
+Same as the retired in-process version.
+
+| State | Leaves when |
+|---|---|
+| Inactive | after the startup settle, no creative app, launch or adopt the client → Running; render in progress → RenderActive |
+| Running | render starts → kill → RenderActive; creative app appears → kill → Inactive; watchdog relaunches a dead client and kills a hung one after a grace period |
+| RenderActive | render finishes → Cooldown |
+| Cooldown | cooldown elapsed → launch/adopt → Running; render → RenderActive; creative app → Inactive |
+
+The optional DCC gate (`dcc_gate`) treats a creative app running from a
+Program Files install as "someone is working here": the client is stopped
+while it runs and for `dcc_settle_seconds` after it closes.
+
+## Install
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Registers a logon task for the current user, in the interactive session,
+hidden, with no run-time limit and restart-on-failure, then starts it. Run
+`uninstall.ps1` to remove it; that disables the companion first so it stops
+the client itself before the task is torn down.
+
+Roll it out **before** a dual-mode node upgrades to 0.5.6; after the upgrade
+nothing else stops RNDR during renders.
+
+## Configuration
+
+`%LOCALAPPDATA%\MinRender\rndr-companion.json` (created with defaults by
+the installer; the task re-reads it on restart):
+
+| key | default | |
+|---|---|---|
+| `rndr_path` | `%LOCALAPPDATA%\MinRender\rn\rndrclient.exe` | launcher; it spawns `TCPSVCS.EXE` |
+| `startup_delay_seconds` | 120 | settle after minRender comes up |
+| `cooldown_seconds` | 120 | after a render, before relaunch |
+| `dcc_gate` | false | hold off while a creative app runs |
+| `dcc_settle_seconds` | 600 | after the creative app closes |
+| `block_processes` | `blender.exe`, `AfterFX.exe` | exact image names |
+| `warmup_seconds` / `watchdog_seconds` / `hang_grace_seconds` | 15 / 5 / 15 | client health |
+| `http_port` | from config.json | fallback polling only |
+
+## Operating it
+
+- **Pause / resume** without touching the task:
+  `reg add HKCU\Software\MinRender\Companion /v Enabled /t REG_DWORD /d 0 /f`
+  (1 to resume). Pausing stops the client; the companion keeps running idle.
+- **Log:** `%LOCALAPPDATA%\MinRender\rndr-companion.log`, one line per
+  transition, truncated when it passes 2 MB.
+- **Status:** `reg query HKCU\Software\MinRender\Companion` shows `State`,
+  `Rndr` and `LastSeen` (ms since epoch, written every tick); `reg query
+  HKCU\Software\MinRender\Node` shows what the app last published.
+- **Dry run:** `powershell -File rndr-companion.ps1 -Once` evaluates the
+  state machine once and prints the decision.
+- The task runs only when the user is logged on and ends with the session.
