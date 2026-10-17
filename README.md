@@ -18,7 +18,17 @@ Built with C++ (Qt 6 Quick / QML) and Rust.
 
 ## Install + docs
 
-Get it from the [Microsoft Store](https://apps.microsoft.com/detail/9PN4VXDZ3THW) on Windows, or the latest `.dmg` from the [releases page](https://github.com/cbkow/minrender/releases) on macOS, and head to **[minrender.com](https://minrender.com)** for the full manual — install, configuration, job submission, monitoring, and the job template reference.
+Full manual: **[minrender.com](https://minrender.com)** — install, configuration, job submission, monitoring, and the job template reference.
+
+### Windows
+
+<a href="https://apps.microsoft.com/detail/9PN4VXDZ3THW?referrer=appbadge&mode=full" target="_blank" rel="noopener noreferrer">
+  <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
+
+### macOS
+
+Signed and notarized `.dmg` available from [GitHub Releases](https://github.com/cbkow/MinRender/releases/latest). Requires macOS 12 or later.
 
 ## Build from source
 
