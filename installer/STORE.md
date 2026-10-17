@@ -120,10 +120,19 @@ Restricted-capability justifications (Submission → Restricted capabilities):
   child processes on the user's own machines to render frame ranges, and
   supervises a bundled render agent. No code is downloaded or executed
   beyond those installed applications."
-- **unvirtualizedResources** — "Stores farm node identity and configuration
-  in %LOCALAPPDATA%\MinRender, shared with existing non-Store installs of
-  the same app; virtualization would orphan render-farm node identities on
-  migration. Writes only to per-user AppData, never system locations."
+- **unvirtualizedResources** — "minRender stores its farm configuration
+  and node identity in %LOCALAPPDATA%\MinRender and publishes node status
+  under HKCU\Software\MinRender. Those locations are read by software
+  outside the package: the app's submission plug-ins running inside
+  Blender, After Effects and Cinema 4D locate the farm through config.json,
+  and the optional companion script reads the status key. Existing installs
+  from the direct-download installer also keep their node identity on
+  migration. With virtualization, those files and keys would be redirected
+  into the package's private store and none of that integration would work.
+  The app writes only to per-user AppData and HKCU, never to system
+  locations." (Partner Center flags this capability as needing approval on
+  upload — that is the normal path; the justification is what gets it
+  approved during certification.)
 
 ## Submission
 
