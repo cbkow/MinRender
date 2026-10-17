@@ -66,6 +66,11 @@ Add-AppxPackage -Register build-store\msix\AppxManifest.xml
 This installs the packaged app for real (start menu entry, startup task,
 firewall rules, package identity), running from `build-store\msix`.
 
+The Store build has no `minrender-headless.exe` execution alias: giving the
+headless exe its own Application entry hidden from Start requires the
+`HeadlessAppBypass` waiver, which Partner Center refused on first upload.
+Headless stays a direct-download-installer feature.
+
 `Add-AppxPackage -Register` (and `Remove-AppxPackage`) must run in the
 **interactive desktop session**. From an SSH or other non-interactive logon
 it fails with `0x80070005` and the deployment log says "Failed to
@@ -77,8 +82,8 @@ accepted the manifest unchanged; the registered package launched from the
 loose layout, read the real `%LOCALAPPDATA%\MinRender\config.json` with no
 virtualized copy under `Packages\<pfn>\LocalCache`, published the node
 state key, answered `/api/status`, got both manifest firewall rules
-(profile Any), the `minrender-headless.exe` alias resolved under
-`WindowsApps`, and the startup task was registered. Verify after any
+(profile Any), and the startup task was registered. (The headless alias
+verified then has since been removed, see above.) Verify after any
 manifest change:
 
 - App launches, tray works, farm start binds 8420/4243 with **no firewall

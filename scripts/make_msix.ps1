@@ -61,9 +61,9 @@ if (Test-Path (Join-Path $Deploy 'WinSparkle.dll')) {
            "Configure a separate tree with -DMINRENDER_STORE_BUILD=ON (MR_BUILD_DIR), " +
            "rebuild, and re-run package.bat --msix.")
 }
-foreach ($exe in 'minrender-headless.exe', 'mr-restart.exe', 'mr-agent.exe') {
+foreach ($exe in 'mr-restart.exe', 'mr-agent.exe') {
     if (-not (Test-Path (Join-Path $Deploy $exe))) {
-        throw "$Deploy\$exe missing - the MSIX declares it; rebuild before packaging."
+        throw "$Deploy\$exe missing - the app needs it at runtime; rebuild before packaging."
     }
 }
 
