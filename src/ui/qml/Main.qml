@@ -114,8 +114,8 @@ ApplicationWindow {
                 text: qsTr("Docs")
                 onTriggered: Qt.openUrlExternally("https://minrender.com/")
             }
-            // No manual update check on Windows (the Microsoft Store owns
-            // updates there) or in builds with no updater compiled in —
+            // No manual update check in Store builds (the Microsoft Store
+            // owns updates) or in builds with no updater compiled in —
             // appUpdater.available is compile-time constant, so remove the
             // item once rather than shipping a permanently dead menu entry.
             Component.onCompleted: {

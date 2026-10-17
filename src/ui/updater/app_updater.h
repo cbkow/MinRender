@@ -11,17 +11,17 @@ class AppUpdater : public QObject
 {
     Q_OBJECT
     // Whether the About menu offers a manual update check — Main.qml removes
-    // the item when false. False on Windows unconditionally (updates ship
-    // through the Microsoft Store; the fallback Inno build's WinSparkle
-    // still runs its background check, it just has no menu entry), and on
-    // any build with no updater backend compiled in.
+    // the item when false. False in Microsoft Store builds
+    // (MINRENDER_STORE_BUILD: the Store owns updates and no updater is
+    // linked) and in any build with no updater backend compiled in. The
+    // direct-download WinSparkle build keeps the item.
     Q_PROPERTY(bool available READ available CONSTANT)
 public:
     using QObject::QObject;
 
     bool available() const
     {
-#ifdef Q_OS_WIN
+#if defined(MINRENDER_STORE_BUILD)
         return false;
 #else
         return MR::kUpdaterAvailable;

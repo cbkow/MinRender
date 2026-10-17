@@ -1,6 +1,7 @@
 # Build
 build/
 build-mac/
+build-store/
 build-mac-release/
 out/
 cmake-build-*/

@@ -382,6 +382,9 @@ elseif(WIN32)
     set(MR_WINSPARKLE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/winsparkle")
     if(MINRENDER_STORE_BUILD)
         message(STATUS "minRender: Store build — WinSparkle excluded (Store handles updates)")
+        # AppUpdater::available() reads this to drop the manual update
+        # check from the About menu in Store builds only.
+        target_compile_definitions(minrender PRIVATE MINRENDER_STORE_BUILD)
     elseif(EXISTS "${MR_WINSPARKLE_DIR}/include/winsparkle.h")
         target_sources(minrender PRIVATE src/ui/updater/winsparkle_updater_windows.cpp)
         target_compile_definitions(minrender PRIVATE

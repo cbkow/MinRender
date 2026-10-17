@@ -26,26 +26,31 @@ an unsigned manual fallback.
 
 ## Building a Store package
 
+The Store configure lives in its own tree (`build-store`) so it never shares
+a `deploy\` folder with the WinSparkle build in `build\`. `MR_BUILD_DIR`
+points both `package.bat` and `make_msix.ps1` at it.
+
 ```bat
-cmake -S . -B build -DMINRENDER_STORE_BUILD=ON  <usual generator args>
-scripts\build_msvc.bat --build build --target minrender mr-restart minrender-headless --config Release
+scripts\build_msvc.bat -S . -B build-store -G Ninja -DCMAKE_BUILD_TYPE=Release -DMINRENDER_STORE_BUILD=ON -DCMAKE_PREFIX_PATH=C:/Qt/6.11.1/msvc2022_64
+scripts\build_msvc.bat --build build-store --target minrender mr-restart minrender-headless --config Release
 cd mr-agent && cargo build --release && cd ..
+set MR_BUILD_DIR=%CD%\build-store
 scripts\package.bat --msix
 ```
 
-Output: `build\minRender-<version>-x64.msix`, version read from
+Output: `build-store\minRender-<version>-x64.msix`, version read from
 `project(MinRender VERSION …)` in CMakeLists.txt (MSIX versions are 4-part;
 the script appends `.0`).
 
 Notes:
 
-- `MINRENDER_STORE_BUILD=ON` excludes WinSparkle. If you previously built
-  without it, delete `build\WinSparkle.dll` (or wipe `build\`) — the stale
-  DLL would be staged into `build\deploy` and `make_msix.ps1` refuses to
-  package a deploy folder containing it.
+- `MINRENDER_STORE_BUILD=ON` excludes WinSparkle and defines
+  `MINRENDER_STORE_BUILD` for the app, which drops the "Check for Updates…"
+  menu item. `make_msix.ps1` refuses a deploy folder that contains
+  `WinSparkle.dll`, so packaging the wrong tree fails loudly.
 - `MR_SIGN_CMD` is irrelevant on this channel; leave it unset.
-- Do not run `--iss` and `--msix` from the same configure: the fallback
-  installer should keep WinSparkle, the Store package must not have it.
+- The fallback installer keeps using `build\` and `package.bat --iss`
+  without `MR_BUILD_DIR`.
 
 ## Local testing before submission
 
@@ -53,12 +58,13 @@ With Developer Mode enabled, register the staged loose files — no signing
 needed:
 
 ```powershell
+$env:MR_BUILD_DIR = "$PWD\build-store"
 powershell -File scripts\make_msix.ps1 -Sideload -SkipPack
-Add-AppxPackage -Register build\msix\AppxManifest.xml
+Add-AppxPackage -Register build-store\msix\AppxManifest.xml
 ```
 
 This installs the packaged app for real (start menu entry, startup task,
-firewall rules, package identity), running from `build\msix`. Verify:
+firewall rules, package identity), running from `build-store\msix`. Verify:
 
 - App launches, tray works, farm start binds 8420/4243 with **no firewall
   prompt** (the manifest rules applied).

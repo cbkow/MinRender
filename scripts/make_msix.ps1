@@ -25,9 +25,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Repo   = Split-Path -Parent $PSScriptRoot
-$Deploy = Join-Path $Repo 'build\deploy'
-$Stage  = Join-Path $Repo 'build\msix'
+$Repo     = Split-Path -Parent $PSScriptRoot
+# Same override package.bat honours: the Store build tree (build-store).
+$BuildDir = if ($env:MR_BUILD_DIR) { $env:MR_BUILD_DIR } else { Join-Path $Repo 'build' }
+$Deploy   = Join-Path $BuildDir 'deploy'
+$Stage    = Join-Path $BuildDir 'msix'
 
 # --- Identity -------------------------------------------------------------
 if ($Sideload) {
@@ -49,14 +51,15 @@ $Version = '{0}.{1}.{2}.0' -f $Matches[1], $Matches[2], $Matches[3]
 
 # --- Sanity checks --------------------------------------------------------
 if (-not (Test-Path (Join-Path $Deploy 'minRender.exe'))) {
-    throw "$Deploy\minRender.exe missing - run scripts\package.bat first."
+    throw "$Deploy\minRender.exe missing - run scripts\package.bat first (MR_BUILD_DIR=$BuildDir)."
 }
 # WinSparkle.lib is a load-time import: if the DLL was staged, the exe was
 # built with the self-updater linked in. Store policy forbids self-updating,
 # and deleting the DLL here would just make the exe fail to launch.
 if (Test-Path (Join-Path $Deploy 'WinSparkle.dll')) {
-    throw ("build\deploy contains WinSparkle.dll - this build links the self-updater. " +
-           "Reconfigure with -DMINRENDER_STORE_BUILD=ON, rebuild, and re-run package.bat.")
+    throw ("$Deploy contains WinSparkle.dll - this build links the self-updater. " +
+           "Configure a separate tree with -DMINRENDER_STORE_BUILD=ON (MR_BUILD_DIR), " +
+           "rebuild, and re-run package.bat --msix.")
 }
 foreach ($exe in 'minrender-headless.exe', 'mr-restart.exe', 'mr-agent.exe') {
     if (-not (Test-Path (Join-Path $Deploy $exe))) {
@@ -79,7 +82,7 @@ Set-Content -Path (Join-Path $Stage 'AppxManifest.xml') -Value $manifest -Encodi
 
 Write-Host "Staged MSIX layout: $Stage (version $Version)"
 if ($SkipPack) {
-    Write-Host 'Skipping pack. Test with: Add-AppxPackage -Register build\msix\AppxManifest.xml'
+    Write-Host "Skipping pack. Test with: Add-AppxPackage -Register $Stage\AppxManifest.xml"
     exit 0
 }
 
@@ -92,7 +95,7 @@ if (-not $makeappx) {
     throw "makeappx.exe not found under $kits - install the Windows 10/11 SDK."
 }
 
-$OutFile = Join-Path $Repo ("build\minRender-{0}-x64.msix" -f $Version)
+$OutFile = Join-Path $BuildDir ("minRender-{0}-x64.msix" -f $Version)
 & $makeappx.FullName pack /o /d $Stage /p $OutFile
 if ($LASTEXITCODE -ne 0) { throw "makeappx failed ($LASTEXITCODE)" }
 

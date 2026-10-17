@@ -17,7 +17,11 @@ REM                                  vars per installer\STORE.md)
 setlocal
 
 set "REPO=%~dp0.."
+REM MR_BUILD_DIR lets the Store configure (-DMINRENDER_STORE_BUILD=ON) live
+REM in its own tree, e.g. build-store, so switching channels never means
+REM wiping build\ to flush a stale WinSparkle.dll.
 set "BUILD=%REPO%\build"
+if defined MR_BUILD_DIR set "BUILD=%MR_BUILD_DIR%"
 set "DEPLOY=%BUILD%\deploy"
 set "QT_BIN=C:\Qt\6.11.1\msvc2022_64\bin"
 REM windeployqt needs VCINSTALLDIR to locate the VC++ runtime redist DLLs
