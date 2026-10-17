@@ -17,9 +17,22 @@ set "BUILD=%REPO%\build"
 set "DEPLOY=%BUILD%\deploy"
 set "QT_BIN=C:\Qt\6.11.1\msvc2022_64\bin"
 REM windeployqt needs VCINSTALLDIR to locate the VC++ runtime redist DLLs
-REM (vcruntime140, msvcp140). Without it they're silently skipped and the
-REM app won't launch on machines without the VC++ redistributable.
-if not defined VCINSTALLDIR set "VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\"
+REM (vcruntime140, msvcp140) and vc_redist.x64.exe, which the installer
+REM requires. Without it they're silently skipped and the .iss fails on the
+REM missing redist. Resolve the VS install the same way build_msvc.bat does
+REM (vswhere, latest VS with the C++ tools) so a VS version change on the
+REM build box doesn't silently point at a path that no longer exists.
+if defined VCINSTALLDIR goto :vc_done
+set "VSWHERE_DIR=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
+if not exist "%VSWHERE_DIR%\vswhere.exe" goto :vc_fallback
+pushd "%VSWHERE_DIR%"
+for /f "delims=" %%i in ('.\vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set "VCINSTALLDIR=%%i\VC\"
+popd
+if defined VCINSTALLDIR goto :vc_done
+:vc_fallback
+set "VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\"
+:vc_done
+if not exist "%VCINSTALLDIR%Redist" echo WARN: VCINSTALLDIR=%VCINSTALLDIR% has no Redist folder - vc_redist.x64.exe will be missing.
 set "AGENT=%REPO%\mr-agent\target\release\mr-agent.exe"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 

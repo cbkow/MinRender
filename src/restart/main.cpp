@@ -8,6 +8,29 @@
 // 1. Waits up to 15s for the parent process to exit.
 // 2. If it doesn't exit, terminates it.
 // 3. Sleeps 2s, then relaunches the exe.
+//
+// --exe must name a file in mr-restart's own directory. The helper only
+// ever relaunches its sibling minRender.exe, and refusing anything else
+// keeps it from being a general-purpose "kill this, run that" tool once
+// the binaries are signed.
+
+static bool sameDirectoryAsSelf(const std::wstring& exe)
+{
+    wchar_t self[MAX_PATH] = {};
+    if (GetModuleFileNameW(nullptr, self, MAX_PATH) == 0)
+        return false;
+    wchar_t full[MAX_PATH] = {};
+    if (GetFullPathNameW(exe.c_str(), MAX_PATH, full, nullptr) == 0)
+        return false;
+
+    auto dirOf = [](std::wstring p) {
+        auto pos = p.find_last_of(L"\\/");
+        return pos == std::wstring::npos ? std::wstring() : p.substr(0, pos);
+    };
+    const std::wstring a = dirOf(self);
+    const std::wstring b = dirOf(full);
+    return !a.empty() && _wcsicmp(a.c_str(), b.c_str()) == 0;
+}
 
 int main(int argc, char* argv[])
 {
@@ -29,6 +52,10 @@ int main(int argc, char* argv[])
     if (pid == 0 || exePath.empty())
         return 1;
 
+    std::wstring wExe(exePath.begin(), exePath.end());
+    if (!sameDirectoryAsSelf(wExe))
+        return 2;
+
     // Wait for parent to exit
     HANDLE hProc = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, pid);
     if (hProc)
@@ -43,7 +70,6 @@ int main(int argc, char* argv[])
     Sleep(2000);
 
     // Relaunch
-    std::wstring wExe(exePath.begin(), exePath.end());
     std::wstring cmdLine = L"\"" + wExe + L"\"";
     if (minimized)
         cmdLine += L" --minimized";

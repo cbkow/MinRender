@@ -30,19 +30,11 @@ bool constantTimeEquals(const std::string& a, const std::string& b)
     return diff == 0;
 }
 
-// Reject anything that isn't a plain filename. The route regexes use [^/]+,
-// which still admits "." and ".." — enough to walk out of the intended
-// directory once httplib has percent-decoded the path. Node ids and log
-// filenames are program-generated and always plain, so this rejects nothing
-// legitimate.
-bool isSafePathSegment(const std::string& seg)
-{
-    if (seg.empty() || seg == "." || seg == "..")
-        return false;
-    return seg.find('/') == std::string::npos
-        && seg.find('\\') == std::string::npos
-        && seg.find(':') == std::string::npos;
-}
+// Path-segment validation lives in core/platform.h (isSafePathSegment) so
+// MonitorApp applies the identical rule to ids that arrive through the Qt
+// UI. The route regexes use [^/]+, which still admits "." and ".." — enough
+// to walk out of the intended directory once httplib has percent-decoded
+// the path — so every id that becomes a path component is checked here.
 
 } // namespace
 
@@ -188,6 +180,13 @@ void HttpServer::setupRoutes()
         {
             auto body = nlohmann::json::parse(req.body);
             auto manifest = body.at("manifest").get<JobManifest>();
+            // job_id becomes jobs/<id>/stdout/<node>/ on the share.
+            if (!isSafePathSegment(manifest.job_id))
+            {
+                res.status = 400;
+                res.set_content(R"({"error":"invalid_job_id"})", "application/json");
+                return;
+            }
             int frameStart = body.at("frame_start").get<int>();
             int frameEnd = body.at("frame_end").get<int>();
             // Absent on old leaders — reports then omit it and get the
@@ -243,6 +242,15 @@ void HttpServer::setupRoutes()
         {
             auto body = nlohmann::json::parse(req.body);
             auto manifest = body.at("manifest").get<JobManifest>();
+            // The id names the job's directory on the share for its whole
+            // life (stdout logs, deleteJob's remove_all), so reject
+            // anything that is not a plain slug at the door.
+            if (!isSafePathSegment(manifest.job_id))
+            {
+                res.status = 400;
+                res.set_content(R"({"error":"invalid_job_id"})", "application/json");
+                return;
+            }
             int priority = body.value("priority", 50);
 
             SubmitRequest sr;
@@ -321,11 +329,18 @@ void HttpServer::setupRoutes()
         res.set_content(R"({"status":"ok"})", "application/json");
     });
 
-    // DELETE /api/jobs/:id
+    // DELETE /api/jobs/:id — also removes jobs/<id> from the share, so the
+    // id must be a plain segment (MonitorApp::deleteJob re-checks).
     m_server.Delete(R"(/api/jobs/([^/]+))", [this](const httplib::Request& req, httplib::Response& res)
     {
         if (!requireLeader(res)) return;
         std::string jobId = req.matches[1];
+        if (!isSafePathSegment(jobId))
+        {
+            res.status = 400;
+            res.set_content(R"({"error":"invalid_path"})", "application/json");
+            return;
+        }
         m_app->deleteJob(jobId);
         res.set_content(R"({"status":"ok"})", "application/json");
     });
@@ -915,8 +930,6 @@ void HttpServer::setupRoutes()
                 cfg.tags = body["tags"].get<std::vector<std::string>>();
             if (body.contains("staging_enabled"))
                 cfg.staging_enabled = body["staging_enabled"].get<bool>();
-            if (body.contains("rndr_dual_mode"))
-                cfg.rndr_dual_mode = body["rndr_dual_mode"].get<bool>();
             if (body.contains("show_notifications"))
                 cfg.show_notifications = body["show_notifications"].get<bool>();
             if (body.contains("path_mappings"))
@@ -1024,6 +1037,12 @@ bool HttpServer::start(const std::string& bindAddress, uint16_t port)
             "No farm api_secret available — API will refuse all authenticated "
             "requests (503). Check farm.json is readable.");
     }
+
+    // The pre-routing auth handler runs before httplib reads the body, so
+    // an unauthenticated request is refused before any of it is buffered.
+    // The cap bounds what an authenticated caller can make the node hold;
+    // nothing legitimate is close (job manifests and frame lists).
+    m_server.set_payload_max_length(16 * 1024 * 1024);
 
     m_port = port;
 

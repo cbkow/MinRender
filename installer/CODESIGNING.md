@@ -7,7 +7,19 @@ bucket for unsigned Qt/Rust binaries. The app's behavior profile (spawns
 render binaries, kill-and-relaunch updater helper, WinSparkle downloading
 installers, netsh firewall rules, startup shortcut) is legitimate but scores
 badly when combined with **no Authenticode signature** and (before 0.5.3)
-**no version metadata**.
+**no version metadata**. Before 0.5.6 the binary also carried the RNDR
+dual-mode supervisor — a hidden `CREATE_BREAKAWAY_FROM_JOB` launch of an
+exe under `%LOCALAPPDATA%`, process/window enumeration, and
+`taskkill /F /IM TCPSVCS.EXE` — which is close to a textbook miner-dropper
+profile. That feature now lives in an external companion script (see
+`SECURITY.md` → Local integration) and `mr-restart.exe` refuses to launch
+anything but its sibling `minRender.exe`, so the shipped binaries no longer
+contain those signals. Re-check each release on the build box before
+packaging:
+
+```
+"C:\Program Files\Windows Defender\MpCmdRun.exe" -Scan -ScanType 3 -File <build\deploy> -DisableRemediation
+```
 
 macOS releases are already signed + notarized (`scripts/macos-release.sh`);
 Windows needs the equivalent.

@@ -48,9 +48,6 @@ bool MonitorApp::init()
     // Initialize agent supervisor
     m_agentSupervisor.start(m_identity.nodeId());
 
-    // Detect RNDR binary (Windows-only; no-op elsewhere)
-    m_rndrSupervisor.detectBinary();
-
     // Set up agent message handler
     m_agentSupervisor.setMessageHandler([this](const std::string& type, const nlohmann::json& msg)
     {
@@ -136,10 +133,6 @@ void MonitorApp::update()
 
     // Note: completion/frame reports are flushed by the background HTTP worker thread.
 
-    // RNDR dual mode — run the RNDR client while idle, kill it during renders
-    m_rndrSupervisor.update(m_renderCoordinator.isRendering(), m_config.rndr_dual_mode,
-                            m_config.rndr_dcc_gate, m_config.rndr_block_processes);
-
     // Update render state on PeerManager
     if (m_renderCoordinator.isRendering())
     {
@@ -150,6 +143,25 @@ void MonitorApp::update()
     else
     {
         m_peerManager.setRenderState("idle");
+    }
+
+    // Publish the same two facts for same-machine consumers (registry key
+    // on Windows, no-op elsewhere). The first tick always writes, which
+    // overwrites whatever a crashed previous instance left behind.
+    {
+        const bool rendering = m_renderCoordinator.isRendering();
+        const bool stopped   = (m_nodeState == NodeState::Stopped);
+        if (!m_nodeStatePublished
+            || rendering != m_lastPublishedRendering
+            || stopped   != m_lastPublishedStopped)
+        {
+            publishNodeState(rendering ? "rendering" : "idle",
+                             stopped   ? "stopped"   : "active",
+                             /*alive=*/true);
+            m_nodeStatePublished      = true;
+            m_lastPublishedRendering  = rendering;
+            m_lastPublishedStopped    = stopped;
+        }
     }
 
     // Deferred farm restart (triggered by POST /api/config)
@@ -198,7 +210,11 @@ void MonitorApp::shutdown()
 
     m_renderCoordinator.abortCurrentRender("shutdown");
     m_agentSupervisor.stop();
-    m_rndrSupervisor.shutdown();
+
+    // Clean-exit marker for out-of-process consumers: idle, Pid = 0.
+    publishNodeState("idle",
+                     (m_nodeState == NodeState::Stopped) ? "stopped" : "active",
+                     /*alive=*/false);
 
     saveConfig();
 }
@@ -967,6 +983,15 @@ void MonitorApp::requeueJob(const std::string& jobId)
 
 void MonitorApp::deleteJob(const std::string& jobId)
 {
+    // The id becomes jobs/<id> below and is removed recursively. Job ids
+    // are slugs ([a-z0-9_-]), so anything else is a traversal attempt or
+    // a bug; refuse rather than let ".." resolve to the farm root.
+    if (!isSafePathSegment(jobId))
+    {
+        MonitorLog::instance().warn("job", "deleteJob: refusing unsafe job id: " + jobId);
+        return;
+    }
+
     // Cancel first (abort any active render)
     cancelJob(jobId);
 
@@ -2030,19 +2055,47 @@ int MonitorApp::executeFarmCleanup(const std::string& action,
     std::error_code ec;
     int count = 0;
 
+    // Every id here came from scanFarmCleanup's output in the honest case,
+    // but the same action/ids pair is accepted over the API, so each
+    // branch re-validates before it touches the filesystem.
+    auto rejectUnsafe = [](const std::string& id) {
+        MonitorLog::instance().warn("farm", "Cleanup: refusing unsafe id: " + id);
+    };
+
     if (action == "archive")
-    {
-        for (const auto& id : ids) { archiveJob(id); count++; }
-    }
-    else if (action == "delete_jobs")
-    {
-        for (const auto& id : ids) { deleteJob(id); count++; }
-    }
-    else if (action == "delete_dirs")
     {
         for (const auto& id : ids)
         {
-            fs::remove_all(fs::path(id), ec);
+            if (!isSafePathSegment(id)) { rejectUnsafe(id); continue; }
+            archiveJob(id); count++;
+        }
+    }
+    else if (action == "delete_jobs")
+    {
+        for (const auto& id : ids)
+        {
+            if (!isSafePathSegment(id)) { rejectUnsafe(id); continue; }
+            deleteJob(id); count++;
+        }
+    }
+    else if (action == "delete_dirs")
+    {
+        // Orphaned job dirs live under <farm>/jobs; stale staging dirs
+        // under the local app-data staging root. Nothing else is ever a
+        // legitimate target, so an absolute path outside both is refused
+        // no matter who asked.
+        const fs::path jobsRoot    = m_farmPath / "jobs";
+        const fs::path stagingRoot = getAppDataDir() / "staging";
+        for (const auto& id : ids)
+        {
+            const fs::path target(id);
+            if (!target.is_absolute()
+                || !(isPathWithin(jobsRoot, target) || isPathWithin(stagingRoot, target)))
+            {
+                rejectUnsafe(id);
+                continue;
+            }
+            fs::remove_all(target, ec);
             if (!ec) count++;
             else MonitorLog::instance().warn("farm",
                 "Cleanup: failed to remove " + id + ": " + ec.message());
@@ -2052,6 +2105,7 @@ int MonitorApp::executeFarmCleanup(const std::string& action,
     {
         for (const auto& id : ids)
         {
+            if (!isSafePathSegment(id)) { rejectUnsafe(id); continue; }
             auto nodeDir = m_farmPath / "nodes" / id;
             fs::remove_all(nodeDir, ec);
             if (!ec) count++;

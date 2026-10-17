@@ -33,6 +33,23 @@ requests. Farm init refuses to write a blank secret.
 Token comparison is length-independent (constant-time) so a wrong token can't
 be recovered byte-by-byte from response timing.
 
+Request bodies are capped at 16 MB (`set_payload_max_length`). The auth
+handler runs before httplib reads the body, so an unauthenticated request
+is refused with 401 before any of its body is buffered; the cap bounds what
+an *authenticated* caller can make a node hold in memory, which nothing
+legitimate approaches (the largest bodies are job manifests).
+
+## Transport is plaintext
+
+The API is HTTP, not HTTPS. The bearer secret travels in the clear on every
+authenticated request, and so do job manifests (which may carry licence
+keys in their environment blocks). This is consistent with the trusted-LAN
+model: anyone positioned to sniff the farm segment is already inside the
+boundary. Peers reaching the farm over VPN carry it inside the tunnel. If
+the threat model ever tightens, TLS with a farm-generated CA or an HMAC of
+each request body with the farm secret are the two options; neither is
+planned.
+
 ## What is *not* authenticated: UDP multicast
 
 Heartbeats on UDP 4243 are plaintext and unsigned — anything on the LAN can
@@ -106,6 +123,42 @@ Note there are two execution channels — `POST /api/jobs`, which needs the
 secret, and an edit command written to the farm share, which needs only share
 write access.
 
+## Ids that become paths
+
+Job ids, node ids and log filenames all turn into path components on the
+share (`jobs/<id>/`, `nodes/<id>/`, `jobs/<id>/stdout/<node>/<file>`).
+Every route that accepts one checks it with `isSafePathSegment` (plain
+filename: not `.`/`..`, no `/`, `\` or `:`), and `MonitorApp::deleteJob`
+re-checks because the Qt UI reaches it without the HTTP layer. Job ids are
+slugs (`[a-z0-9_-]`), so the check never rejects a real one. The farm
+cleanup action that removes directories by absolute path is confined to
+`<farm>/jobs/*` and the local staging root (`isPathWithin`); anything else
+is refused and logged, whoever asked. Before 0.5.6, `DELETE /api/jobs/..`
+resolved to the farm root.
+
+## Local integration
+
+Two read-only surfaces exist for same-machine tooling. Neither grants
+control and the app never reads from either.
+
+- **`GET /api/status`** (unauthenticated, see above) reports `render_state`,
+  `node_state`, `active_job` and `ready_for_work`. Poll it on
+  `127.0.0.1:<http_port>` for a cross-platform view of the node.
+- **`HKCU\Software\MinRender\Node`** (Windows only) holds `RenderState`
+  (`idle`/`rendering`), `NodeState` (`active`/`stopped`), `Pid` and
+  `UpdatedMs`. It is written on every transition and on the first tick
+  after launch, so a crashed instance's stale value is overwritten when the
+  app comes back. `Pid = 0` is the clean-exit marker; a non-zero `Pid` that
+  is not running means the app died. A watchdog can block on
+  `RegNotifyChangeKeyValue` instead of polling. It exists so things like a
+  GPU-sharing companion for an idle-time workload live *outside* the app;
+  the app knows nothing about them and runs nothing on their behalf.
+
+The agent IPC is local-only: a named pipe with an owner-only DACL on
+Windows, and on macOS a Unix socket in `$TMPDIR` (per-user, 0700) created
+0600 — not in `/tmp`, where another local account could take the single
+connection slot and feed the monitor fake agent messages.
+
 ## Rotating the secret
 
 Stop MinRender on every node, edit `api_secret` in `farm.json`, restart. Nodes
@@ -113,8 +166,12 @@ read it at farm start; mixed secrets show up as `401` in the logs.
 
 ## Binary distribution
 
-Windows builds are unsigned as of 0.5.2, which is also why Defender flags them
-— see `installer/CODESIGNING.md`. macOS builds are signed and notarized, and
+Windows builds are unsigned, which is the main reason Defender's ML
+classifier flags them — see `installer/CODESIGNING.md`. 0.5.6 also removed
+the in-process RNDR supervisor (hidden launch from `%LOCALAPPDATA%`,
+`taskkill` of a system-named process), which was the strongest
+miner-like behaviour signal in the binary, and restricted `mr-restart.exe`
+to relaunching its sibling `minRender.exe` only. macOS builds are signed and notarized, and
 updates on both platforms are Ed25519-verified by Sparkle/WinSparkle.
 
 ## Reporting

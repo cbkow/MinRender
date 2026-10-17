@@ -5,10 +5,35 @@ use std::thread;
 use std::time::Duration;
 
 /// Unix domain socket client mirroring `WindowsPipeClient`'s public surface.
-/// Connects to the sidecar's listener at /tmp/minrender-agent-{nodeId}.sock
-/// (matches src/core/ipc_server.cpp).
+/// Connects to the sidecar's listener at `$TMPDIR/minrender-agent-{nodeId}.sock`
+/// (falling back to /tmp) — must match agentSocketPath() in
+/// src/core/ipc_server.cpp exactly.
 pub struct UnixSocketClient {
     stream: UnixStream,
+}
+
+/// sun_path capacity on this platform; a path that would not fit falls
+/// back to /tmp on both sides.
+#[cfg(target_os = "macos")]
+const SUN_PATH_LEN: usize = 104;
+#[cfg(not(target_os = "macos"))]
+const SUN_PATH_LEN: usize = 108;
+
+fn socket_path(node_id: &str) -> String {
+    let name = format!("minrender-agent-{}.sock", node_id);
+    let mut dir = std::env::var("TMPDIR").unwrap_or_default();
+    if dir.is_empty() {
+        dir = "/tmp".to_string();
+    }
+    while dir.len() > 1 && dir.ends_with('/') {
+        dir.pop();
+    }
+    let path = format!("{}/{}", dir, name);
+    if path.len() >= SUN_PATH_LEN {
+        format!("/tmp/{}", name)
+    } else {
+        path
+    }
 }
 
 impl UnixSocketClient {
@@ -16,7 +41,7 @@ impl UnixSocketClient {
     /// Retries up to 3 times with 3-second intervals, mirroring
     /// WindowsPipeClient::connect.
     pub fn connect(node_id: &str) -> io::Result<Self> {
-        let socket_path = format!("/tmp/minrender-agent-{}.sock", node_id);
+        let socket_path = socket_path(node_id);
         let max_attempts = 3;
         let retry_delay = Duration::from_secs(3);
 
