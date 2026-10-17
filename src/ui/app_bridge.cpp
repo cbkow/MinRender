@@ -150,7 +150,6 @@ void AppBridge::emitAllSettingsChanged()
     emit udpPortChanged();
     emit showNotificationsChanged();
     emit stagingEnabledChanged();
-    emit rndrDualModeChanged();
 }
 
 bool AppBridge::farmRunning() const
@@ -279,44 +278,6 @@ void AppBridge::setStagingEnabled(bool v)
     if (m_monitor->config().staging_enabled == v) return;
     m_monitor->config().staging_enabled = v;
     emit stagingEnabledChanged();
-}
-
-bool AppBridge::rndrDualMode() const
-{
-    return m_monitor ? m_monitor->config().rndr_dual_mode : false;
-}
-
-void AppBridge::setRndrDualMode(bool v)
-{
-    if (!m_monitor) return;
-    if (m_monitor->config().rndr_dual_mode == v) return;
-    m_monitor->config().rndr_dual_mode = v;
-    emit rndrDualModeChanged();
-}
-
-bool AppBridge::rndrDccGate() const
-{
-    return m_monitor ? m_monitor->config().rndr_dcc_gate : false;
-}
-
-void AppBridge::setRndrDccGate(bool v)
-{
-    if (!m_monitor) return;
-    if (m_monitor->config().rndr_dcc_gate == v) return;
-    m_monitor->config().rndr_dcc_gate = v;
-    emit rndrDccGateChanged();
-}
-
-bool AppBridge::rndrAvailable() const
-{
-    return m_monitor ? m_monitor->rndrSupervisor().isBinaryAvailable() : false;
-}
-
-QString AppBridge::rndrStatus() const
-{
-    return m_monitor
-        ? QString::fromStdString(m_monitor->rndrSupervisor().statusText())
-        : QString();
 }
 
 QString AppBridge::farmSecretFingerprint() const
@@ -837,15 +798,6 @@ void AppBridge::refresh()
         m_lastThisNodeSuspended = suspendedNow;
         m_lastThisNodeSuspendFailures = suspendFailsNow;
         emit thisNodeSuspensionChanged();
-    }
-
-    // RNDR supervisor status text changes as it cycles through its state
-    // machine; surface it live under the Settings-panel toggle.
-    const QString rndrNow = rndrStatus();
-    if (rndrNow != m_lastRndrStatus)
-    {
-        m_lastRndrStatus = rndrNow;
-        emit rndrStatusChanged();
     }
 
     // Farm secret fingerprint + how many live peers report a different one.

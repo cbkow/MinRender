@@ -59,24 +59,10 @@ struct Config
     // Rendering
     bool staging_enabled = false;
 
-    // RNDR dual mode (Windows-only; runs the RNDR client while idle and
-    // kills it during renders — see RndrSupervisor)
-    bool rndr_dual_mode = false;
-
-    // Hold the dual-mode client off while a creative app is open on this
-    // machine, so an artist at the keyboard never contends for the GPU.
-    // Opt-in: off leaves dual mode behaving exactly as it did before.
-    bool rndr_dcc_gate = false;
-
-    // Image names that count as "someone is working here". Matched
-    // exactly (never as a prefix — Adobe leaves permanent background
-    // helpers running) and only honoured when the process image lives
-    // under Program Files, which is what separates an artist's install
-    // from a per-user one. Editable in config.json; no UI.
-    std::vector<std::string> rndr_block_processes = {
-        "blender.exe",
-        "AfterFX.exe",
-    };
+    // (rndr_dual_mode / rndr_dcc_gate / rndr_block_processes were removed
+    // in 0.5.6. The RNDR client is now supervised by an external companion
+    // that watches the node-state registry key — see SECURITY.md "Local
+    // integration". Unknown keys in an existing config.json are ignored.)
 
     // Persisted node state
     bool node_stopped = false;
@@ -98,9 +84,6 @@ inline void to_json(nlohmann::json& j, const Config& c)
         {"udp_port", c.udp_port},
         {"show_notifications", c.show_notifications},
         {"staging_enabled", c.staging_enabled},
-        {"rndr_dual_mode", c.rndr_dual_mode},
-        {"rndr_dcc_gate", c.rndr_dcc_gate},
-        {"rndr_block_processes", c.rndr_block_processes},
         {"node_stopped", c.node_stopped},
         {"path_mappings", c.path_mappings},
     };
@@ -117,9 +100,6 @@ inline void from_json(const nlohmann::json& j, Config& c)
     if (j.contains("udp_port"))          c.udp_port = j.at("udp_port").get<uint16_t>();
     if (j.contains("show_notifications")) j.at("show_notifications").get_to(c.show_notifications);
     if (j.contains("staging_enabled"))    j.at("staging_enabled").get_to(c.staging_enabled);
-    if (j.contains("rndr_dual_mode"))    j.at("rndr_dual_mode").get_to(c.rndr_dual_mode);
-    if (j.contains("rndr_dcc_gate"))     j.at("rndr_dcc_gate").get_to(c.rndr_dcc_gate);
-    if (j.contains("rndr_block_processes")) j.at("rndr_block_processes").get_to(c.rndr_block_processes);
     if (j.contains("node_stopped"))       j.at("node_stopped").get_to(c.node_stopped);
     if (j.contains("path_mappings"))     j.at("path_mappings").get_to(c.path_mappings);
 }

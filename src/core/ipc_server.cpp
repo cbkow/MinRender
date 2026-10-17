@@ -369,13 +369,41 @@ void IpcServer::signalStop()
 #else // !_WIN32 — Unix domain socket implementation
 
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <cerrno>
+#include <cstdlib>
 
 namespace MR {
+
+namespace {
+
+// Socket path for the agent IPC. Lives in $TMPDIR — per-user and mode
+// 0700 on macOS — rather than the world-writable /tmp, so another local
+// account cannot pre-empt the single connection slot or feed the monitor
+// fake agent messages. Falls back to /tmp when TMPDIR is unset or the
+// result would not fit sun_path. mr-agent (src/ipc/unix.rs) derives the
+// identical path; keep the two in sync.
+std::string agentSocketPath(const std::string& nodeId)
+{
+    const std::string name = "minrender-agent-" + nodeId + ".sock";
+    std::string dir;
+    if (const char* t = std::getenv("TMPDIR"); t && *t)
+        dir = t;
+    if (dir.empty())
+        dir = "/tmp";
+    while (dir.size() > 1 && dir.back() == '/')
+        dir.pop_back();
+    std::string path = dir + "/" + name;
+    if (path.size() >= sizeof(sockaddr_un::sun_path))
+        path = "/tmp/" + name;
+    return path;
+}
+
+} // namespace
 
 IpcServer::IpcServer()
 {
@@ -400,8 +428,7 @@ IpcServer::~IpcServer()
 
 bool IpcServer::create(const std::string& nodeId)
 {
-    // Socket path: /tmp/minrender-agent-{nodeId}.sock
-    m_socketPath = "/tmp/minrender-agent-" + nodeId + ".sock";
+    m_socketPath = agentSocketPath(nodeId);
 
     // Remove stale socket file
     ::unlink(m_socketPath.c_str());
@@ -417,13 +444,19 @@ bool IpcServer::create(const std::string& nodeId)
     addr.sun_family = AF_UNIX;
     std::strncpy(addr.sun_path, m_socketPath.c_str(), sizeof(addr.sun_path) - 1);
 
-    if (::bind(m_listenFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) != 0)
+    // Owner-only from the moment the node exists: umask covers the create,
+    // chmod covers filesystems that ignore umask for sockets.
+    const mode_t prevMask = ::umask(0077);
+    const int bindResult = ::bind(m_listenFd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    ::umask(prevMask);
+    if (bindResult != 0)
     {
         std::cerr << "[IpcServer] bind() failed: " << strerror(errno) << std::endl;
         ::close(m_listenFd);
         m_listenFd = -1;
         return false;
     }
+    ::chmod(m_socketPath.c_str(), 0600);
 
     if (::listen(m_listenFd, 1) != 0)
     {

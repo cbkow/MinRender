@@ -1,5 +1,12 @@
 # Windows code signing & Defender false positives
 
+> **Status:** the primary Windows channel is now the **Microsoft Store**
+> (see `STORE.md`) — Store packages are signed by Microsoft during
+> ingestion, so nothing below applies to them. This document remains for
+> the unsigned fallback Inno installer: the Defender false-positive
+> submission routine still applies to it, and the certificate options are
+> kept in case a signed direct-download channel is ever wanted again.
+
 MinRender's Windows builds get flagged by Windows Defender as
 `Trojan:Win32/Bearfoos.B!ml`. The `!ml` suffix means it is a machine-learning
 heuristic verdict, not a real signature match — a well-known false-positive
@@ -7,7 +14,19 @@ bucket for unsigned Qt/Rust binaries. The app's behavior profile (spawns
 render binaries, kill-and-relaunch updater helper, WinSparkle downloading
 installers, netsh firewall rules, startup shortcut) is legitimate but scores
 badly when combined with **no Authenticode signature** and (before 0.5.3)
-**no version metadata**.
+**no version metadata**. Before 0.5.6 the binary also carried the RNDR
+dual-mode supervisor — a hidden `CREATE_BREAKAWAY_FROM_JOB` launch of an
+exe under `%LOCALAPPDATA%`, process/window enumeration, and
+`taskkill /F /IM TCPSVCS.EXE` — which is close to a textbook miner-dropper
+profile. That feature now lives in an external companion script (see
+`SECURITY.md` → Local integration) and `mr-restart.exe` refuses to launch
+anything but its sibling `minRender.exe`, so the shipped binaries no longer
+contain those signals. Re-check each release on the build box before
+packaging:
+
+```
+"C:\Program Files\Windows Defender\MpCmdRun.exe" -Scan -ScanType 3 -File <build\deploy> -DisableRemediation
+```
 
 macOS releases are already signed + notarized (`scripts/macos-release.sh`);
 Windows needs the equivalent.

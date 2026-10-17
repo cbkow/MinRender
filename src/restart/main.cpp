@@ -8,9 +8,69 @@
 // 1. Waits up to 15s for the parent process to exit.
 // 2. If it doesn't exit, terminates it.
 // 3. Sleeps 2s, then relaunches the exe.
+//
+// --exe must name a file in mr-restart's own directory. The helper only
+// ever relaunches its sibling minRender.exe, and refusing anything else
+// keeps it from being a general-purpose "kill this, run that" tool once
+// the binaries are signed.
+//
+// Invoked with NO arguments it is the MSIX startup task instead: the
+// manifest's windows.startupTask extension cannot pass arguments to its
+// Executable, so it points here and this launches the sibling
+// minRender.exe with --minimized. (The Inno startup shortcut passes
+// --minimized to minRender.exe directly and doesn't use this path.)
+
+static bool sameDirectoryAsSelf(const std::wstring& exe)
+{
+    wchar_t self[MAX_PATH] = {};
+    if (GetModuleFileNameW(nullptr, self, MAX_PATH) == 0)
+        return false;
+    wchar_t full[MAX_PATH] = {};
+    if (GetFullPathNameW(exe.c_str(), MAX_PATH, full, nullptr) == 0)
+        return false;
+
+    auto dirOf = [](std::wstring p) {
+        auto pos = p.find_last_of(L"\\/");
+        return pos == std::wstring::npos ? std::wstring() : p.substr(0, pos);
+    };
+    const std::wstring a = dirOf(self);
+    const std::wstring b = dirOf(full);
+    return !a.empty() && _wcsicmp(a.c_str(), b.c_str()) == 0;
+}
+
+static int runStartupTask()
+{
+    wchar_t self[MAX_PATH] = {};
+    DWORD n = GetModuleFileNameW(nullptr, self, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH)
+        return 1;
+
+    std::wstring exe(self);
+    size_t slash = exe.find_last_of(L'\\');
+    if (slash == std::wstring::npos)
+        return 1;
+    exe = exe.substr(0, slash + 1) + L"minRender.exe";
+
+    std::wstring cmdLine = L"\"" + exe + L"\" --minimized";
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {};
+
+    if (!CreateProcessW(exe.c_str(), cmdLine.data(),
+                        nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi))
+        return 1;
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return 0;
+}
 
 int main(int argc, char* argv[])
 {
+    if (argc == 1)
+        return runStartupTask();
+
     DWORD pid = 0;
     std::string exePath;
     bool minimized = false;
@@ -29,6 +89,10 @@ int main(int argc, char* argv[])
     if (pid == 0 || exePath.empty())
         return 1;
 
+    std::wstring wExe(exePath.begin(), exePath.end());
+    if (!sameDirectoryAsSelf(wExe))
+        return 2;
+
     // Wait for parent to exit
     HANDLE hProc = OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE, FALSE, pid);
     if (hProc)
@@ -43,7 +107,6 @@ int main(int argc, char* argv[])
     Sleep(2000);
 
     // Relaunch
-    std::wstring wExe(exePath.begin(), exePath.end());
     std::wstring cmdLine = L"\"" + wExe + L"\"";
     if (minimized)
         cmdLine += L" --minimized";

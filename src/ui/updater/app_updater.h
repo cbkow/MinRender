@@ -10,13 +10,23 @@
 class AppUpdater : public QObject
 {
     Q_OBJECT
-    // False when no updater backend is compiled in (dev builds, Store builds)
-    // — the menu item binds enabled to this instead of no-opping on click.
+    // Whether the About menu offers a manual update check — Main.qml removes
+    // the item when false. False in Microsoft Store builds
+    // (MINRENDER_STORE_BUILD: the Store owns updates and no updater is
+    // linked) and in any build with no updater backend compiled in. The
+    // direct-download WinSparkle build keeps the item.
     Q_PROPERTY(bool available READ available CONSTANT)
 public:
     using QObject::QObject;
 
-    bool available() const { return MR::kUpdaterAvailable; }
+    bool available() const
+    {
+#if defined(MINRENDER_STORE_BUILD)
+        return false;
+#else
+        return MR::kUpdaterAvailable;
+#endif
+    }
 
     Q_INVOKABLE void checkForUpdates() { MR::checkForUpdatesNow(); }
 };

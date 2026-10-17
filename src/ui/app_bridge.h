@@ -118,15 +118,6 @@ class AppBridge : public QObject
     Q_PROPERTY(int     udpPort            READ udpPort            WRITE setUdpPort            NOTIFY udpPortChanged)
     Q_PROPERTY(bool    showNotifications  READ showNotifications  WRITE setShowNotifications  NOTIFY showNotificationsChanged)
     Q_PROPERTY(bool    stagingEnabled     READ stagingEnabled     WRITE setStagingEnabled     NOTIFY stagingEnabledChanged)
-    Q_PROPERTY(bool    rndrDualMode       READ rndrDualMode       WRITE setRndrDualMode       NOTIFY rndrDualModeChanged)
-    // Sub-option of dual mode: hold the client off while a creative app
-    // is open on this machine. Meaningless with dual mode off.
-    Q_PROPERTY(bool    rndrDccGate        READ rndrDccGate        WRITE setRndrDccGate        NOTIFY rndrDccGateChanged)
-    // Read-only RNDR supervisor status, surfaced under the toggle in the
-    // Settings panel. rndrAvailable is constant for a session (binary
-    // present or not); rndrStatus is polled live by refresh().
-    Q_PROPERTY(bool    rndrAvailable      READ rndrAvailable      NOTIFY rndrAvailableChanged)
-    Q_PROPERTY(QString rndrStatus         READ rndrStatus         NOTIFY rndrStatusChanged)
 
     // Farm secret fingerprint (see core/sha256.h) plus the count of live
     // peers reporting a different one. A non-zero mismatch count is what
@@ -381,13 +372,6 @@ public:
     bool stagingEnabled() const;
     void setStagingEnabled(bool v);
 
-    bool rndrDualMode() const;
-    bool rndrDccGate() const;
-    void setRndrDualMode(bool v);
-    void setRndrDccGate(bool v);
-    bool rndrAvailable() const;
-    QString rndrStatus() const;
-
     QString farmSecretFingerprint() const;
     int secretMismatchCount() const { return m_secretMismatchCount; }
 
@@ -433,10 +417,6 @@ signals:
     void udpPortChanged();
     void showNotificationsChanged();
     void stagingEnabledChanged();
-    void rndrDualModeChanged();
-    void rndrDccGateChanged();
-    void rndrAvailableChanged();
-    void rndrStatusChanged();
     void farmSecretFingerprintChanged();
     void secretMismatchCountChanged();
     void currentJobIdChanged();
@@ -563,7 +543,6 @@ private:
     bool m_lastNodeActive   = true;
     bool m_lastThisNodeSuspended = false;
     int  m_lastThisNodeSuspendFailures = 0;
-    QString m_lastRndrStatus;
     QString m_lastSecretFingerprint;
     int     m_secretMismatchCount = 0;
 };

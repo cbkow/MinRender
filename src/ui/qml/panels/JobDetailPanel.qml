@@ -487,7 +487,7 @@ Item {
                                 required property var    chunkId
                                 required property int    frameStart
                                 required property int    frameEnd
-                                required property string state
+                                required property string chunkState   // not 'state': shadows Item.state
                                 required property string assignedNode
                                 required property string assignedNodeName
                                 required property double progress
@@ -506,7 +506,7 @@ Item {
                                 // Stopped chunks stay listed (this row
                                 // is where Requeue lives) but dimmed —
                                 // they're out of the job's accounting.
-                                opacity: state === "stopped" ? 0.45 : 1.0
+                                opacity: chunkState === "stopped" ? 0.45 : 1.0
 
                                 MouseArea {
                                     anchors.fill: parent
@@ -517,7 +517,7 @@ Item {
                                             chunkMenu.targetChunkId = chunkId
                                             chunkMenu.targetFrameStart = frameStart
                                             chunkMenu.targetFrameEnd   = frameEnd
-                                            chunkMenu.targetState      = state
+                                            chunkMenu.targetState      = chunkState
                                             chunkMenu.popup()
                                             return
                                         }
@@ -535,8 +535,8 @@ Item {
                                     spacing: 8
 
                                     Label {
-                                        text: state
-                                        color: stateColor(state)
+                                        text: chunkState
+                                        color: stateColor(chunkState)
                                         font.pixelSize: Theme.fontSizeSmall
                                         font.bold: true
                                         width: chunkColSettings.state

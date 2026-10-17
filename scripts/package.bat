@@ -8,18 +8,39 @@ REM   cd mr-agent && cargo build --release && cd ..    (if agent needs rebuildin
 REM
 REM Usage:
 REM   scripts\package.bat          — just stage to build\deploy
-REM   scripts\package.bat --iss    — stage and compile the installer
+REM   scripts\package.bat --iss    — stage and compile the fallback installer
+REM   scripts\package.bat --msix   — stage and pack the Microsoft Store MSIX
+REM                                  (build must be configured with
+REM                                  -DMINRENDER_STORE_BUILD=ON; identity env
+REM                                  vars per installer\STORE.md)
 
 setlocal
 
 set "REPO=%~dp0.."
+REM MR_BUILD_DIR lets the Store configure (-DMINRENDER_STORE_BUILD=ON) live
+REM in its own tree, e.g. build-store, so switching channels never means
+REM wiping build\ to flush a stale WinSparkle.dll.
 set "BUILD=%REPO%\build"
+if defined MR_BUILD_DIR set "BUILD=%MR_BUILD_DIR%"
 set "DEPLOY=%BUILD%\deploy"
 set "QT_BIN=C:\Qt\6.11.1\msvc2022_64\bin"
 REM windeployqt needs VCINSTALLDIR to locate the VC++ runtime redist DLLs
-REM (vcruntime140, msvcp140). Without it they're silently skipped and the
-REM app won't launch on machines without the VC++ redistributable.
-if not defined VCINSTALLDIR set "VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\"
+REM (vcruntime140, msvcp140) and vc_redist.x64.exe, which the installer
+REM requires. Without it they're silently skipped and the .iss fails on the
+REM missing redist. Resolve the VS install the same way build_msvc.bat does
+REM (vswhere, latest VS with the C++ tools) so a VS version change on the
+REM build box doesn't silently point at a path that no longer exists.
+if defined VCINSTALLDIR goto :vc_done
+set "VSWHERE_DIR=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer"
+if not exist "%VSWHERE_DIR%\vswhere.exe" goto :vc_fallback
+pushd "%VSWHERE_DIR%"
+for /f "delims=" %%i in ('.\vswhere.exe -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath') do set "VCINSTALLDIR=%%i\VC\"
+popd
+if defined VCINSTALLDIR goto :vc_done
+:vc_fallback
+set "VCINSTALLDIR=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\"
+:vc_done
+if not exist "%VCINSTALLDIR%Redist" echo WARN: VCINSTALLDIR=%VCINSTALLDIR% has no Redist folder - vc_redist.x64.exe will be missing.
 set "AGENT=%REPO%\mr-agent\target\release\mr-agent.exe"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
@@ -109,6 +130,7 @@ for %%F in (minRender.exe minrender-headless.exe mr-restart.exe mr-agent.exe Win
 )
 :after_sign
 
+if /I "%~1"=="--msix" goto :msix
 if /I not "%~1"=="--iss" goto :done
 
 REM Inno Setup compile step. Hoisted out of a nested if-block because
@@ -131,6 +153,14 @@ if errorlevel 1 exit /b %errorlevel%
 :done
 endlocal
 exit /b 0
+
+:msix
+REM Store packaging lives in PowerShell (token substitution + makeappx
+REM discovery are miserable in batch). It re-validates the deploy folder,
+REM including refusing a build that links WinSparkle.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\scripts\make_msix.ps1"
+if errorlevel 1 exit /b %errorlevel%
+goto :done
 
 :no_iscc
 echo ERROR: Inno Setup ISCC.exe not found at %ISCC%

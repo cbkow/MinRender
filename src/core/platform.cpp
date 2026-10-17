@@ -12,7 +12,14 @@
 #include <cstdlib>
 #endif
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
 #include <iostream>
+
+#ifdef _WIN32
+#pragma comment(lib, "advapi32.lib")
+#endif
 
 namespace MR {
 
@@ -218,6 +225,78 @@ cleanup:
     (void)tcpPort;
     (void)udpPort;
     return false;
+#endif
+}
+
+bool isSafePathSegment(const std::string& seg)
+{
+    if (seg.empty() || seg == "." || seg == "..")
+        return false;
+    return seg.find('/') == std::string::npos
+        && seg.find('\\') == std::string::npos
+        && seg.find(':') == std::string::npos;
+}
+
+bool isPathWithin(const std::filesystem::path& base, const std::filesystem::path& p)
+{
+    std::error_code ec;
+    std::string b = std::filesystem::absolute(base, ec).lexically_normal().generic_string();
+    std::string c = std::filesystem::absolute(p, ec).lexically_normal().generic_string();
+    if (b.empty() || c.empty())
+        return false;
+    while (b.size() > 1 && b.back() == '/') b.pop_back();
+    while (c.size() > 1 && c.back() == '/') c.pop_back();
+#ifdef _WIN32
+    // Windows paths compare case-insensitively.
+    auto lower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        return s;
+    };
+    b = lower(std::move(b));
+    c = lower(std::move(c));
+#endif
+    // Strictly inside: longer than base and the next char is a separator,
+    // so "/farm/jobs" is not within "/farm/jobs" and "/farm/jobsX" is not
+    // within "/farm/jobs".
+    if (c.size() <= b.size() + 1)
+        return false;
+    return c.compare(0, b.size(), b) == 0 && c[b.size()] == '/';
+}
+
+void publishNodeState(const std::string& renderState, const std::string& nodeState, bool alive)
+{
+#ifdef _WIN32
+    HKEY key = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\MinRender\\Node", 0, nullptr,
+                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr, &key, nullptr)
+        != ERROR_SUCCESS)
+        return;
+
+    auto setString = [&](const wchar_t* name, const std::string& value) {
+        std::wstring w(value.begin(), value.end());   // ASCII state words only
+        RegSetValueExW(key, name, 0, REG_SZ,
+            reinterpret_cast<const BYTE*>(w.c_str()),
+            static_cast<DWORD>((w.size() + 1) * sizeof(wchar_t)));
+    };
+    setString(L"RenderState", renderState);
+    setString(L"NodeState", nodeState);
+
+    DWORD pid = alive ? GetCurrentProcessId() : 0;
+    RegSetValueExW(key, L"Pid", 0, REG_DWORD,
+        reinterpret_cast<const BYTE*>(&pid), sizeof(pid));
+
+    ULONGLONG nowMs = static_cast<ULONGLONG>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+    RegSetValueExW(key, L"UpdatedMs", 0, REG_QWORD,
+        reinterpret_cast<const BYTE*>(&nowMs), sizeof(nowMs));
+
+    RegCloseKey(key);
+#else
+    (void)renderState;
+    (void)nodeState;
+    (void)alive;
 #endif
 }
 

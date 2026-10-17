@@ -6,7 +6,6 @@
 #include "core/http_server.h"
 #include "core/udp_notify.h"
 #include "monitor/agent_supervisor.h"
-#include "monitor/rndr_supervisor.h"
 #include "monitor/render_coordinator.h"
 #include "monitor/template_manager.h"
 #include "monitor/peer_manager.h"
@@ -42,7 +41,6 @@ public:
     const Config& config() const { return m_config; }
     const NodeIdentity& identity() const { return m_identity; }
     AgentSupervisor& agentSupervisor() { return m_agentSupervisor; }
-    RndrSupervisor& rndrSupervisor() { return m_rndrSupervisor; }
     RenderCoordinator& renderCoordinator() { return m_renderCoordinator; }
     PeerManager& peerManager() { return m_peerManager; }
     DatabaseManager& databaseManager() { return m_databaseManager; }
@@ -294,7 +292,6 @@ private:
     NodeIdentity m_identity;
     Config m_config;
     AgentSupervisor m_agentSupervisor;
-    RndrSupervisor m_rndrSupervisor;
     RenderCoordinator m_renderCoordinator;
     TemplateManager m_templateManager;
     HttpServer m_httpServer;
@@ -318,6 +315,12 @@ private:
     std::string m_farmSecret;
     bool m_farmRunning = false;
     NodeState m_nodeState = NodeState::Active;
+
+    // Last (render, node) state published via publishNodeState(); written
+    // only on change so the registry key is quiet between transitions.
+    bool m_nodeStatePublished = false;
+    bool m_lastPublishedRendering = false;
+    bool m_lastPublishedStopped = false;
 
     // Leader tracking
     bool m_wasLeader = false;
