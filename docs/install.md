@@ -5,7 +5,11 @@ nav_order: 2
 
 # Install
 
-**Windows:** install minRender from the Microsoft Store on every node that will participate in the farm. The Store keeps it updated.
+**Windows:** install [minRender from the Microsoft Store](https://apps.microsoft.com/detail/9PN4VXDZ3THW) on every node that will participate in the farm. The Store keeps it updated. For farm nodes you can install from a terminal without opening the Store:
+
+```
+winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements
+```
 
 **macOS:** download the latest `.dmg` from the [releases page](https://github.com/cbkow/minrender/releases/latest) and drag minRender to Applications. The app checks for updates itself.
 

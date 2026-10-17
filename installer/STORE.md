@@ -152,16 +152,16 @@ Per node, one-time migration from a pre-0.5.6 direct install:
    by uninstall, and the Store build reads the same paths.
 2. Install from the Store, or headless via winget (no Microsoft account
    needed for free apps):
-   `winget install --id <StoreId> --source msstore --accept-package-agreements`
-   (`<StoreId>` is the 12-char product id, e.g. `9NBLGGH4R315`, shown in
-   Partner Center → Product identity.)
+   `winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements`
+   (Store ID from Partner Center → Product identity; listing:
+   <https://apps.microsoft.com/detail/9PN4VXDZ3THW>.)
 3. **Disable Store auto-updates on farm nodes** (Store app → Settings → App
    updates off) so nodes don't self-update mid-job.
 
 Upgrades then happen on your schedule, farm idle, all nodes together:
 
 ```powershell
-winget upgrade --id <StoreId> --source msstore --accept-package-agreements
+winget upgrade --id 9PN4VXDZ3THW --source msstore --accept-package-agreements
 ```
 
 The workstation can leave Store auto-update on. The epoch-fence/capabilities
