@@ -93,7 +93,7 @@ QHash<int, QByteArray> ChunksModel::roleNames() const
         { ChunkIdRole,      "chunkId" },
         { FrameStartRole,   "frameStart" },
         { FrameEndRole,     "frameEnd" },
-        { StateRole,        "state" },
+        { StateRole,        "chunkState" },   // "state" would shadow Item.state in delegates
         { AssignedNodeRole, "assignedNode" },
         { AssignedNodeNameRole, "assignedNodeName" },
         { ProgressRole,     "progress" },

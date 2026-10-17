@@ -468,7 +468,7 @@ Item {
             delegate: Rectangle {
                 required property string jobId
                 required property string name
-                required property string state
+                required property string jobState   // not 'state': that would shadow Item.state and read as ""
                 required property double progress
                 required property int    totalChunks
                 required property int    doneChunks
@@ -539,7 +539,7 @@ Item {
 
                     Label {
                         readonly property string shown:
-                            root.displayState(state, stoppedChunks)
+                            root.displayState(jobState, stoppedChunks)
                         text: shown
                         color: root.stateColor(shown)
                         font.pixelSize: 11
@@ -573,7 +573,7 @@ Item {
                     }
 
                     Label {
-                        text: root.jobDuration(state, firstAssignedAt, lastCompletedAt)
+                        text: root.jobDuration(jobState, firstAssignedAt, lastCompletedAt)
                         color: Theme.textSecondary
                         font.pixelSize: 11
                         font.family: Theme.monoFamily
@@ -610,7 +610,7 @@ Item {
                                 appBridge.currentJobId = jobId
                             }
                             jobMenu.targetId = jobId
-                            jobMenu.targetState = state
+                            jobMenu.targetState = jobState
                             jobMenu.popup()
                             mouse.accepted = true
                             return

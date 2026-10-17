@@ -116,7 +116,7 @@ QHash<int, QByteArray> JobsModel::roleNames() const
         { JobIdRole,           "jobId" },
         { NameRole,            "name" },
         { SlugRole,            "slug" },
-        { StateRole,           "state" },
+        { StateRole,           "jobState" },     // "state" would shadow Item.state in delegates
         { ProgressRole,        "progress" },
         { TotalChunksRole,     "totalChunks" },
         { DoneChunksRole,      "doneChunks" },
