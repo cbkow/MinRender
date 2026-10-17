@@ -64,7 +64,22 @@ Add-AppxPackage -Register build-store\msix\AppxManifest.xml
 ```
 
 This installs the packaged app for real (start menu entry, startup task,
-firewall rules, package identity), running from `build-store\msix`. Verify:
+firewall rules, package identity), running from `build-store\msix`.
+
+`Add-AppxPackage -Register` (and `Remove-AppxPackage`) must run in the
+**interactive desktop session**. From an SSH or other non-interactive logon
+it fails with `0x80070005` and the deployment log says "Failed to
+initialize PLM" — the process lifetime manager does not exist there. The
+pack step itself (`make_msix.ps1`) is fine over SSH.
+
+Verified end to end on 2026-10-17 (first run of this flow): makeappx
+accepted the manifest unchanged; the registered package launched from the
+loose layout, read the real `%LOCALAPPDATA%\MinRender\config.json` with no
+virtualized copy under `Packages\<pfn>\LocalCache`, published the node
+state key, answered `/api/status`, got both manifest firewall rules
+(profile Any), the `minrender-headless.exe` alias resolved under
+`WindowsApps`, and the startup task was registered. Verify after any
+manifest change:
 
 - App launches, tray works, farm start binds 8420/4243 with **no firewall
   prompt** (the manifest rules applied).
@@ -77,6 +92,33 @@ firewall rules, package identity), running from `build-store\msix`. Verify:
   the Store owns updates).
 
 Uninstall from Start like any app.
+
+## Listing text
+
+Policy 10.2.4 requires a dependency on non-integrated software to be
+disclosed at the *beginning* of the description, and 10.2.2 is answered by
+stating plainly what the app launches. Draft:
+
+> **Requires Blender, After Effects or Cinema 4D installed on each render
+> node.** minRender is a lightweight render-farm manager for small studios.
+> It coordinates render jobs across the Windows and macOS machines on your
+> own network, launching the render application already installed on each
+> node to render frame ranges in parallel, and shows progress, logs and
+> frame previews in one place. Nodes find each other over the LAN and a
+> shared folder; nothing leaves your network. Submit from the included
+> Blender, After Effects and Cinema 4D plugins or from the app.
+
+Restricted-capability justifications (Submission → Restricted capabilities):
+
+- **runFullTrust** — "Win32 (Qt) render-farm manager. Launches locally
+  installed render applications (Blender, After Effects, Cinema 4D) as
+  child processes on the user's own machines to render frame ranges, and
+  supervises a bundled render agent. No code is downloaded or executed
+  beyond those installed applications."
+- **unvirtualizedResources** — "Stores farm node identity and configuration
+  in %LOCALAPPDATA%\MinRender, shared with existing non-Store installs of
+  the same app; virtualization would orphan render-farm node identities on
+  migration. Writes only to per-user AppData, never system locations."
 
 ## Submission
 
