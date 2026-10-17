@@ -66,25 +66,25 @@ security find-identity -v -p codesigning | grep -q "$TEAM_ID" || {
 # ---------------------------------------------------------------------------
 # 1. Build mr-agent (Rust release).
 # ---------------------------------------------------------------------------
-echo "==> [1/8] Building mr-agent (release)"
+echo "==> [1/9] Building mr-agent (release)"
 ( cd mr-agent && cargo build --release )
 
 # Vendor Sparkle.framework (idempotent) so the Release build embeds the updater.
 # Without this the build still succeeds, but the .app ships without auto-update.
-echo "==> [1b/8] Ensuring Sparkle is vendored"
+echo "==> [1b/9] Ensuring Sparkle is vendored"
 "$REPO/scripts/fetch_sparkle.sh"
 
 # ---------------------------------------------------------------------------
 # 2. Configure + build the Qt UI as a Release .app bundle.
 # ---------------------------------------------------------------------------
-echo "==> [2/8] Configuring (Release)"
+echo "==> [2/9] Configuring (Release)"
 cmake -S . -B "$BUILD_DIR" \
     -DCMAKE_PREFIX_PATH="$QT_PREFIX" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
     > /dev/null
 
-echo "==> [3/8] Building minRender.app"
+echo "==> [3/9] Building minRender.app"
 cmake --build "$BUILD_DIR" --target minrender -j8
 
 # ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ cmake --build "$BUILD_DIR" --target minrender -j8
 #    modules referenced by -qmldir. Without this the .app only runs on
 #    Macs with Qt 6.11 installed at QT_PREFIX.
 # ---------------------------------------------------------------------------
-echo "==> [4/8] macdeployqt (bundling Qt frameworks)"
+echo "==> [4/9] macdeployqt (bundling Qt frameworks)"
 "$QT_PREFIX/bin/macdeployqt" "$APP" \
     -qmldir="$REPO/src/ui/qml" \
     || true   # macdeployqt errors loudly on QtSql plugins it can't fully resolve;
@@ -115,7 +115,7 @@ rm -rf "$APP/Contents/PlugIns/networkinformation"
 #    does): sign deepest items first, work outward. --deep is deprecated
 #    for new code; explicit per-binary signing avoids edge cases.
 # ---------------------------------------------------------------------------
-echo "==> [5/8] Cleaning extended attributes + stripping signatures"
+echo "==> [5/9] Cleaning extended attributes + stripping signatures"
 # Codesign refuses files with com.apple.quarantine, com.apple.FinderInfo,
 # or similar xattrs ("resource fork, Finder information, or similar
 # detritus not allowed"). Source files copied through Finder or via curl
@@ -129,7 +129,7 @@ find "$APP/Contents/PlugIns" -type f -name '*.dylib' \
     -exec codesign --remove-signature {} \; 2>/dev/null || true
 codesign --remove-signature "$APP/Contents/MacOS/mr-agent" 2>/dev/null || true
 
-echo "==> [6/8] Signing (inside-out)"
+echo "==> [6/9] Signing (inside-out)"
 # 6-pre. Sparkle.framework ships nested code — XPC services, Autoupdate, and
 #        Updater.app — that must be signed deepest-first or notarization rejects
 #        the unsigned helpers. Do this before the generic framework walk below.
@@ -191,9 +191,28 @@ echo "==> Pre-notarization Gatekeeper check (rejection here is expected)"
 spctl --assess --type exec --verbose "$APP" 2>&1 || true
 
 # ---------------------------------------------------------------------------
-# 7. DMG — drag-to-Applications layout.
+# 7. Notarize + staple the .app FIRST, then build the DMG from the stapled
+#    app, then notarize + staple the DMG. Two notary rounds, but the app
+#    inside the DMG carries its own ticket, so a first launch validates
+#    offline. (Stapling the build-dir app after the DMG was made — the old
+#    order — left the shipped copy unstapled.)
 # ---------------------------------------------------------------------------
-echo "==> [7/8] Building DMG"
+HAVE_NOTARY=0
+if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" > /dev/null 2>&1; then
+    HAVE_NOTARY=1
+fi
+
+if [ "$HAVE_NOTARY" = 1 ]; then
+    echo "==> [7/9] Notarizing minRender.app (zip submission, 1-15 min)"
+    APP_ZIP="$(mktemp -d)/${APP_NAME}.zip"
+    ditto -c -k --keepParent "$APP" "$APP_ZIP"
+    xcrun notarytool submit "$APP_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+    rm -rf "$(dirname "$APP_ZIP")"
+    xcrun stapler staple "$APP"
+    xcrun stapler validate "$APP"
+fi
+
+echo "==> [8/9] Building DMG"
 mkdir -p "$RELEASE_DIR"
 rm -f "$DMG"
 
@@ -213,18 +232,11 @@ rm -rf "$(dirname "$DMG_STAGING")"
 
 codesign --force --sign "$SIGN_ID" --timestamp "$DMG"
 
-# ---------------------------------------------------------------------------
-# 8. Notarize + staple, if creds are stored.
-# ---------------------------------------------------------------------------
-if xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" \
-        > /dev/null 2>&1; then
-    echo "==> [8/8] Submitting DMG to Apple notary (1-15 min)"
+if [ "$HAVE_NOTARY" = 1 ]; then
+    echo "==> [9/9] Notarizing + stapling the DMG"
     xcrun notarytool submit "$DMG" \
         --keychain-profile "$NOTARY_PROFILE" \
         --wait
-
-    echo "==> Stapling .app and DMG"
-    xcrun stapler staple "$APP"
     xcrun stapler staple "$DMG"
 
     echo "==> Re-verifying after staple"
