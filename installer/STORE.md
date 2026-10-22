@@ -78,9 +78,13 @@ manifest change:
 
 - App launches, tray works, farm start binds 8420/4243 with **no firewall
   prompt** (the manifest rules applied).
-- `%APPDATA%\MinRender` is used directly (unvirtualizedResources): existing
-  node identity and config are picked up, and files written there are
-  visible to a normal shell.
+- `%LOCALAPPDATA%\MinRender` is used directly (the one Flexible
+  Virtualization exclusion): existing node identity and config are picked
+  up, files written there are visible to a normal shell, and nothing
+  appears under `%LOCALAPPDATA%\Packages\<pfn>\LocalCache\Local\MinRender`.
+- `HKCU\Software\MinRender\Node` is **not** visible in regedit while the
+  app runs (registry stays virtualized); the RNDR companion, if installed,
+  logs that it is on the HTTP poll.
 - Task Manager → Startup shows "minRender"; after sign-out/in the app is in
   the tray, window hidden (mr-restart's no-arg startup mode).
 - The About menu has no "Check for Updates…" item (absent on Windows —
@@ -110,32 +114,44 @@ Restricted-capability justifications (Submission → Restricted capabilities):
   child processes on the user's own machines to render frame ranges, and
   supervises a bundled render agent. No code is downloaded or executed
   beyond those installed applications."
-- **unvirtualizedResources** — "minRender stores its farm configuration
-  and node identity in %LOCALAPPDATA%\MinRender and publishes node status
-  under HKCU\Software\MinRender. Those locations are read by software
-  outside the package: the app's submission plug-ins running inside
-  Blender, After Effects and Cinema 4D locate the farm through config.json,
-  and the optional companion script reads the status key. Existing installs
-  from the direct-download installer also keep their node identity on
-  migration. With virtualization, those files and keys would be redirected
-  into the package's private store and none of that integration would work.
-  The app writes only to per-user AppData and HKCU, never to system
-  locations." (Partner Center flags this capability as needing approval on
-  upload — that is the normal path; the justification is what gets it
-  approved during certification.)
+- **unvirtualizedResources** — the text below (the Partner Center field is
+  short, so this is deliberately compact). It answers, in order, the four
+  points certification asked for when it denied 0.5.6.0 (see "Certification
+  history"); keep that structure in any future edit, because a
+  reconsideration "without new or expanded information" is denied again.
+
+  > Win32 render-farm manager. Scoped with Windows Flexible Virtualization to ONE per-user folder, %LOCALAPPDATA%\MinRender (virtualization:ExcludedDirectory). No registry keys; HKCU stays virtualized. Minimum OS is Windows 11 so the exclusion is honored on every device. WHY: our Blender, After Effects and Cinema 4D submission plug-ins run inside those applications (not launched by us, no package identity), read config.json in that folder to find the farm and drop job files into submissions\ for minRender to pick up. Submitting from those apps is the core function and cannot see virtualized AppData. node_id.txt there keeps a node's farm identity across upgrades. FLEXIBLE VIRTUALIZATION: evaluated and used; per Microsoft's docs it still requires this capability. UNINSTALL: removes the app, startup task, firewall rules and all virtualized data. Only %LOCALAPPDATA%\MinRender remains (config.json, node_id.txt, minrender.db, submissions\, staging\); removal is documented at minrender.com/install/#uninstall (delete the folder). Nothing is written to HKLM, Program Files or ProgramData.
+
+  Partner Center flags this capability as needing approval on upload — that
+  is the normal path; the justification is what gets it approved during
+  certification.
 
 ## Submission
 
-Upload the `.msix` in a new Partner Center submission. On the submission's
-**Restricted capabilities** section, supply justifications:
+Upload the `.msix` in a new Partner Center submission and paste the two
+justifications from "Listing text" above into the submission's
+**Restricted capabilities** section.
 
-- **runFullTrust** — "Win32 (Qt) render-farm monitor. Launches locally
-  installed render applications (Blender, After Effects) as child processes
-  on the user's own machines and supervises a bundled render agent."
-- **unvirtualizedResources** — "Stores farm node identity and configuration
-  in %APPDATA%\MinRender, shared with existing non-Store installs of the
-  same app; virtualization would orphan render-farm node identities on
-  migration. Writes only to per-user AppData, never system locations."
+### Certification history
+
+- **2026-10-17, 0.5.6.0 (first submission): denied** for
+  unvirtualizedResources. The package disabled file-system and registry
+  virtualization wholesale (`desktop6:*WriteVirtualization=disabled`) and
+  the justification argued interop in general terms. The tester asked for:
+  the specific files/folders/registry locations and why core functionality
+  needs them; confirmation that Windows Flexible Virtualization was
+  evaluated; uninstall behavior and how users remove leftovers; and
+  confirmation the capability is limited to the minimum. Response: the
+  manifest now uses Flexible Virtualization with a single
+  `ExcludedDirectory` (`%LOCALAPPDATA%\MinRender`), the registry is left
+  virtualized (the companion's registry fast path becomes the HTTP poll on
+  Store installs), MinVersion is Windows 11 (the per-location syntax is
+  ignored on Windows 10, which would silently re-virtualize the folder),
+  and docs/install.md documents the data folder and uninstall. Flexible
+  Virtualization reference:
+  <https://learn.microsoft.com/windows/msix/desktop/flexible-virtualization>.
+  Resubmitted as **0.5.7.0** (version bumped so the Store sees a clean new
+  package rather than a reconsideration of the denied one).
 
 Certification typically completes in 1–3 business days. If a tester asks
 about the LAN/process model, `SECURITY.md` is the reference: authenticated
@@ -144,6 +160,8 @@ Choose "Publish this submission manually" if you want to control release
 timing against the farm.
 
 ## Farm rollout
+
+The Store build requires **Windows 11** (see Certification history).
 
 Per node, one-time migration from a pre-0.5.6 direct install:
 

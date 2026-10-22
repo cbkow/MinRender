@@ -18,9 +18,15 @@ render start reaches it immediately rather than on a poll. The `Pid` is
 checked against the process table; a dead or zero `Pid` means minRender is
 not running.
 
-If the key is absent (an app version before 0.5.6) it polls
+If the key is absent it polls
 `GET http://127.0.0.1:<http_port>/api/status` once a second instead. The
-port comes from minRender's `config.json`.
+port comes from minRender's `config.json`. The key is absent on app
+versions before 0.5.6, and also on **Microsoft Store installs**: the Store
+package keeps its registry writes virtualized (only
+`%LOCALAPPDATA%\MinRender` is shared with other software), so the key is
+visible to minRender alone and the companion runs on the HTTP poll. The
+only practical difference is up to a second of extra latency before a
+render start is noticed.
 
 When minRender is unreachable the companion holds steady: it launches
 nothing and leaves a running client alone. When the app comes back, the

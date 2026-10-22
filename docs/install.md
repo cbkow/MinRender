@@ -23,10 +23,44 @@ winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements
 
 ### Requirements
 
-- Windows 10 version 2004 or later, x64.
+- Windows 11, x64.
 - The render application(s) you submit to — Blender, After Effects or Cinema 4D — installed on each node that should render.
 
 The Store package declares firewall rules for HTTP port **8420** and UDP port **4243** and registers a startup task so minRender launches with the machine (toggle it in Task Manager → Startup).
+
+### Where minRender keeps its data
+
+Everything minRender stores on the machine lives in one per-user folder,
+`%LOCALAPPDATA%\MinRender` (type that into Explorer's address bar):
+
+| Item | What it is |
+|---|---|
+| `config.json` | farm settings: sync root, ports, node name |
+| `node_id.txt` | this node's identity on the farm |
+| `minrender.db` | local job/chunk history |
+| `submissions\` | hand-off folder: the Blender, After Effects and Cinema 4D plug-ins drop job files here and minRender picks them up |
+| `staging\` | frames in flight while a chunk renders; emptied when the chunk finishes |
+| `mr-agent.log` | render agent log |
+
+The folder is deliberately kept outside the Store package's private storage
+so the plug-ins (which run inside Blender, After Effects or Cinema 4D) can
+read the farm settings and write submissions, and so a node reinstalled or
+upgraded keeps its identity.
+
+### Uninstall
+
+Uninstall from **Settings → Apps** (or `winget uninstall --id 9PN4VXDZ3THW`)
+like any Store app. That removes the program, its startup task and firewall
+rules, and the package's private data. The data folder above is left in
+place so your farm settings and node identity survive a reinstall. To remove
+it too, delete `%LOCALAPPDATA%\MinRender`, or from a terminal:
+
+```
+rmdir /s /q "%LOCALAPPDATA%\MinRender"
+```
+
+If you installed the optional [RNDR companion](https://github.com/cbkow/MinRender/tree/main/tools/rndr-companion),
+run its `uninstall.ps1` first; it also lives in that folder.
 
 ---
 
