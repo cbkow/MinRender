@@ -15,7 +15,8 @@ Install minRender from the [Microsoft Store](https://apps.microsoft.com/detail/9
   <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" style="border: 1px solid #707070; border-radius: 4.5px;"/>
 </a>
 
-For farm nodes you can install from a terminal without opening the Store:
+Requires **Windows 11** (see Requirements below). For farm nodes you can
+install from a terminal without opening the Store:
 
 ```
 winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements
@@ -23,7 +24,9 @@ winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements
 
 ### Requirements
 
-- Windows 11, x64.
+- **Windows 11**, x64 (any edition). Windows 10 is not supported: the Store
+  package declares Windows 11 as its minimum and will not install on
+  Windows 10 machines, so upgrade any remaining Windows 10 node first.
 - The render application(s) you submit to — Blender, After Effects or Cinema 4D — installed on each node that should render.
 
 The Store package declares firewall rules for HTTP port **8420** and UDP port **4243** and registers a startup task so minRender launches with the machine (toggle it in Task Manager → Startup).
