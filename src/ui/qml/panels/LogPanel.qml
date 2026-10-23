@@ -152,9 +152,7 @@ Item {
                     // always have today's file while the farm runs.
                     enabled: !root.taskMode
                              || appBridge.selectedTaskChunkIndex >= 0
-                    ToolTip.text: qsTr("Reveal the current log file for use with other tools")
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 500
+                    tooltipText: qsTr("Reveal the current log file for use with other tools")
                     onClicked: appBridge.revealCurrentLog()
                 }
 
@@ -369,6 +367,7 @@ Item {
                         color: index === appBridge.selectedTaskChunkIndex
                                ? Theme.selection
                                : (index % 2 === 0 ? Theme.bg : Theme.bgAlt)
+                        Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
 
                         Label {
                             anchors.fill: parent
@@ -387,7 +386,7 @@ Item {
                             onClicked: appBridge.selectedTaskChunkIndex = index
                         }
 
-                        ToolTip {
+                        FlatToolTip {
                             visible: chunkHover.containsMouse
                             delay: 400
                             text: modelData.nodeId + " — " + modelData.rangeStr

@@ -182,9 +182,7 @@ MrDialog {
                         FlatButton {
                             Layout.preferredWidth: Theme.toolStripHeight
                             iconName: "trash"
-                            ToolTip.text: qsTr("Remove")
-                            ToolTip.visible: hovered
-                            ToolTip.delay: 500
+                            tooltipText: qsTr("Remove")
                             onClicked: root.removeMapping(index)
                         }
                     }

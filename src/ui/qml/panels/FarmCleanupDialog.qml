@@ -203,7 +203,7 @@ MrDialog {
         Layout.fillWidth: true
         implicitHeight: sectionColumn.implicitHeight + 16
         color: Theme.surface
-        radius: Theme.radiusBase
+        radius: Theme.radius
 
         ColumnLayout {
             id: sectionColumn
@@ -235,9 +235,10 @@ MrDialog {
                     }
                     onClicked: root.setAllChecked(
                         section.items, checkState === Qt.Checked)
-                    ToolTip.text: qsTr("Select all in this section")
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 500
+                    FlatToolTip {
+                        visible: parent.hovered
+                        text: qsTr("Select all in this section")
+                    }
                 }
                 SectionHeader {
                     text: section.title + " · " + section.items.length

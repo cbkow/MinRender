@@ -7,9 +7,11 @@ import QtQuick
 //   ...
 //   color: Theme.bg
 //
-// The visual language follows ufb's flat Fluent-ish style: squared
-// corners, single cobalt-blue accent, minimal elevation, instant hover
-// color swaps (no animation), Phosphor icons.
+// The visual language is the family's flat look (one cobalt-blue accent,
+// minimal elevation, Phosphor icons, Geist sans + Geist Mono) with the
+// humanist pass minNotes took first (2026-10-21) and QCView followed
+// (2026-10-23), adopted here 2026-10-23: three corner radii applied by
+// surface class, a short hover / pressed colour ramp, popups that fade in.
 //
 // Token groups:
 //   - Surfaces: layered grey hierarchy (bg, surface, surfaceAlt, surfaceHover, toolbar)
@@ -17,9 +19,10 @@ import QtQuick
 //   - Text (primary, muted, subtle, bright, inverted)
 //   - Accent + state (success, warn, error, info)
 //   - FrameGrid cell colours (used by JobDetailPanel via FrameGrid C++ painter)
-//   - Fonts (Inter sans, JetBrainsMono, Phosphor icon font)
+//   - Fonts (Geist sans, Geist Mono, Phosphor icon font)
 //   - Dimensions (rowHeight, toolStripHeight, padding, spacing, border)
 //   - Icon sizes
+//   - Radii by surface class, motion durations
 QtObject {
     // --- Surfaces ---
     readonly property color bg:           "#161616"
@@ -42,6 +45,17 @@ QtObject {
     // Row-selection background — points at accentMuted so highlighted
     // rows read as a dimmed-cobalt fill (matches ufb).
     readonly property color selection:    accentMuted
+    // Edge affordances (QCView's tokens): a control that must read as
+    // interactive at rest carries a subtle raised grey; hover steps up
+    // to a clearer grey. Also the highlighted row of a themed menu.
+    readonly property color affordanceIdle:  "#262626"
+    readonly property color affordanceHover: "#323232"
+    // A ramp's idle end is never "transparent": that is black at alpha
+    // 0, so the colour animation would dip dark before it lightens.
+    // This is surfaceHover at alpha 0 — the ramp only fades in.
+    readonly property color hoverIdle: Qt.rgba(0x25 / 255, 0x25 / 255, 0x25 / 255, 0)
+    // The same idea for a fill-on-hover danger control: error at alpha 0.
+    readonly property color errorIdle: Qt.rgba(0xc0 / 255, 0x40 / 255, 0x40 / 255, 0)
 
     // --- Text ---
     readonly property color textPrimary:   "#dddddd"
@@ -78,7 +92,8 @@ QtObject {
 
     // --- Fonts ---
     // Family names resolved by main_qt.cpp at startup. Falls back to a
-    // generic string if the bundled .ttf didn't load.
+    // generic string if the bundled .ttf didn't load. (AppBridge keeps
+    // its historical accessor name interFamily; the face is Geist.)
     readonly property string fontFamily:     appBridge ? appBridge.interFamily    : "sans-serif"
     readonly property string monoFamily:     appBridge ? appBridge.monoFamily     : "monospace"
     // symbolsFamily is the legacy Material Symbols font kept for sites
@@ -88,6 +103,8 @@ QtObject {
 
     // Font sizes in pixelSize units. QML's default "pointSize" is DPI-
     // dependent and unpredictable between platforms; we stick to pixels.
+    // Geist Sans and Geist Mono share vertical metrics, so mono values
+    // sit at the same size as their sans labels.
     readonly property int fontSizeTiny:   10
     readonly property int fontSizeSmall:  11
     readonly property int fontSizeBase:   12
@@ -124,12 +141,14 @@ QtObject {
     // --- Borders / radii ---
     readonly property int borderWidth:  1
     readonly property int dividerWidth: 1
-    // Squared corners everywhere by default. The legacy radiusSmall /
-    // radiusBase / radiusLarge tokens stay for any component that wants
-    // rounding (chips, badges); new flat controls should use radius: 0.
-    readonly property int radius:       0
-    readonly property int radiusSmall:  2
-    readonly property int radiusBase:   3
-    readonly property int radiusLarge:  6
-    readonly property int radiusPill:  10
+    // Three radii, by surface class (the humanist pass). Hairlines,
+    // dividers, tab underlines and the frame grid stay square.
+    readonly property int radiusSmall:  3    // buttons, chips, badges, wells, fields, menu rows, scrollbar thumbs, progress bars, tooltips
+    readonly property int radius:       6    // popups, menus, dialogs, toasts, cards and their headers
+    readonly property int radiusLarge: 10    // reserved (a switch's pill track) — so a fourth value is never invented ad hoc
+
+    // --- Motion ---
+    readonly property int hoverMs:  100      // the hover / pressed / selection colour ramp
+    readonly property int popupMs:   80      // a popup's fade-in. No exit fade: it keeps a modal
+                                             // popup alive for its length and eats the next click.
 }

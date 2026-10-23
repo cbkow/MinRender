@@ -16,7 +16,7 @@ ProgressBar {
         implicitWidth:  120
         implicitHeight: 10
         color: Theme.surfaceHover
-        radius: Theme.radius
+        radius: Theme.radiusSmall
     }
 
     contentItem: Item {
@@ -27,7 +27,7 @@ ProgressBar {
             width: root.visualPosition * parent.width
             height: parent.height
             color: Theme.accent
-            radius: Theme.radius
+            radius: Theme.radiusSmall
         }
     }
 }

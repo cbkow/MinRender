@@ -41,7 +41,7 @@ T.ScrollBar {
     contentItem: Rectangle {
         implicitWidth:  root.orientation === Qt.Vertical   ? Theme.scrollBarWidth : 0
         implicitHeight: root.orientation === Qt.Horizontal ? Theme.scrollBarWidth : 0
-        radius: Theme.radius
+        radius: Theme.radiusSmall
         // Hover is tracked on the thumb itself rather than via
         // root.hovered. The control's hover area covers the full track
         // (often transparent), so a HoverHandler on the thumb makes the
@@ -50,6 +50,7 @@ T.ScrollBar {
         color: root.pressed ? Theme.textSecondary
              : thumbHover.hovered ? Theme.textMuted
                                   : Theme.borderStrong
+        Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
 
         HoverHandler {
             id: thumbHover

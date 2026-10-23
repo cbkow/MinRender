@@ -320,9 +320,8 @@ Item {
                     // old leaders have no /edit route.
                     enabled: root.checkedCount() === 1
                              && appBridge.leaderSupportsJobEdit
-                    ToolTip.text: qsTr("The leader is running an older version without job editing")
-                    ToolTip.visible: hovered && !appBridge.leaderSupportsJobEdit
-                    ToolTip.delay: 500
+                    tooltipText: appBridge.leaderSupportsJobEdit ? ""
+                               : qsTr("The leader is running an older version without job editing")
                     onClicked: appBridge.openJobEditor(root.checkedJobIds()[0])
                 }
                 FlatButton {
@@ -484,6 +483,7 @@ Item {
                 height: 32
                 color: root.isChecked(jobId) ? Theme.selection
                      : (index % 2 === 0 ? Theme.bgAlt : Theme.surface)
+                Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
                 // Ghost the row being dragged so the indicator line reads
                 // as "this is where it's going".
                 opacity: root.dragJobId === jobId ? 0.45 : 1.0
@@ -547,9 +547,11 @@ Item {
                         width: root.colState
                         elide: Text.ElideRight
                         anchors.verticalCenter: parent.verticalCenter
-                        ToolTip.text: qsTr("%1 stopped chunk(s) excluded").arg(stoppedChunks)
-                        ToolTip.visible: shown === "partial" && stateHover.hovered
-                        ToolTip.delay: 400
+                        FlatToolTip {
+                            text: qsTr("%1 stopped chunk(s) excluded").arg(stoppedChunks)
+                            visible: shown === "partial" && stateHover.hovered
+                            delay: 400
+                        }
                         HoverHandler { id: stateHover }
                     }
 
@@ -663,7 +665,7 @@ Item {
     // selected the action targets just it. Either way state is
     // mutated through the same single-job AppBridge methods, so the
     // menu and the strip stay behavioural twins.
-    Menu {
+    ThemedMenu {
         id: jobMenu
         property string targetId: ""
         property string targetState: ""
@@ -676,7 +678,7 @@ Item {
             return n > 1 ? qsTr(" %1 jobs").arg(n) : ""
         }
 
-        MenuItem {
+        ThemedMenuItem {
             text: qsTr("Pause") + jobMenu.bulkSuffix()
             // For multi, enabled if any selected row could be paused —
             // we don't pre-walk the selection (cheap-ish but adds code);
@@ -687,15 +689,15 @@ Item {
             onTriggered: root.applyToChecked(
                 function(id) { appBridge.pauseJob(id) })
         }
-        MenuItem {
+        ThemedMenuItem {
             text: qsTr("Resume") + jobMenu.bulkSuffix()
             enabled: root.checkedCount() > 1
                      || jobMenu.targetState === "paused"
             onTriggered: root.applyToChecked(
                 function(id) { appBridge.resumeJob(id) })
         }
-        MenuSeparator {}
-        MenuItem {
+        ThemedMenuSeparator {}
+        ThemedMenuItem {
             // Single-job only: the edit form is one manifest, one job.
             text: appBridge.leaderSupportsJobEdit
                   ? qsTr("Edit Job…")
@@ -704,23 +706,23 @@ Item {
                      && appBridge.leaderSupportsJobEdit
             onTriggered: appBridge.openJobEditor(jobMenu.targetId)
         }
-        MenuSeparator {}
-        MenuItem {
+        ThemedMenuSeparator {}
+        ThemedMenuItem {
             text: qsTr("Retry failed chunks") + jobMenu.bulkSuffix()
             onTriggered: root.applyToChecked(
                 function(id) { appBridge.retryFailedChunks(id) })
         }
-        MenuItem {
+        ThemedMenuItem {
             text: qsTr("Requeue") + jobMenu.bulkSuffix()
             onTriggered: root.applyToChecked(
                 function(id) { appBridge.requeueJob(id) })
         }
-        MenuSeparator {}
+        ThemedMenuSeparator {}
         // Cancel and Delete route through the bulk-confirm dialog
         // regardless of selection size — a single accidental "Delete"
         // on the wrong row is just as bad as 5, and one tap of return
         // beats unintentional data loss.
-        MenuItem {
+        ThemedMenuItem {
             text: qsTr("Cancel") + jobMenu.bulkSuffix()
             onTriggered: bulkConfirmDialog.openWith(
                 "cancel",
@@ -730,12 +732,12 @@ Item {
                 qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
                 function(id) { appBridge.cancelJob(id) })
         }
-        MenuItem {
+        ThemedMenuItem {
             text: qsTr("Archive") + jobMenu.bulkSuffix()
             onTriggered: root.applyToChecked(
                 function(id) { appBridge.archiveJob(id) })
         }
-        MenuItem {
+        ThemedMenuItem {
             text: qsTr("Delete") + jobMenu.bulkSuffix()
             onTriggered: bulkConfirmDialog.openWith(
                 "delete",

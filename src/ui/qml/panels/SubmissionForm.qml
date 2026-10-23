@@ -330,7 +330,7 @@ Item {
                 Layout.fillWidth: true
                 visible: errorBanner.text.length > 0
                 color: Qt.darker(Theme.error, 3.0)
-                radius: Theme.radiusBase
+                radius: Theme.radiusSmall
                 implicitHeight: errorBanner.implicitHeight + 12
 
                 Label {
@@ -419,9 +419,7 @@ Item {
             text: qsTr("Apply to next chunks")
             variant: "primary"
             enabled: !root.structuralChange && !appBridge.editBusy
-            ToolTip.text: qsTr("In-flight chunks finish with the old settings; every chunk dispatched from now on uses the new ones.")
-            ToolTip.visible: hovered
-            ToolTip.delay: 600
+            tooltipText: qsTr("In-flight chunks finish with the old settings; every chunk dispatched from now on uses the new ones.")
             onClicked: root.applyEdit("continue")
         }
         FlatButton {
@@ -430,9 +428,7 @@ Item {
             text: qsTr("Stop chunks && apply")
             variant: "neutral"
             enabled: !root.structuralChange && !appBridge.editBusy
-            ToolTip.text: qsTr("Kills in-flight renders and requeues them with the new settings. Completed chunks keep their output.")
-            ToolTip.visible: hovered
-            ToolTip.delay: 600
+            tooltipText: qsTr("Kills in-flight renders and requeues them with the new settings. Completed chunks keep their output.")
             onClicked: editConfirm.openFor("restart")
         }
         FlatButton {
@@ -441,9 +437,7 @@ Item {
             text: qsTr("Start over")
             variant: "danger"
             enabled: !appBridge.editBusy
-            ToolTip.text: qsTr("Discards ALL progress — every chunk, including completed frames, re-renders with the new settings.")
-            ToolTip.visible: hovered
-            ToolTip.delay: 600
+            tooltipText: qsTr("Discards ALL progress — every chunk, including completed frames, re-renders with the new settings.")
             onClicked: editConfirm.openFor("startover")
         }
     }

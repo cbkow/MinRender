@@ -15,7 +15,7 @@ Rectangle {
     property int    textSize:  Theme.fontSizeSmall
 
     color: fillColor
-    radius: Theme.radiusBase
+    radius: Theme.radiusSmall
     implicitWidth: label.implicitWidth + 10
     implicitHeight: label.implicitHeight + 4
 

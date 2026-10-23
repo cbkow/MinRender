@@ -25,6 +25,10 @@ Dialog {
 
     Overlay.modal: Rectangle { color: Theme.scrim }
 
+    enter: Transition {
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.popupMs }
+    }
+
     background: Rectangle {
         color: Theme.modalBg
         border.color: Theme.borderStrong
@@ -35,6 +39,10 @@ Dialog {
     header: Rectangle {
         implicitHeight: Theme.toolStripHeight
         color: Theme.toolbarAlt
+        // The strip follows the card's rounded top; its bottom edge is
+        // the divider, square.
+        topLeftRadius:  Theme.radius
+        topRightRadius: Theme.radius
 
         Label {
             anchors.left: parent.left

@@ -208,6 +208,7 @@ ApplicationWindow {
                                              : Theme.textMuted
                                         font.family: Theme.fontFamily
                                         font.pixelSize: Theme.fontSizeBase
+                                        Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
                                     }
 
                                     Rectangle {
@@ -379,7 +380,11 @@ ApplicationWindow {
         color: Theme.surfaceAlt
         border.color: toast.isError ? Theme.error : Theme.accent
         border.width: Theme.borderWidth
-        visible: toastTimer.running
+        // Fades in and out over the popup duration; visible tracks the
+        // fade so a hidden toast never eats clicks.
+        opacity: toastTimer.running ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: Theme.popupMs } }
         z: 1000
 
         Label {

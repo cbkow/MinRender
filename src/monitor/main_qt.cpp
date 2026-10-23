@@ -147,9 +147,11 @@ int main(int argc, char* argv[])
         QApplication::setPalette(p);
     }
 
-    // Load bundled fonts. Family names come back from Qt's own
-    // enumeration — we capture them on AppBridge so Theme.qml doesn't
-    // have to guess what Inter_18pt-Regular.ttf actually registers as.
+    // Load bundled fonts: Geist (sans), Geist Mono, Phosphor (icons).
+    // Family names come back from Qt's own enumeration — we capture them
+    // on AppBridge so Theme.qml doesn't have to guess what the .ttf
+    // actually registers as. (AppBridge keeps the historical accessor
+    // name interFamily for the sans; the face behind it is Geist.)
     auto loadFamily = [](const QString& path) -> QString {
         const int id = QFontDatabase::addApplicationFont(path);
         if (id < 0)
@@ -178,10 +180,11 @@ int main(int argc, char* argv[])
         fontDir = QCoreApplication::applicationDirPath()
                 + QStringLiteral("/resources/fonts/");
 
-    const QString interName = loadFamily(fontDir + "Inter_18pt-Regular.ttf");
-    loadFamily(fontDir + "Inter_18pt-Bold.ttf");
-    loadFamily(fontDir + "Inter_18pt-Italic.ttf");
-    const QString monoName    = loadFamily(fontDir + "JetBrainsMono-Regular.ttf");
+    const QString interName = loadFamily(fontDir + "Geist-Regular.ttf");
+    loadFamily(fontDir + "Geist-Bold.ttf");
+    loadFamily(fontDir + "Geist-Italic.ttf");
+    const QString monoName    = loadFamily(fontDir + "GeistMono-Regular.ttf");
+    loadFamily(fontDir + "GeistMono-Bold.ttf");
     // Phosphor is the primary icon font (matches ufb's UI vocabulary).
     // Material Symbols stays bundled as a fallback for the few sites that
     // already reference Theme.symbolsFamily; new code should prefer the
@@ -189,7 +192,7 @@ int main(int argc, char* argv[])
     const QString phosphorName = loadFamily(fontDir + "Phosphor.ttf");
     const QString symbolsName  = loadFamily(fontDir + "MaterialSymbolsSharp-Regular.ttf");
 
-    // Default app font → Inter (falls through to Qt's default if Inter
+    // Default app font → Geist (falls through to Qt's default if it
     // failed to load). Tweaks to sizes happen in QML via Theme.
     if (!interName.isEmpty())
         QApplication::setFont(QFont(interName, 10));

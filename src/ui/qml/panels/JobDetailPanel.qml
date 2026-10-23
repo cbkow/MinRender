@@ -100,20 +100,20 @@ Item {
             // Right-click menu on chunk rows. Lives at the panel level
             // so popup() coordinates make sense and the menu doesn't
             // get clipped by the ListView's clip:true.
-            Menu {
+            ThemedMenu {
                 id: chunkMenu
                 property var targetChunkId: 0
                 property int targetFrameStart: 0
                 property int targetFrameEnd: 0
                 property string targetState: ""
 
-                MenuItem {
+                ThemedMenuItem {
                     text: chunkMenu.targetState === "stopped"
                           ? qsTr("Requeue (resume stopped chunk)")
                           : qsTr("Reassign to another node")
                     onTriggered: appBridge.reassignChunk(chunkMenu.targetChunkId, "")
                 }
-                MenuItem {
+                ThemedMenuItem {
                     // Terminal 'stopped': render killed, never
                     // re-dispatched, frames leave the grid/progress;
                     // the job finishes "partial" around it.
@@ -125,8 +125,8 @@ Item {
                                  || chunkMenu.targetState === "assigned")
                     onTriggered: appBridge.stopChunk(chunkMenu.targetChunkId)
                 }
-                MenuSeparator {}
-                MenuItem {
+                ThemedMenuSeparator {}
+                ThemedMenuItem {
                     // Opens the submission form seeded from this job's
                     // manifest, frame range preset to the chunk — tweak
                     // (e.g. chunk size 1) and submit as a new job.
@@ -293,9 +293,7 @@ Item {
                             FlatButton {
                                 iconName: "folder-open"
                                 text: qsTr("Open output")
-                                ToolTip.text: qsTr("Reveal the job's render folder in the file manager. Uses Path Mappings to translate canonical paths.")
-                                ToolTip.visible: hovered
-                                ToolTip.delay: 600
+                                tooltipText: qsTr("Reveal the job's render folder in the file manager. Uses Path Mappings to translate canonical paths.")
                                 onClicked: appBridge.openJobOutput(appBridge.currentJobId)
                             }
                             Item { Layout.fillWidth: true }
@@ -395,9 +393,12 @@ Item {
                                             appBridge.pinPreview(f, f)
                                     }
 
-                                    ToolTip.visible: containsMouse && hoverFrame >= 0
-                                    ToolTip.delay: 300
-                                    ToolTip.text: {
+                                    FlatToolTip {
+                                    visible: parent.containsMouse && parent.hoverFrame >= 0
+                                    delay: 300
+                                    text: {
+                                        const hoverFrame = parent.hoverFrame
+                                        const hoverChunk = parent.hoverChunk
                                         if (hoverFrame < 0) return ""
                                         let t = qsTr("Frame %1").arg(hoverFrame)
                                         const c = hoverChunk
@@ -409,6 +410,7 @@ Item {
                                                 t += qsTr("  ·  %1").arg(c.node)
                                         }
                                         return t
+                                    }
                                     }
                                 }
                             }
@@ -503,6 +505,7 @@ Item {
                                 height: 24
                                 color: selected ? Theme.selection
                                      : index % 2 === 0 ? Theme.bg : Theme.bgAlt
+                                Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
                                 // Stopped chunks stay listed (this row
                                 // is where Requeue lives) but dimmed —
                                 // they're out of the job's accounting.
@@ -564,9 +567,10 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         // Hostname is the friendly face; the raw node id
                                         // stays reachable for debugging.
-                                        ToolTip.text: assignedNode
-                                        ToolTip.visible: assignedNode.length > 0 && nodeNameHover.containsMouse
-                                        ToolTip.delay: 600
+                                        FlatToolTip {
+                                            text: assignedNode
+                                            visible: assignedNode.length > 0 && nodeNameHover.containsMouse
+                                        }
                                         MouseArea {
                                             id: nodeNameHover
                                             anchors.fill: parent

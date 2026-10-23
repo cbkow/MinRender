@@ -148,14 +148,17 @@ Full details available in mr-agent/Cargo.lock.
 
 
 ================================================================================
-Inter Font
-https://github.com/rsms/inter
+Geist (sans)
+https://github.com/vercel/geist-font
 License: SIL Open Font License 1.1
 ================================================================================
 
-Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
+No Reserved Font Name is declared. Shipped unmodified as
+resources/fonts/Geist-*.ttf with its own copy of the license,
+resources/fonts/GeistLICENSE.txt.
 This license is available with a FAQ at: https://openfontlicense.org
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
@@ -220,16 +223,16 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 
 ================================================================================
-JetBrains Mono
-https://github.com/JetBrains/JetBrainsMono
+Geist Mono
+https://github.com/vercel/geist-font
 License: SIL Open Font License 1.1
 ================================================================================
 
-Copyright 2020 The JetBrains Mono Project Authors
-(https://github.com/JetBrains/JetBrainsMono)
+Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
-(Same terms as Inter font above — see SIL OFL 1.1 text.)
+(Same terms as Geist above — see SIL OFL 1.1 text. Shipped as
+resources/fonts/GeistMono-*.ttf.)
 
 
 ================================================================================

@@ -240,6 +240,7 @@ Item {
                 color: peerList.selectedNodeId === nodeId
                        ? Theme.selection
                        : (index % 2 === 0 ? Theme.bgAlt : Theme.surface)
+                Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
 
                 RowLayout {
                     anchors.fill: parent
@@ -337,54 +338,54 @@ Item {
             // Two Menus rather than one with visible:false items — Qt
             // Quick Menu reserves layout space for hidden MenuItem
             // children, leaving gaps at popup time. Choose at popup.
-            Menu {
+            ThemedMenu {
                 id: livePeerMenu
                 property string targetNodeId:    ""
                 property bool   targetIsActive:  false
                 property bool   targetSuspended: false
 
                 // Non-interactive header naming the target node.
-                MenuItem {
+                ThemedMenuItem {
                     enabled: false
                     text: livePeerMenu.targetNodeId
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.fontSizeSmall
                 }
-                MenuSeparator {}
-                MenuItem {
+                ThemedMenuSeparator {}
+                ThemedMenuItem {
                     text: livePeerMenu.targetIsActive ? qsTr("Stop") : qsTr("Start")
                     onTriggered: appBridge.setPeerNodeActive(
                         livePeerMenu.targetNodeId, !livePeerMenu.targetIsActive)
                 }
-                MenuItem {
+                ThemedMenuItem {
                     text: qsTr("Restart App")
                     onTriggered: appBridge.restartPeerApp(livePeerMenu.targetNodeId)
                 }
                 // Disabled rather than hidden when the node is not
                 // suspended, so the row still reads as "not suspended"
                 // instead of the item silently vanishing.
-                MenuItem {
+                ThemedMenuItem {
                     text: qsTr("Unsuspend")
                     enabled: livePeerMenu.targetSuspended
                     onTriggered: appBridge.unsuspendNode(livePeerMenu.targetNodeId)
                 }
             }
 
-            Menu {
+            ThemedMenu {
                 id: deadPeerMenu
                 property string targetNodeId: ""
 
-                MenuItem {
+                ThemedMenuItem {
                     enabled: false
                     text: deadPeerMenu.targetNodeId
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.fontSizeSmall
                 }
-                MenuSeparator {}
+                ThemedMenuSeparator {}
                 // Writes an empty `restart` file under {farmPath}/nodes/{id}/
                 // so the peer's filesystem watcher triggers a local restart
                 // next time it comes back online.
-                MenuItem {
+                ThemedMenuItem {
                     text: qsTr("Write restart signal (filesystem)")
                     onTriggered: appBridge.writePeerRestartSignal(deadPeerMenu.targetNodeId)
                 }

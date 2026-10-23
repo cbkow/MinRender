@@ -74,6 +74,8 @@ Item {
             width: 1
             color: grip.containsMouse || grip.pressed ? Theme.accent : Theme.textMuted
             opacity: grip.containsMouse || grip.pressed ? 1.0 : 0.45
+            Behavior on color   { ColorAnimation  { duration: Theme.hoverMs } }
+            Behavior on opacity { NumberAnimation { duration: Theme.hoverMs } }
         }
     }
 }
