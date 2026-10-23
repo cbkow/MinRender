@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MinRender VERSION 0.5.7 LANGUAGES C CXX)
+project(MinRender VERSION 0.5.8 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -251,6 +251,7 @@ qt_add_qml_module(minrender
         src/ui/qml/Theme.qml
         src/ui/qml/Format.qml
         src/ui/qml/components/FlatButton.qml
+        src/ui/qml/components/FlatToolTip.qml
         src/ui/qml/components/Icon.qml
         src/ui/qml/components/MrDialog.qml
         src/ui/qml/components/MrScrollBar.qml
@@ -259,6 +260,9 @@ qt_add_qml_module(minrender
         src/ui/qml/components/ResizableHeaderLabel.qml
         src/ui/qml/components/SectionHeader.qml
         src/ui/qml/components/StatusBadge.qml
+        src/ui/qml/components/ThemedMenu.qml
+        src/ui/qml/components/ThemedMenuItem.qml
+        src/ui/qml/components/ThemedMenuSeparator.qml
         src/ui/qml/components/ToolStrip.qml
         src/ui/qml/panels/FarmCleanupDialog.qml
         src/ui/qml/panels/JobDetailPanel.qml
