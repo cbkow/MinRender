@@ -5,8 +5,24 @@
 
 namespace MR {
 
-// Returns platform app data directory: %LOCALAPPDATA%\MinRender\ on Windows
+// Returns the per-user data directory (config.json, node_id.txt,
+// minrender.db, submissions\, staging\, logs):
+//   Windows  %USERPROFILE%\minRender   (since 0.5.8 — see the note in the
+//            .cpp: a folder outside AppData so the Store package needs no
+//            unvirtualizedResources capability and the DCC plug-ins, which
+//            run without package identity, see the same files)
+//   macOS    ~/Library/Application Support/MinRender
+//   Linux    $XDG_DATA_HOME/MinRender or ~/.local/share/MinRender
+// Creates it on first call. On Windows the first call also copies a
+// pre-0.5.8 %LOCALAPPDATA%\MinRender folder into the new location (copy,
+// never move: a Store-packaged process cannot delete from the real AppData).
 std::filesystem::path getAppDataDir();
+
+// Windows only: the pre-0.5.8 data directory, %LOCALAPPDATA%\MinRender, if
+// it still exists — the submission watcher keeps polling its submissions\
+// so plug-ins that have not been redeployed yet still submit. Empty on
+// other platforms or when the folder is gone.
+std::filesystem::path getLegacyAppDataDir();
 
 // Creates directory tree if it doesn't exist. Returns true on success.
 bool ensureDir(const std::filesystem::path& path);

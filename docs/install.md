@@ -15,7 +15,7 @@ Install minRender from the [Microsoft Store](https://apps.microsoft.com/detail/9
   <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" style="border: 1px solid #707070; border-radius: 4.5px;"/>
 </a>
 
-Requires **Windows 11** (see Requirements below). For farm nodes you can
+Requires **Windows 10 (version 2004 or later) or Windows 11** (see Requirements below). For farm nodes you can
 install from a terminal without opening the Store:
 
 ```
@@ -24,9 +24,8 @@ winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements
 
 ### Requirements
 
-- **Windows 11**, x64 (any edition). Windows 10 is not supported: the Store
-  package declares Windows 11 as its minimum and will not install on
-  Windows 10 machines, so upgrade any remaining Windows 10 node first.
+- **Windows 10 version 2004 (build 19041) or later, or Windows 11**, x64
+  (any edition).
 - The render application(s) you submit to — Blender, After Effects or Cinema 4D — installed on each node that should render.
 
 The Store package declares firewall rules for HTTP port **8420** and UDP port **4243** and registers a startup task so minRender launches with the machine (toggle it in Task Manager → Startup).
@@ -34,7 +33,8 @@ The Store package declares firewall rules for HTTP port **8420** and UDP port **
 ### Where minRender keeps its data
 
 Everything minRender stores on the machine lives in one per-user folder,
-`%LOCALAPPDATA%\MinRender` (type that into Explorer's address bar):
+`%USERPROFILE%\minRender` — that is `C:\Users\<you>\minRender` (type
+`%USERPROFILE%\minRender` into Explorer's address bar):
 
 | Item | What it is |
 |---|---|
@@ -45,10 +45,17 @@ Everything minRender stores on the machine lives in one per-user folder,
 | `staging\` | frames in flight while a chunk renders; emptied when the chunk finishes |
 | `mr-agent.log` | render agent log |
 
-The folder is deliberately kept outside the Store package's private storage
-so the plug-ins (which run inside Blender, After Effects or Cinema 4D) can
-read the farm settings and write submissions, and so a node reinstalled or
-upgraded keeps its identity.
+The folder is deliberately outside `AppData`, which the Store package
+keeps private, so the plug-ins (which run inside Blender, After Effects or
+Cinema 4D) can read the farm settings and write submissions, and so a node
+reinstalled or upgraded keeps its identity.
+
+**Upgrading from 0.5.7 or earlier:** those versions kept the folder at
+`%LOCALAPPDATA%\MinRender`. The first launch of 0.5.8 copies it to the new
+location (everything except in-flight `staging\` frames) and keeps watching
+the old `submissions\` folder, so plug-ins you have not updated yet still
+submit. Once the plug-ins on your workstations are updated (they come from
+the farm share's `templates\plugins` folder), delete the old folder.
 
 ### Uninstall
 
@@ -56,10 +63,10 @@ Uninstall from **Settings → Apps** (or `winget uninstall --id 9PN4VXDZ3THW`)
 like any Store app. That removes the program, its startup task and firewall
 rules, and the package's private data. The data folder above is left in
 place so your farm settings and node identity survive a reinstall. To remove
-it too, delete `%LOCALAPPDATA%\MinRender`, or from a terminal:
+it too, delete `%USERPROFILE%\minRender`, or from a terminal:
 
 ```
-rmdir /s /q "%LOCALAPPDATA%\MinRender"
+rmdir /s /q "%USERPROFILE%\minRender"
 ```
 
 If you installed the optional [RNDR companion](https://github.com/cbkow/MinRender/tree/main/tools/rndr-companion),

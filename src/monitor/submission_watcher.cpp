@@ -22,6 +22,16 @@ void SubmissionWatcher::init(MonitorApp* app, const fs::path& appDataDir)
 
     std::error_code ec;
     fs::create_directories(m_submissionsDir / "processed", ec);
+
+    const auto legacy = getLegacyAppDataDir();
+    if (!legacy.empty() && legacy != appDataDir)
+    {
+        m_legacySubmissionsDir = legacy / "submissions";
+        MonitorLog::instance().info("job",
+            "DCC submit: also watching the pre-0.5.8 folder "
+            + m_legacySubmissionsDir.string()
+            + " (redeploy the plug-ins to move them to the new folder)");
+    }
 }
 
 void SubmissionWatcher::poll()
@@ -36,11 +46,18 @@ void SubmissionWatcher::poll()
         return;
     m_lastPoll = now;
 
+    pollDir(m_submissionsDir);
+    if (!m_legacySubmissionsDir.empty())
+        pollDir(m_legacySubmissionsDir);
+}
+
+void SubmissionWatcher::pollDir(const fs::path& dir)
+{
     std::error_code ec;
-    if (!fs::is_directory(m_submissionsDir, ec))
+    if (!fs::is_directory(dir, ec))
         return;
 
-    for (auto& entry : fs::directory_iterator(m_submissionsDir, ec))
+    for (auto& entry : fs::directory_iterator(dir, ec))
     {
         if (!entry.is_regular_file(ec)) continue;
         if (entry.path().extension() != ".json") continue;

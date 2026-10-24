@@ -30,7 +30,12 @@ if ($t) {
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
     Where-Object { $_.CommandLine -like '*rndr-companion.ps1*' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; Write-Host "stopped stray companion pid $($_.ProcessId)" }
-$dest = Join-Path (Join-Path $env:LOCALAPPDATA 'MinRender') 'companion'
+# Both the current and the pre-0.5.8 data folder, whichever holds a copy.
+foreach ($base in @((Join-Path $env:USERPROFILE 'minRender'), (Join-Path $env:LOCALAPPDATA 'MinRender'))) {
+    $d = Join-Path $base 'companion'
+    if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force; Write-Host "removed $d" }
+}
+$dest = Join-Path (Join-Path $env:USERPROFILE 'minRender') 'companion'
 if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force; Write-Host "removed $dest" }
 if (Test-Path -LiteralPath $compKey) { Remove-Item -LiteralPath $compKey -Recurse -Force }
-Write-Host 'config and log left in %LOCALAPPDATA%\MinRender'
+Write-Host 'config and log left in %USERPROFILE%\minRender'

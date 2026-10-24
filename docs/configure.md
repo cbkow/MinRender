@@ -23,7 +23,7 @@ Templates have a `tags_required` field — a node only picks up a job if it carr
 
 ## Local staging
 
-If your sync root is a synced folder (LucidLink, Dropbox, Synology Drive, etc.) you should enable **Settings → Enable staging**. With it on, MinRender renders into a temp directory under `%localappdata%\MinRender` and only copies finished chunks into the sync root. This avoids the classic file-contention issues those services cause when many machines write to the same path at once.
+If your sync root is a synced folder (LucidLink, Dropbox, Synology Drive, etc.) you should enable **Settings → Enable staging**. With it on, MinRender renders into a temp directory under `%USERPROFILE%\minRender` and only copies finished chunks into the sync root. This avoids the classic file-contention issues those services cause when many machines write to the same path at once.
 
 ![MinRender local staging](/images/mr003.jpg)
 

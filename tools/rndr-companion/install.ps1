@@ -3,7 +3,7 @@
   Install the minRender RNDR companion as a per-user logon task.
 
 .DESCRIPTION
-  - Copies rndr-companion.ps1 to %LOCALAPPDATA%\MinRender\companion\
+  - Copies rndr-companion.ps1 to %USERPROFILE%\minRender\companion\
   - Writes a default rndr-companion.json next to minRender's config.json if
     none exists (edit it afterwards; the task re-reads it on restart)
   - Sets HKCU\Software\MinRender\Companion\Enabled = 1
@@ -25,7 +25,16 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $src     = Join-Path $PSScriptRoot 'rndr-companion.ps1'
-$appData = Join-Path $env:LOCALAPPDATA 'MinRender'
+# minRender's data folder: %USERPROFILE%\minRender since 0.5.8, with the
+# pre-0.5.8 %LOCALAPPDATA%\MinRender as the fallback while an older app
+# version is installed (same rule as the DCC plug-ins).
+function Get-MinRenderDataDir {
+    $new = Join-Path $env:USERPROFILE 'minRender'
+    $old = Join-Path $env:LOCALAPPDATA 'MinRender'
+    if ((Test-Path -LiteralPath (Join-Path $new 'config.json')) -or -not (Test-Path -LiteralPath $old)) { return $new }
+    return $old
+}
+$appData = Get-MinRenderDataDir
 $dest    = Join-Path $appData 'companion'
 $script  = Join-Path $dest 'rndr-companion.ps1'
 $config  = Join-Path $appData 'rndr-companion.json'

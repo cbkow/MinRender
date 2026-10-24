@@ -23,7 +23,7 @@ If the key is absent it polls
 port comes from minRender's `config.json`. The key is absent on app
 versions before 0.5.6, and also on **Microsoft Store installs**: the Store
 package keeps its registry writes virtualized (only
-`%LOCALAPPDATA%\MinRender` is shared with other software), so the key is
+`%USERPROFILE%\minRender` is shared with other software), so the key is
 visible to minRender alone and the companion runs on the HTTP poll. The
 only practical difference is up to a second of extra latency before a
 render start is noticed.
@@ -63,12 +63,12 @@ nothing else stops RNDR during renders.
 
 ## Configuration
 
-`%LOCALAPPDATA%\MinRender\rndr-companion.json` (created with defaults by
+`%USERPROFILE%\minRender\rndr-companion.json` (created with defaults by
 the installer; the task re-reads it on restart):
 
 | key | default | |
 |---|---|---|
-| `rndr_path` | `%LOCALAPPDATA%\MinRender\rn\rndrclient.exe` | launcher; it spawns `TCPSVCS.EXE` |
+| `rndr_path` | `%USERPROFILE%\minRender\rn\rndrclient.exe` | launcher; it spawns `TCPSVCS.EXE` |
 | `startup_delay_seconds` | 120 | settle after minRender comes up |
 | `cooldown_seconds` | 120 | after a render, before relaunch |
 | `dcc_gate` | false | hold off while a creative app runs |
@@ -82,7 +82,7 @@ the installer; the task re-reads it on restart):
 - **Pause / resume** without touching the task:
   `reg add HKCU\Software\MinRender\Companion /v Enabled /t REG_DWORD /d 0 /f`
   (1 to resume). Pausing stops the client; the companion keeps running idle.
-- **Log:** `%LOCALAPPDATA%\MinRender\rndr-companion.log`, one line per
+- **Log:** `%USERPROFILE%\minRender\rndr-companion.log`, one line per
   transition, truncated when it passes 2 MB.
 - **Status:** `reg query HKCU\Software\MinRender\Companion` shows `State`,
   `Rndr` and `LastSeen` (ms since epoch, written every tick); `reg query

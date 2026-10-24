@@ -91,13 +91,24 @@
 
     // -- Get local submissions directory --------------------------------------
 
-    function getSubmissionsDir() {
-        var subDir;
+    // -- minRender's data folder ----------------------------------------------
+    // Windows, minRender 0.5.8+: %USERPROFILE%\minRender (a folder outside
+    // AppData, so the Microsoft Store build and this script see the same
+    // files). Falls back to the pre-0.5.8 %LOCALAPPDATA%\MinRender while an
+    // older app version is installed. macOS: ~/Library/Application Support.
+    function getDataDir() {
         if ($.os.indexOf("Windows") !== -1) {
-            subDir = Folder.userData.parent.fsName + "\\Local\\MinRender\\submissions";
-        } else {
-            subDir = Folder.userData.fsName + "/MinRender/submissions";
+            var newDir = Folder("~").fsName + "\\minRender";
+            var oldDir = Folder.userData.parent.fsName + "\\Local\\MinRender";
+            if (new File(newDir + "\\config.json").exists || !new Folder(oldDir).exists)
+                return newDir;
+            return oldDir;
         }
+        return Folder.userData.fsName + "/MinRender";
+    }
+
+    function getSubmissionsDir() {
+        var subDir = getDataDir() + ($.os.indexOf("Windows") !== -1 ? "\\submissions" : "/submissions");
         var folder = new Folder(subDir);
         if (!folder.exists) folder.create();
         return subDir;
@@ -115,12 +126,7 @@
 
         // -- Find MinRender config --------------------------------------------
 
-        var configPath;
-        if ($.os.indexOf("Windows") !== -1) {
-            configPath = Folder.userData.parent.fsName + "\\Local\\MinRender\\config.json";
-        } else {
-            configPath = Folder.userData.fsName + "/MinRender/config.json";
-        }
+        var configPath = getDataDir() + ($.os.indexOf("Windows") !== -1 ? "\\config.json" : "/config.json");
 
         var configText = readTextFile(configPath);
         if (!configText) {

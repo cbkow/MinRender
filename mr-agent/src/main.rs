@@ -75,13 +75,14 @@ fn ensure_single_instance(_node_id: &str) -> MutexGuard {
     MutexGuard
 }
 
-/// Resolve the log file path: %LOCALAPPDATA%/MinRender/mr-agent.log (Windows)
+/// Resolve the log file path: %USERPROFILE%/minRender/mr-agent.log (Windows,
+/// the app's data folder since 0.5.8 — see core/platform.cpp getAppDataDir)
 /// or ~/.local/share/MinRender/mr-agent.log (other).
 fn log_file_path() -> Option<std::path::PathBuf> {
     #[cfg(windows)]
     {
-        if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            let dir = std::path::PathBuf::from(local).join("MinRender");
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            let dir = std::path::PathBuf::from(profile).join("minRender");
             let _ = std::fs::create_dir_all(&dir);
             return Some(dir.join("mr-agent.log"));
         }

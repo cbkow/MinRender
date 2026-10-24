@@ -26,7 +26,7 @@ Full manual: **[minrender.com](https://minrender.com)** — install, configurati
   <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
 </a>
 
-Requires Windows 11 (x64). Windows 10 is not supported.
+Requires Windows 10 (version 2004 or later) or Windows 11, x64.
 
 ### macOS
 

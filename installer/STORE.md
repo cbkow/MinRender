@@ -69,7 +69,7 @@ pack step itself (`make_msix.ps1`) is fine over SSH.
 
 Verified end to end on 2026-10-17 (first run of this flow): makeappx
 accepted the manifest unchanged; the registered package launched from the
-loose layout, read the real `%LOCALAPPDATA%\MinRender\config.json` with no
+loose layout, read the real data folder's `config.json` with no
 virtualized copy under `Packages\<pfn>\LocalCache`, published the node
 state key, answered `/api/status`, got both manifest firewall rules
 (profile Any), and the startup task was registered. (The headless alias
@@ -78,10 +78,12 @@ manifest change:
 
 - App launches, tray works, farm start binds 8420/4243 with **no firewall
   prompt** (the manifest rules applied).
-- `%LOCALAPPDATA%\MinRender` is used directly (the one Flexible
-  Virtualization exclusion): existing node identity and config are picked
-  up, files written there are visible to a normal shell, and nothing
-  appears under `%LOCALAPPDATA%\Packages\<pfn>\LocalCache\Local\MinRender`.
+- `%USERPROFILE%\minRender` is the data folder (since 0.5.8 — outside
+  AppData, so MSIX never virtualizes it and no capability is declared):
+  existing node identity and config are picked up (copied from a
+  pre-0.5.8 `%LOCALAPPDATA%\MinRender` on first launch), files written
+  there are visible to a normal shell, and nothing appears under
+  `%LOCALAPPDATA%\Packages\<pfn>\LocalCache`.
 - `HKCU\Software\MinRender\Node` is **not** visible in regedit while the
   app runs (registry stays virtualized); the RNDR companion, if installed,
   logs that it is on the HTTP poll.
@@ -114,17 +116,10 @@ Restricted-capability justifications (Submission → Restricted capabilities):
   child processes on the user's own machines to render frame ranges, and
   supervises a bundled render agent. No code is downloaded or executed
   beyond those installed applications."
-- **unvirtualizedResources** — the text below (the Partner Center field is
-  short, so this is deliberately compact). It answers, in order, the four
-  points certification asked for when it denied 0.5.6.0 (see "Certification
-  history"); keep that structure in any future edit, because a
-  reconsideration "without new or expanded information" is denied again.
-
-  > Win32 render-farm manager. Scoped with Windows Flexible Virtualization to ONE per-user folder, %LOCALAPPDATA%\MinRender (virtualization:ExcludedDirectory). No registry keys; HKCU stays virtualized. Minimum OS is Windows 11 so the exclusion is honored on every device. WHY: our Blender, After Effects and Cinema 4D submission plug-ins run inside those applications (not launched by us, no package identity), read config.json in that folder to find the farm and drop job files into submissions\ for minRender to pick up. Submitting from those apps is the core function and cannot see virtualized AppData. node_id.txt there keeps a node's farm identity across upgrades. FLEXIBLE VIRTUALIZATION: evaluated and used; per Microsoft's docs it still requires this capability. UNINSTALL: removes the app, startup task, firewall rules and all virtualized data. Only %LOCALAPPDATA%\MinRender remains (config.json, node_id.txt, minrender.db, submissions\, staging\); removal is documented at minrender.com/install/#uninstall (delete the folder). Nothing is written to HKLM, Program Files or ProgramData.
-
-  Partner Center flags this capability as needing approval on upload — that
-  is the normal path; the justification is what gets it approved during
-  certification.
+- **unvirtualizedResources** — no longer declared (0.5.8+). The data
+  folder moved out of AppData (`%USERPROFILE%\minRender`), which is all
+  the plug-in hand-off ever needed; see "Certification history" for the
+  two submissions that argued for the capability.
 
 ## Submission
 
@@ -152,6 +147,15 @@ justifications from "Listing text" above into the submission's
   <https://learn.microsoft.com/windows/msix/desktop/flexible-virtualization>.
   Resubmitted as **0.5.7.0** (version bumped so the Store sees a clean new
   package rather than a reconsideration of the denied one).
+- **2026-10-23, 0.5.7.0: withdrawn** by us while in certification. Rather
+  than keep arguing for a restricted capability, 0.5.8 moves the data
+  folder to `%USERPROFILE%\minRender`, outside the AppData tree MSIX
+  virtualizes, so the plug-ins see the same files with no capability at
+  all. The manifest drops `unvirtualizedResources`, the Flexible
+  Virtualization block and the Windows 11 floor (MinVersion back to
+  10.0.19041). First launch copies a pre-0.5.8 folder over and the app
+  keeps polling the old `submissions\` until the plug-ins are redeployed.
+  Only `runFullTrust` remains to justify.
 
 Certification typically completes in 1–3 business days. If a tester asks
 about the LAN/process model, `SECURITY.md` is the reference: authenticated
@@ -161,13 +165,16 @@ timing against the farm.
 
 ## Farm rollout
 
-The Store build requires **Windows 11** (see Certification history).
+The Store build runs on **Windows 10 (2004+) and Windows 11**.
 
 Per node, one-time migration from a pre-0.5.6 direct install:
 
 1. Exit minRender, uninstall the old version (Settings → Apps). Node
-   identity/config in `%APPDATA%\MinRender` and the farm share are untouched
-   by uninstall, and the Store build reads the same paths.
+   identity/config in `%LOCALAPPDATA%\MinRender` and the farm share are
+   untouched by uninstall; the first launch of 0.5.8 copies that folder to
+   `%USERPROFILE%\minRender` (everything but `staging\`) and keeps
+   watching the old `submissions\` until the DCC plug-ins are redeployed
+   from the share. Delete the old folder once they are.
 2. Install from the Store, or headless via winget (no Microsoft account
    needed for free apps):
    `winget install --id 9PN4VXDZ3THW --source msstore --accept-package-agreements`

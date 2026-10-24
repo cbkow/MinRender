@@ -88,3 +88,4 @@ mr-agent/target/
 # Internal planning notes
 notes/
 .claude/
+__pycache__/

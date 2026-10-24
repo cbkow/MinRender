@@ -74,10 +74,11 @@ ApplicationWindow {
         window.visible = false
     }
 
-    // Persisted split sizes + panel visibility across launches.
-    // QtCore's Settings resolves to the same %LOCALAPPDATA%/MinRender
-    // location QCoreApplication::setOrganizationName("MinRender") establishes
-    // in main_qt.cpp, so this piggybacks on the existing config root.
+    // Persisted split sizes + panel visibility across launches. QtCore's
+    // Settings is QSettings under the organization name main_qt.cpp sets
+    // (the registry on Windows, a plist on macOS) — UI state only, nothing
+    // another program needs, so it may live in the Store package's
+    // virtualized store.
     Settings {
         id: panelSettings
         category: "panels"

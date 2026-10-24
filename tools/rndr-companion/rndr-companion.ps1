@@ -21,8 +21,8 @@
                      every wake (at most 5 s latency).
     State, Rndr, LastSeen are written by this script for observability.
 
-  Configuration: %LOCALAPPDATA%\MinRender\rndr-companion.json (see README).
-  Log:           %LOCALAPPDATA%\MinRender\rndr-companion.log
+  Configuration: %USERPROFILE%\minRender\rndr-companion.json (see README).
+  Log:           %USERPROFILE%\minRender\rndr-companion.log
 
   Policy when minRender is unreachable (not running, or the Pid in the key
   is dead and the HTTP fallback fails): hold steady. Nothing is launched and
@@ -40,7 +40,16 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2
 
 # ---------------------------------------------------------------- paths ---
-$AppData      = Join-Path $env:LOCALAPPDATA 'MinRender'
+# minRender's data folder: %USERPROFILE%\minRender since 0.5.8, with the
+# pre-0.5.8 %LOCALAPPDATA%\MinRender as the fallback while an older app
+# version is installed (same rule as the DCC plug-ins).
+function Get-MinRenderDataDir {
+    $new = Join-Path $env:USERPROFILE 'minRender'
+    $old = Join-Path $env:LOCALAPPDATA 'MinRender'
+    if ((Test-Path -LiteralPath (Join-Path $new 'config.json')) -or -not (Test-Path -LiteralPath $old)) { return $new }
+    return $old
+}
+$AppData      = Get-MinRenderDataDir
 $ConfigPath   = Join-Path $AppData 'rndr-companion.json'
 $LogPath      = Join-Path $AppData 'rndr-companion.log'
 $NodeKeyPath  = 'HKCU:\Software\MinRender\Node'

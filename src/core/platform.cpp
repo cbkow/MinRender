@@ -23,18 +23,99 @@
 
 namespace MR {
 
+#ifdef _WIN32
+namespace {
+
+std::filesystem::path knownFolder(REFKNOWNFOLDERID id)
+{
+    wchar_t* p = nullptr;
+    std::filesystem::path out;
+    if (SUCCEEDED(SHGetKnownFolderPath(id, 0, nullptr, &p)) && p)
+        out = p;
+    CoTaskMemFree(p);
+    return out;
+}
+
+// One-time migration from the pre-0.5.8 location. Copies everything except
+// staging\ (frames in flight — transient, potentially large) and only when
+// the new folder has no config.json yet, so a user who already moved on is
+// never overwritten. Copy, never move: the old folder may be read through
+// MSIX virtualization, where a delete only leaves a tombstone. The old
+// folder stays until the user removes it (documented on the install page).
+void migrateLegacyDataDir(const std::filesystem::path& legacy,
+                          const std::filesystem::path& dir)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(legacy, ec)) return;
+    if (!fs::is_regular_file(legacy / "config.json", ec)) return;
+    if (fs::exists(dir / "config.json", ec)) return;
+
+    for (const auto& entry : fs::directory_iterator(legacy, ec))
+    {
+        const auto name = entry.path().filename();
+        if (name == L"staging") continue;
+        const auto target = dir / name;
+        if (entry.is_directory(ec))
+            fs::copy(entry.path(), target,
+                     fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+        else if (entry.is_regular_file(ec))
+            fs::copy_file(entry.path(), target, fs::copy_options::skip_existing, ec);
+        if (ec)
+            std::cerr << "[Platform] Migration: could not copy " << name.string()
+                      << ": " << ec.message() << std::endl;
+    }
+    std::cerr << "[Platform] Migrated data folder from " << legacy.string()
+              << " to " << dir.string() << " (the old folder was left in place)"
+              << std::endl;
+}
+
+} // namespace
+#endif
+
+std::filesystem::path getLegacyAppDataDir()
+{
+#ifdef _WIN32
+    const auto local = knownFolder(FOLDERID_LocalAppData);
+    if (local.empty()) return {};
+    const auto dir = local / L"MinRender";
+    std::error_code ec;
+    return std::filesystem::is_directory(dir, ec) ? dir : std::filesystem::path();
+#else
+    return {};
+#endif
+}
+
 std::filesystem::path getAppDataDir()
 {
 #ifdef _WIN32
-    wchar_t* appData = nullptr;
-    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &appData)))
+    // %USERPROFILE%\minRender — deliberately NOT under AppData. MSIX
+    // redirects a packaged app's AppData writes into the package's private
+    // store, invisible to the Blender / After Effects / Cinema 4D plug-ins
+    // (which run inside those apps, without package identity). Opting the
+    // folder out needed the restricted unvirtualizedResources capability
+    // and a Windows 11 floor; Store certification denied it (0.5.6.0) and
+    // the resubmission was withdrawn. The user profile root is not
+    // virtualized, so no capability is needed and Windows 10 is back.
+    // Not Documents either: OneDrive's Known Folder Move would sync
+    // submissions and config across machines and fight the app over
+    // file locks.
+    const auto profile = knownFolder(FOLDERID_Profile);
+    if (!profile.empty())
     {
-        std::filesystem::path dir = std::filesystem::path(appData) / L"MinRender";
-        CoTaskMemFree(appData);
+        std::filesystem::path dir = profile / L"minRender";
+        static bool migrated = false;
+        const bool fresh = !std::filesystem::exists(dir);
         ensureDir(dir);
+        if (!migrated)
+        {
+            migrated = true;
+            const auto local = knownFolder(FOLDERID_LocalAppData);
+            if (!local.empty() && (fresh || !std::filesystem::exists(dir / "config.json")))
+                migrateLegacyDataDir(local / L"MinRender", dir);
+        }
         return dir;
     }
-    CoTaskMemFree(appData);
 #elif defined(__APPLE__)
     const char* home = std::getenv("HOME");
     if (home)

@@ -15,21 +15,20 @@
 
   - runFullTrust: Win32 Qt app that spawns DCC renderers and the mr-agent
     sidecar as child processes.
-  - unvirtualizedResources, scoped with Flexible Virtualization: ONLY
-    %LOCALAPPDATA%\MinRender is excluded from file-system write
-    virtualization (virtualization:ExcludedDirectories below). That folder
-    is the hand-off point with software outside the package: the Blender,
-    After Effects and Cinema 4D submission plug-ins (running inside those
-    applications, not launched by us) read config.json there and drop
-    job JSON into submissions\, and nodes migrated from the pre-0.5.6
-    installer keep node_id.txt. Everything else (the package hive,
-    HKCU\Software\MinRender\Node, any other AppData writes) stays
-    virtualized and is removed on uninstall. The wholesale
-    desktop6:*WriteVirtualization=disabled properties were rejected in
-    certification (2026-10-22) as broader than needed, so they are gone.
-    The per-location syntax is Windows 11 only, hence MinVersion 22000:
-    on an older OS it would be ignored and the plug-in hand-off would
-    silently break, so the package refuses to install there instead.
+  - NO unvirtualizedResources (since 0.5.8). The app's data folder is
+    %USERPROFILE%\minRender, outside AppData, so MSIX file-system
+    virtualization never touches it: the Blender, After Effects and
+    Cinema 4D submission plug-ins (running inside those applications,
+    without package identity) read config.json there and drop job JSON
+    into submissions\ with no capability at all. History: 0.5.6.0
+    disabled virtualization wholesale and was denied (2026-10-22); 0.5.7.0
+    scoped it to one folder with Flexible Virtualization (Windows 11
+    only) and was withdrawn before certification finished (2026-10-23)
+    in favour of moving the folder. Registry writes
+    (HKCU\Software\MinRender\Node, QSettings) stay virtualized and are
+    removed on uninstall; the RNDR companion falls back to its HTTP poll.
+  - MinVersion 10.0.19041 (Windows 10 2004): nothing in the package needs
+    Windows 11 any more.
   - windows.firewallRules: inbound
     TCP 8420 (HTTP mesh) + UDP 4243 (multicast heartbeats), all profiles,
     matching the deliberate any-remote-address stance in SECURITY.md.
@@ -52,9 +51,8 @@
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:desktop2="http://schemas.microsoft.com/appx/manifest/desktop/windows10/2"
-  xmlns:virtualization="http://schemas.microsoft.com/appx/manifest/virtualization/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 desktop desktop2 virtualization rescap">
+  IgnorableNamespaces="uap uap3 desktop desktop2 rescap">
 
   <Identity
     Name="$MRIDENTITYNAME$"
@@ -66,14 +64,6 @@
     <DisplayName>minRender</DisplayName>
     <PublisherDisplayName>$MRPUBLISHERDISPLAY$</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
-    <!-- Flexible Virtualization: the one folder shared with the DCC
-         plug-ins is unvirtualized; all other AppData and HKCU writes stay
-         virtualized (Windows 11+, see design notes). -->
-    <virtualization:FileSystemWriteVirtualization>
-      <virtualization:ExcludedDirectories>
-        <virtualization:ExcludedDirectory>$(KnownFolder:LocalAppData)\MinRender</virtualization:ExcludedDirectory>
-      </virtualization:ExcludedDirectories>
-    </virtualization:FileSystemWriteVirtualization>
   </Properties>
 
   <Resources>
@@ -82,7 +72,7 @@
 
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop"
-                        MinVersion="10.0.22000.0"
+                        MinVersion="10.0.19041.0"
                         MaxVersionTested="10.0.26100.0" />
   </Dependencies>
 
@@ -90,7 +80,6 @@
     <Capability Name="internetClientServer" />
     <Capability Name="privateNetworkClientServer" />
     <rescap:Capability Name="runFullTrust" />
-    <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 
   <Applications>

@@ -29,7 +29,15 @@ from bpy.types import Panel, Operator, PropertyGroup
 def get_config_dir():
     sys = platform.system()
     if sys == "Windows":
-        return os.path.join(os.environ.get("LOCALAPPDATA", ""), "MinRender")
+        # minRender 0.5.8+ keeps its data in %USERPROFILE%\minRender (a folder
+        # outside AppData, so the Microsoft Store build and this plug-in see
+        # the same files). Fall back to the pre-0.5.8 %LOCALAPPDATA%\MinRender
+        # while an older app version is installed.
+        new = os.path.join(os.environ.get("USERPROFILE", ""), "minRender")
+        old = os.path.join(os.environ.get("LOCALAPPDATA", ""), "MinRender")
+        if os.path.isfile(os.path.join(new, "config.json")) or not os.path.isdir(old):
+            return new
+        return old
     elif sys == "Darwin":
         return os.path.expanduser("~/Library/Application Support/MinRender")
     else:
