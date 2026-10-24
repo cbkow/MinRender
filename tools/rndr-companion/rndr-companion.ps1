@@ -139,6 +139,19 @@ function Read-Config {
             } catch { }
         }
     }
+    # 0.5.8 moved the data folder. A config copied over by the app's
+    # migration (or written by an older installer) still names the client
+    # under %LOCALAPPDATA%\MinRender; when that copy is gone, use the same
+    # relative path in the new folder (the migration copied rn\ too).
+    $oldDir = Join-Path $env:LOCALAPPDATA 'MinRender'
+    $p = [string]$cfg.rndr_path
+    if ($p.StartsWith($oldDir + '\', [StringComparison]::OrdinalIgnoreCase) -and $AppData -ne $oldDir) {
+        $moved = Join-Path $AppData $p.Substring($oldDir.Length + 1)
+        if (-not (Test-Path -LiteralPath $p) -and (Test-Path -LiteralPath $moved)) {
+            Write-Log "config: rndr_path $p is gone; using $moved (0.5.8 data folder)"
+            $cfg.rndr_path = $moved
+        }
+    }
     # Normalise the block list to bare lower-case image names.
     $cfg.block_processes = @($cfg.block_processes | ForEach-Object { ([string]$_).ToLowerInvariant() })
     return $cfg

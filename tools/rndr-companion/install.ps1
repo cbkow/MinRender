@@ -44,9 +44,10 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item -LiteralPath $src -Destination $script -Force
 Write-Host "installed  $script"
 
+# rndr_path is left out of a fresh config: the companion then defaults it
+# to <data folder>\rn\rndrclient.exe, so it follows the data folder.
 if (-not (Test-Path -LiteralPath $config)) {
     [ordered]@{
-        rndr_path             = (Join-Path $appData 'rn\rndrclient.exe')
         startup_delay_seconds = 120
         cooldown_seconds      = 120
         dcc_gate              = $false
@@ -56,6 +57,23 @@ if (-not (Test-Path -LiteralPath $config)) {
     Write-Host "wrote      $config (defaults)"
 } else {
     Write-Host "kept       $config"
+    # A config the 0.5.8 migration copied over may still point the client
+    # into the old %LOCALAPPDATA%\MinRender. Repoint it to the same place in
+    # the new folder when the client was copied there, so deleting the old
+    # folder later does not break the companion.
+    $oldDir = Join-Path $env:LOCALAPPDATA 'MinRender'
+    $j = Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
+    $p = [string]$j.rndr_path
+    if ($p -and $appData -ne $oldDir -and $p.StartsWith($oldDir + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        $moved = Join-Path $appData $p.Substring($oldDir.Length + 1)
+        if (Test-Path -LiteralPath $moved) {
+            $j.rndr_path = $moved
+            $j | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding ASCII
+            Write-Host "repointed  rndr_path -> $moved"
+        } else {
+            Write-Host "note       rndr_path still under $oldDir (no copy at $moved); keep that folder or fix rndr_path"
+        }
+    }
 }
 
 $compKey = 'HKCU:\Software\MinRender\Companion'

@@ -61,6 +61,15 @@ the client itself before the task is torn down.
 Roll it out **before** a dual-mode node upgrades to 0.5.6; after the upgrade
 nothing else stops RNDR during renders.
 
+**Upgrading a node to 0.5.8:** minRender's data folder moves from
+`%LOCALAPPDATA%\MinRender` to `%USERPROFILE%\minRender`, and the first 0.5.8
+launch copies the old folder (companion script, config, `rn\` client)
+across. Re-run `install.ps1` after the upgrade: it moves the scheduled task
+to the new folder's copy of the script and repoints a `rndr_path` that still
+names the old folder. Until then the task keeps running the old copy, which
+still works because the old folder stays in place. Do this **before**
+deleting the old folder.
+
 ## Configuration
 
 `%USERPROFILE%\minRender\rndr-companion.json` (created with defaults by
