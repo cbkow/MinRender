@@ -83,6 +83,16 @@ hidden, with no run-time limit and restart-on-failure, then starts it. Run
 `uninstall.ps1` to remove it; that disables the companion first so it stops
 the client itself before the task is torn down.
 
+If the node had the DCC gate on in the app itself (0.5.4/0.5.5:
+`rndr_dcc_gate` / `rndr_block_processes`), the installer turns `dcc_gate`
+on with the same block list. It reads the current `config.json` and the
+pre-0.5.8 `%LOCALAPPDATA%\MinRender\config.json`; apps from 0.5.6 on drop
+those keys whenever they save, so the old folder's copy is usually the one
+that still has them. This happens once per user
+(`HKCU\Software\MinRender\Companion\DccGateMigrated`) and never turns
+the gate off, so re-running the installer keeps your own edits. Nodes
+installed before this check: re-run `install.ps1`.
+
 Roll it out **before** a dual-mode node upgrades to 0.5.6; after the upgrade
 nothing else stops RNDR during renders.
 

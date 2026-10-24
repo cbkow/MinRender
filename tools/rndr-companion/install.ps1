@@ -6,6 +6,9 @@
   - Copies rndr-companion.ps1 to %USERPROFILE%\minRender\companion\
   - Writes a default rndr-companion.json next to minRender's config.json if
     none exists (edit it afterwards; the task re-reads it on restart)
+  - Carries the DCC gate over from the app's own 0.5.4/0.5.5 settings
+    (rndr_dcc_gate / rndr_block_processes in config.json, usually the old
+    %LOCALAPPDATA%\MinRender copy) - once, and only to turn it on
   - -KeepAlive / -NoRndr switch the minRender keepalive on and the RNDR
     supervision off in that config (new or existing); without them the
     config's own values stay
@@ -85,6 +88,39 @@ if (-not (Test-Path -LiteralPath $config)) {
     }
 }
 
+$compKey = 'HKCU:\Software\MinRender\Companion'
+if (-not (Test-Path -LiteralPath $compKey)) { New-Item -Path $compKey -Force | Out-Null }
+
+# Carry over the DCC gate a node had in the app itself (0.5.4/0.5.5:
+# rndr_dcc_gate / rndr_block_processes in config.json). Apps from 0.5.6 on
+# rewrite config.json without those keys on every clean exit, so the
+# untouched copy is usually the pre-0.5.8 %LOCALAPPDATA%\MinRender one the
+# data-folder move left behind. Done once (DccGateMigrated), and only to
+# turn the gate ON, so later edits to rndr-companion.json are never undone.
+$migrated = $false
+try { $migrated = [int](Get-ItemProperty -LiteralPath $compKey -Name DccGateMigrated -ErrorAction Stop).DccGateMigrated -ne 0 } catch { }
+if (-not $migrated) {
+    $legacy = $null
+    foreach ($f in @((Join-Path $appData 'config.json'), (Join-Path (Join-Path $env:LOCALAPPDATA 'MinRender') 'config.json')) | Select-Object -Unique) {
+        if (-not (Test-Path -LiteralPath $f)) { continue }
+        try { $a = Get-Content -LiteralPath $f -Raw | ConvertFrom-Json } catch { continue }
+        if ($a.PSObject.Properties['rndr_dcc_gate']) { $legacy = @{ App = $a; Path = $f }; break }
+    }
+    if ($legacy) {
+        if ([bool]$legacy.App.rndr_dcc_gate) {
+            $j = Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
+            $j | Add-Member -NotePropertyName dcc_gate -NotePropertyValue $true -Force
+            $block = @($legacy.App.rndr_block_processes | Where-Object { $_ })
+            if ($block.Count -gt 0) { $j | Add-Member -NotePropertyName block_processes -NotePropertyValue $block -Force }
+            $j | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding ASCII
+            Write-Host ("carried    dcc_gate = true, block_processes = {0} (from {1})" -f ($block -join ', '), $legacy.Path)
+        } else {
+            Write-Host "checked    app had the DCC gate off ($($legacy.Path)); nothing to carry over"
+        }
+        New-ItemProperty -LiteralPath $compKey -Name DccGateMigrated -Value 1 -PropertyType DWord -Force | Out-Null
+    }
+}
+
 if ($KeepAlive -or $NoRndr) {
     $j = Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
     if ($KeepAlive) { $j | Add-Member -NotePropertyName app_keepalive -NotePropertyValue $true -Force; Write-Host 'set        app_keepalive = true' }
@@ -92,8 +128,6 @@ if ($KeepAlive -or $NoRndr) {
     $j | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding ASCII
 }
 
-$compKey = 'HKCU:\Software\MinRender\Companion'
-if (-not (Test-Path -LiteralPath $compKey)) { New-Item -Path $compKey -Force | Out-Null }
 New-ItemProperty -LiteralPath $compKey -Name Enabled -Value 1 -PropertyType DWord -Force | Out-Null
 
 # Hidden launch. conhost --headless allocates no console at all; the
