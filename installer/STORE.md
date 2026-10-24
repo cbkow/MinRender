@@ -121,6 +121,23 @@ Restricted-capability justifications (Submission → Restricted capabilities):
   the plug-in hand-off ever needed; see "Certification history" for the
   two submissions that argued for the capability.
 
+### Notes for certification (0.5.8.0)
+
+Paste into Submission options → **Notes for certification** (~200 words).
+Update the first paragraph each release.
+
+```
+Changes since the 0.5.6.0 denial: unvirtualizedResources and all virtualization settings are removed. App data now lives in a normal per-user folder, %USERPROFILE%\minRender. Only runFullTrust remains.
+
+minRender is a render-farm manager for small studios. It coordinates render jobs across machines on the user's own LAN and launches render apps already installed there (Blender, After Effects, Cinema 4D). No account or internet service is needed.
+
+To test without a farm: open the menu (top-left icon) > Settings, set "Sync root" to any empty local folder and save. The machine becomes a one-node farm, shown in the title bar with a LEADER badge. New Job opens the submission form; actual rendering needs one of the render apps installed.
+
+Expected behavior: closing the window hides the app to the tray icon (quit via tray > Exit). Declared firewall rules (TCP 8420, UDP 4243) allow LAN peer discovery without a prompt. A startup task launches it minimized at sign-in.
+
+Uninstall removes the app, startup task and firewall rules. %USERPROFILE%\minRender is kept so a reinstall keeps farm settings; removal is documented at https://minrender.com/install/#uninstall.
+```
+
 ## Submission
 
 Upload the `.msix` in a new Partner Center submission and paste the two
