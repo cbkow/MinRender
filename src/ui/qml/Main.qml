@@ -9,23 +9,17 @@ ApplicationWindow {
 
     width: 1440
     height: 900
-    // The chromeless window (2026-10-23, src/ui/chrome/WindowChrome.h — the
-    // minNotes / ufb model): the content extends under a transparent title
-    // bar on both platforms (Qt 6.9+'s ExpandedClientAreaHint +
-    // NoTitleBarBackgroundHint) and the title row below is the title bar.
-    // macOS keeps the native traffic lights (the row insets past them).
-    // Windows: Qt's own expanded-client-area handling — no painted top
-    // border, the DWM frame's shadow and corners, Qt draws and hit-tests the
-    // Windows 11 caption buttons (CustomizeWindowHint + the min / max /
-    // close hints, no WindowTitleHint) and any press on the row no item
-    // accepts is a native caption drag. BEFORE `visible` — the hints must be
-    // in place at creation.
-    flags: !windowChrome.chromeless ? Qt.Window
-         : windowChrome.nativeLights ? (Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint)
-         : (Qt.Window | Qt.CustomizeWindowHint | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint
-            | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint)
+    // The chromeless window (macOS only, src/ui/chrome/WindowChrome.h): the
+    // content extends under a transparent title bar (Qt 6.9+'s
+    // ExpandedClientAreaHint + NoTitleBarBackgroundHint), the native
+    // traffic lights stay and the title row below is the title bar.
+    // Windows keeps its native frame and title bar; the row is a toolbar
+    // under it. BEFORE `visible` — the hints must be in place at creation.
+    flags: windowChrome.chromeless
+         ? (Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint)
+         : Qt.Window
     // ApplicationWindow pads its content by the safe area unless told
-    // otherwise — the title row goes UNDER the lights / caption buttons.
+    // otherwise — the title row goes UNDER the traffic lights (macOS).
     topPadding: 0
     // startMinimized: context property from main_qt.cpp (--minimized flag,
     // set by the launch-at-login paths). The tray icon restores the window.
@@ -34,12 +28,9 @@ ApplicationWindow {
     // text is hidden by WindowChrome; the row shows the hostname instead.
     title: qsTr("minRender Monitor")
 
-    // The OS's own controls inside the client area, as widths anything laid
-    // over the top edge must keep clear of: the traffic lights at the left
-    // on macOS (hidden in fullscreen), Qt's caption buttons at the right on
-    // Windows.
+    // The traffic lights inside the client area (macOS, hidden in
+    // fullscreen): the width the title row's left end keeps clear of.
     readonly property int osLeftInset: windowChrome.nativeLights && window.visibility !== Window.FullScreen ? 70 : 0
-    readonly property int osRightInset: windowChrome.captionButtons ? Math.ceil(windowChrome.captionWidth) : 0
     // macOS has its native menu bar; Windows gets the app menu button in
     // the title row instead of an in-window menu strip.
     readonly property bool nativeMenuBar: Qt.platform.os === "osx"
@@ -213,24 +204,21 @@ ApplicationWindow {
     // ── Title row: the window's title bar ─────────────────────────────
     // Left to right: on macOS the inset where the NATIVE traffic lights
     // sit · the app menu button (Windows only) · this node's hostname, the
-    // LEADER badge and its state dot · bare drag room · New Job · on
-    // Windows the width Qt's caption buttons occupy. Every stretch of the
-    // row no control claims DRAGS the window and a double-click zooms — on
-    // macOS through the handle below (the drag starts after a small
-    // movement, so clicks stay clicks), on Windows natively. The controls
-    // sit on DragMouseAreas so they are drag surface too.
+    // LEADER badge and its state dot · bare drag room · New Job. On macOS
+    // every stretch of the row no control claims DRAGS the window and a
+    // double-click zooms, through the handle below (the drag starts after a
+    // small movement, so clicks stay clicks); the controls sit on
+    // DragMouseAreas so they are drag surface too. On Windows the row is a
+    // toolbar under the native title bar.
     Rectangle {
         id: titleBar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        // Windows: Qt's title-bar height at the window's dpi, so its caption
-        // buttons sit inside the row; elsewhere the house tool-strip row.
-        height: windowChrome.captionButtons && windowChrome.captionHeight > 0
-                ? Math.ceil(windowChrome.captionHeight) : Theme.toolStripHeight
+        height: Theme.toolStripHeight
         color: Theme.toolbar
-        // Drag room: a gap between the OS buttons and our controls on both
-        // ends, and a reserve in the middle the content can never fill.
+        // Drag room (macOS): a gap between the traffic lights and our
+        // controls, and a reserve in the middle the content can never fill.
         readonly property int buttonGap: 16
         readonly property int dragReserve: 120
 
@@ -241,9 +229,8 @@ ApplicationWindow {
         }
 
         // The move handle (macOS): under everything else in the row, so a
-        // press on a control never reaches it. Windows needs none — a press
-        // no item accepts is the native caption (Qt's expanded-client-area
-        // hit test).
+        // press on a control never reaches it. Windows moves by its native
+        // title bar.
         DragMouseArea {
             anchors.fill: parent
             enabled: windowChrome.nativeLights
@@ -259,13 +246,11 @@ ApplicationWindow {
             width: window.osLeftInset + (window.osLeftInset > 0 ? titleBar.buttonGap : Theme.padding)
         }
 
-        // Windows: Qt draws and hit-tests the caption buttons here; the row
-        // just keeps clear of them.
         Item {
-            id: captionSpacer
+            id: rightPad
             anchors.right: parent.right; anchors.top: parent.top
             height: parent.height
-            width: window.osRightInset + (window.osRightInset > 0 ? titleBar.buttonGap : Theme.padding)
+            width: Theme.padding
         }
 
         Row {
@@ -345,7 +330,7 @@ ApplicationWindow {
         // row keeps dragReserve px bare to its left.
         FlatButton {
             id: newJobButton
-            anchors.right: captionSpacer.left
+            anchors.right: rightPad.left
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -Theme.dividerWidth / 2
             height: parent.height - 8

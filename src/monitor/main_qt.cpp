@@ -13,7 +13,6 @@
 #include "ui/chrome/WindowChrome.h"
 #include "ui/painters/frame_grid.h"
 #include "ui/platform/color_space.h"
-#include "ui/platform/title_bar.h"
 #include "ui/platform/tray.h"
 #include "ui/updater/app_updater.h"
 
@@ -24,6 +23,7 @@
 #include <QtQml/qqml.h>
 
 #include <QApplication>
+#include <QStyleHints>
 #include <QColorSpace>
 #include <QDir>
 #include <QFontDatabase>
@@ -118,6 +118,16 @@ int main(int argc, char* argv[])
     // the embedded transparent-bg .ico, producing an inverted look
     // mid-launch.
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/minrender.ico")));
+#endif
+
+#ifdef Q_OS_WIN
+    // The app is dark whatever the OS is set to. Without this Qt follows
+    // Windows' light / dark app mode for the native title bar and frame,
+    // so a light-mode PC got a white title bar and border on our dark
+    // window. Qt re-applies it to every window it creates (the HWND is
+    // re-created after close-to-tray) and on theme changes. Before any
+    // window exists. Windows only: macOS keeps following the system.
+    QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
 #endif
 
     // Dark palette for any QtWidgets surfaces (native dialogs etc.). QML
@@ -263,7 +273,6 @@ int main(int argc, char* argv[])
     {
         if (auto* w = qobject_cast<QWindow*>(obj))
         {
-            MR::enableDarkTitleBar(w);
             // sRGB pin must run after winId() resolves to a real NSView
             // (which happens once the window is created). loadFromModule
             // returns synchronously after construction, so this is safe.
