@@ -26,8 +26,16 @@
 
   Policy when minRender is unreachable (not running, or the Pid in the key
   is dead and the HTTP fallback fails): hold steady. Nothing is launched and
-  a running client is left alone. When the app comes back the startup
-  settle applies before any launch, exactly as on a fresh start.
+  a running client is left alone, except that the DCC gate still stops it
+  when a creative app appears. When the app comes back the startup settle
+  applies before any launch, exactly as on a fresh start.
+
+  Optional keepalive (app_keepalive): relaunches minRender when no
+  minRender.exe runs in this session - after a crash, a manual quit, or a
+  Microsoft Store auto-update, which closes the app and does not restart
+  it. HKCU\Software\MinRender\Companion\KeepAlive = 0 pauses it (to keep
+  minRender closed on purpose). With rndr_enabled = false the companion is
+  a keepalive only and never touches the RNDR client.
 #>
 [CmdletBinding()]
 param(
@@ -72,6 +80,14 @@ $Defaults = [ordered]@{
     block_processes       = @('blender.exe', 'AfterFX.exe')
     http_port             = 0              # 0 = read from config.json
     fallback_poll_seconds = 1              # only used without the registry key
+    rndr_enabled          = $true          # false = keepalive only, never touch RNDR
+    app_keepalive         = $false         # relaunch minRender when it is not running
+    app_package           = 'cbkow.minRender'  # Store package (Identity Name)
+    app_path              = ''             # loose build: minRender.exe; overrides the package
+    app_args              = '--minimized'
+    app_startup_grace_seconds = 90         # after the companion starts: the Store startup task goes first
+    app_relaunch_delay_seconds = 30        # missing this long before a launch (Store servicing)
+    app_backoff_max_seconds   = 600        # failed or short-lived launches back off up to this
 }
 
 # --------------------------------------------------------------- native ---
@@ -90,6 +106,31 @@ public static extern int WaitForSingleObject(IntPtr handle, int milliseconds);
 public static extern bool ResetEvent(IntPtr handle);
 [DllImport("kernel32.dll")]
 public static extern bool CloseHandle(IntPtr handle);
+'@
+# Packaged-app launch with arguments. shell:AppsFolder cannot pass any, and
+# the packaged minRender.exe cannot be started by path (it would run without
+# package identity), so go through the activation manager like Start does.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace MR {
+    [ComImport, Guid("2e941141-7f97-4756-ba1d-9decde894a3d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IApplicationActivationManager {
+        [PreserveSig]
+        int ActivateApplication([MarshalAs(UnmanagedType.LPWStr)] string appUserModelId,
+                                [MarshalAs(UnmanagedType.LPWStr)] string arguments,
+                                int options, out uint processId);
+    }
+    [ComImport, Guid("45BA127D-10A8-46EA-8AB7-56EA9078943C")]
+    class ApplicationActivationManager { }
+    public static class AppActivation {
+        // Returns the HRESULT; 0 = launched.
+        public static int Launch(string aumid, string arguments, out uint processId) {
+            var m = (IApplicationActivationManager)new ApplicationActivationManager();
+            return m.ActivateApplication(aumid, arguments, 0x2 /* AO_NOERRORUI */, out processId);
+        }
+    }
+}
 '@
 $HKEY_CURRENT_USER = [IntPtr]::new(-2147483647)   # 0x80000001 sign-extended
 $KEY_NOTIFY        = 0x0010
@@ -273,6 +314,58 @@ function Find-CreativeApp {
     return $null
 }
 
+# ------------------------------------------------------------ keepalive ---
+function Get-KeepAlive {
+    try {
+        $v = (Get-ItemProperty -LiteralPath $CompKeyPath -Name KeepAlive -ErrorAction Stop).KeepAlive
+        return ([int]$v -ne 0)
+    } catch { return $true }   # no value = follow the config
+}
+
+# Any minRender.exe in this session counts, Store or loose build. Checked by
+# process, not by reachability: a second launch is not harmless (the app's
+# single-instance guard asks the running copy to show its window).
+$MySession = (Get-Process -Id $PID).SessionId
+function Test-AppRunning {
+    @(Get-Process -Name 'minRender' -ErrorAction SilentlyContinue |
+        Where-Object { $_.SessionId -eq $MySession }).Count -gt 0
+}
+
+function Start-MinRender {
+    param($Cfg)
+    $args_ = [string]$Cfg.app_args
+    if ($Cfg.app_path) {
+        if (-not (Test-Path -LiteralPath $Cfg.app_path)) { Write-Log "keepalive: app not found at $($Cfg.app_path)"; return $false }
+        try {
+            $sp = @{ FilePath = $Cfg.app_path; WorkingDirectory = (Split-Path $Cfg.app_path) }
+            if ($args_) { $sp.ArgumentList = $args_ }
+            Start-Process @sp | Out-Null
+            Write-Log "keepalive: launched $($Cfg.app_path) $args_"
+            return $true
+        } catch {
+            Write-Log "keepalive: launch failed ($($_.Exception.Message))"
+            return $false
+        }
+    }
+    $pkg = $null
+    try { $pkg = Get-AppxPackage -Name $Cfg.app_package -ErrorAction Stop | Select-Object -First 1 } catch { }
+    if (-not $pkg) { Write-Log "keepalive: package $($Cfg.app_package) not installed for this user"; return $false }
+    if ([string]$pkg.Status -ne 'Ok') { Write-Log "keepalive: package $($pkg.PackageFullName) status $($pkg.Status); waiting"; return $false }
+    $aumid = '{0}!minRender' -f $pkg.PackageFamilyName
+    try {
+        $procId = [uint32]0
+        $hr = [MR.AppActivation]::Launch($aumid, $args_, [ref]$procId)
+        if ($hr -eq 0) {
+            Write-Log ("keepalive: launched {0} {1} (pid {2})" -f $pkg.PackageFullName, $args_, $procId)
+            return $true
+        }
+        Write-Log ("keepalive: activation of {0} failed (0x{1:X8})" -f $aumid, $hr)
+    } catch {
+        Write-Log "keepalive: activation of $aumid failed ($($_.Exception.Message))"
+    }
+    return $false
+}
+
 # -------------------------------------------------------- registry wait ---
 # Opens the Node key for notification. Returns $null if the key does not
 # exist yet (app never ran on this machine); the caller retries each tick.
@@ -296,9 +389,10 @@ $mutex = New-Object System.Threading.Mutex($false, 'Local\MinRenderRndrCompanion
 if (-not $mutex.WaitOne(0)) { Write-Log 'another companion instance is running; exiting'; exit 0 }
 
 $cfg = Read-Config
-Write-Log ("starting: client={0} port={1} startup={2}s cooldown={3}s dcc_gate={4}" -f
-    $cfg.rndr_path, $cfg.http_port, $cfg.startup_delay_seconds, $cfg.cooldown_seconds, $cfg.dcc_gate)
-if (-not (Test-Path -LiteralPath $cfg.rndr_path)) {
+Write-Log ("starting: rndr={0} client={1} port={2} startup={3}s cooldown={4}s dcc_gate={5} keepalive={6} app={7}" -f
+    $cfg.rndr_enabled, $cfg.rndr_path, $cfg.http_port, $cfg.startup_delay_seconds, $cfg.cooldown_seconds, $cfg.dcc_gate,
+    $cfg.app_keepalive, $(if ($cfg.app_path) { $cfg.app_path } else { $cfg.app_package }))
+if ($cfg.rndr_enabled -and -not (Test-Path -LiteralPath $cfg.rndr_path)) {
     Write-Log 'client binary absent; will keep waiting in case it is installed later'
 }
 
@@ -317,6 +411,12 @@ $lastOccupied   = $now           # unknown history: serve a full settle first
 $lastEnabled    = $true
 $lastSource     = ''
 $lastState      = ''
+$startedAt      = $now
+$lastKeepAlive  = $true
+$appMissingSince = $null
+$appUpSince     = $null
+$appNextLaunch  = $now
+$appBackoff     = [int]$cfg.app_relaunch_delay_seconds
 
 # Task Scheduler stops a task by terminating the process it launched. With
 # the conhost --headless launcher that is conhost, not this PowerShell, so
@@ -364,6 +464,30 @@ try {
             $lastEnabled = $enabled
         }
 
+        # --- keepalive -------------------------------------------------------
+        if ($cfg.app_keepalive) {
+            $ka = Get-KeepAlive
+            if ($ka -ne $lastKeepAlive) { Write-Log ("KeepAlive -> {0}" -f [int]$ka); $lastKeepAlive = $ka }
+            if (Test-AppRunning) {
+                if ($appMissingSince) { Write-Log 'keepalive: minRender running'; $appMissingSince = $null }
+                if (-not $appUpSince) { $appUpSince = $now }
+                # Only a run that lasts resets the backoff, so an app that
+                # dies straight after launch is not relaunched every 30 s.
+                if (($now - $appUpSince).TotalSeconds -ge 300) { $appBackoff = [int]$cfg.app_relaunch_delay_seconds }
+            } else {
+                $appUpSince = $null
+                if (-not $appMissingSince) { $appMissingSince = $now; Write-Log 'keepalive: minRender not running' }
+                if ($ka -and
+                    ($now - $startedAt).TotalSeconds -ge $cfg.app_startup_grace_seconds -and
+                    ($now - $appMissingSince).TotalSeconds -ge $cfg.app_relaunch_delay_seconds -and
+                    $now -ge $appNextLaunch) {
+                    Start-MinRender $cfg | Out-Null
+                    $appNextLaunch = $now.AddSeconds($appBackoff)
+                    $appBackoff = [Math]::Min($appBackoff * 2, [int]$cfg.app_backoff_max_seconds)
+                }
+            }
+        }
+
         # --- DCC gate ----------------------------------------------------------
         if ($cfg.dcc_gate -and ($now - $lastDccPoll).TotalSeconds -ge $cfg.dcc_poll_seconds) {
             $lastDccPoll = $now
@@ -381,13 +505,21 @@ try {
         $dccBlocked = $cfg.dcc_gate -and (($now - $lastOccupied).TotalSeconds -lt $cfg.dcc_settle_seconds)
 
         # --- state machine -------------------------------------------------
-        if (-not $enabled) {
+        if (-not $cfg.rndr_enabled) {
+            # Keepalive-only install: the client is not ours to manage.
+        } elseif (-not $enabled) {
             if ($state -ne 'Inactive') {
                 Stop-Rndr $cfg 'disabled by operator'
                 Set-State 'Inactive' 'disabled'
             }
         } elseif (-not $ns.Reachable) {
-            # Hold steady. A running client stays; nothing new is launched.
+            # Hold steady: a running client stays and nothing new is
+            # launched - but the DCC gate still applies, so an artist who
+            # quits minRender and opens a creative app gets the GPU back.
+            if ($dccPresent) {
+                Stop-Rndr $cfg "creative app present ($dccName), minRender unreachable"
+                Set-State 'Inactive' 'creative app'
+            }
         } else {
             $rendering = $ns.Rendering
             switch ($state) {
@@ -454,10 +586,13 @@ try {
         }
 
         Set-CompanionValue -Name LastSeen -Value ([int64]([DateTimeOffset]$now).ToUnixTimeMilliseconds()) -Type QWord
-        Set-CompanionValue -Name Rndr -Value $(if (Test-RndrRunning $cfg) { 'running' } else { 'absent' })
-        if ($state -ne $lastState) { $lastState = $state; Set-CompanionValue -Name State -Value $state }
+        if ($cfg.rndr_enabled) {
+            Set-CompanionValue -Name Rndr -Value $(if (Test-RndrRunning $cfg) { 'running' } else { 'absent' })
+            if ($state -ne $lastState) { $lastState = $state; Set-CompanionValue -Name State -Value $state }
+        }
+        if ($cfg.app_keepalive) { Set-CompanionValue -Name App -Value $(if ($appMissingSince) { 'absent' } else { 'running' }) }
 
-        if ($Once) { Write-Log ("once: reachable={0} source={1} rendering={2} state={3} enabled={4}" -f $ns.Reachable, $ns.Source, $ns.Rendering, $state, [int]$enabled); break }
+        if ($Once) { Write-Log ("once: reachable={0} source={1} rendering={2} state={3} enabled={4} app={5}" -f $ns.Reachable, $ns.Source, $ns.Rendering, $state, [int]$enabled, [bool](Test-AppRunning)); break }
 
         # --- wait: registry notification or watchdog tick --------------------
         if (-not $key) {

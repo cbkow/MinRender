@@ -29,8 +29,33 @@ only practical difference is up to a second of extra latency before a
 render start is noticed.
 
 When minRender is unreachable the companion holds steady: it launches
-nothing and leaves a running client alone. When the app comes back, the
+nothing and leaves a running client alone, except that the DCC gate still
+stops the client when a creative app appears. When the app comes back, the
 startup settle applies before any launch, exactly as on a fresh start.
+
+## minRender keepalive
+
+Optional (`app_keepalive`, or `install.ps1 -KeepAlive`). A Microsoft Store
+auto-update closes minRender and does not start it again, so a node sits
+off the farm until someone logs in to it. With the keepalive on, the
+companion relaunches minRender whenever no `minRender.exe` runs in its
+session: after an update, a crash, or a manual quit.
+
+- The Store package is started through the app activation manager with
+  `app_args` (`--minimized`), the same way Start launches it. A loose build
+  is started from `app_path` instead.
+- Nothing is launched in the first `app_startup_grace_seconds` (90) after
+  the companion starts, so the package's own startup task wins at logon,
+  nor until minRender has been gone `app_relaunch_delay_seconds` (30),
+  which covers the package being serviced mid-update.
+- A failed launch, or one that dies within 5 minutes, doubles the wait
+  before the next, up to `app_backoff_max_seconds` (600).
+- **To keep minRender closed on purpose**, pause the keepalive:
+  `reg add HKCU\Software\MinRender\Companion /v KeepAlive /t REG_DWORD /d 0 /f`
+  (1 to resume). `Enabled` only pauses RNDR, not the keepalive.
+
+`install.ps1 -KeepAlive -NoRndr` installs the companion as a keepalive only
+(`rndr_enabled = false`), for nodes that do not run RNDR.
 
 ## State machine
 
@@ -85,6 +110,12 @@ the installer; the task re-reads it on restart):
 | `block_processes` | `blender.exe`, `AfterFX.exe` | exact image names |
 | `warmup_seconds` / `watchdog_seconds` / `hang_grace_seconds` | 15 / 5 / 15 | client health |
 | `http_port` | from config.json | fallback polling only |
+| `rndr_enabled` | true | false = keepalive only |
+| `app_keepalive` | false | relaunch minRender when it is not running |
+| `app_package` | `cbkow.minRender` | Store package identity name |
+| `app_path` | empty | loose build `minRender.exe`; overrides `app_package` |
+| `app_args` | `--minimized` | |
+| `app_startup_grace_seconds` / `app_relaunch_delay_seconds` / `app_backoff_max_seconds` | 90 / 30 / 600 | keepalive timing |
 
 ## Operating it
 
@@ -94,7 +125,7 @@ the installer; the task re-reads it on restart):
 - **Log:** `%USERPROFILE%\minRender\rndr-companion.log`, one line per
   transition, truncated when it passes 2 MB.
 - **Status:** `reg query HKCU\Software\MinRender\Companion` shows `State`,
-  `Rndr` and `LastSeen` (ms since epoch, written every tick); `reg query
+  `Rndr`, `App` (with the keepalive) and `LastSeen` (ms since epoch, written every tick); `reg query
   HKCU\Software\MinRender\Node` shows what the app last published.
 - **Dry run:** `powershell -File rndr-companion.ps1 -Once` evaluates the
   state machine once and prints the decision.

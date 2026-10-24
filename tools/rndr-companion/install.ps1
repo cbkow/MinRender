@@ -6,6 +6,9 @@
   - Copies rndr-companion.ps1 to %USERPROFILE%\minRender\companion\
   - Writes a default rndr-companion.json next to minRender's config.json if
     none exists (edit it afterwards; the task re-reads it on restart)
+  - -KeepAlive / -NoRndr switch the minRender keepalive on and the RNDR
+    supervision off in that config (new or existing); without them the
+    config's own values stay
   - Sets HKCU\Software\MinRender\Companion\Enabled = 1
   - Registers the scheduled task "minRender RNDR companion": runs at logon
     of this user, in the interactive session (the RNDR client needs the
@@ -20,7 +23,13 @@
 param(
     [string]$TaskName = 'minRender RNDR companion',
     # Register without starting (e.g. to edit the config first).
-    [switch]$NoStart
+    [switch]$NoStart,
+    # Relaunch minRender whenever it is not running (crash, quit, Store
+    # auto-update). Sets app_keepalive = true in the config.
+    [switch]$KeepAlive,
+    # Keepalive only: never launch or stop the RNDR client. Sets
+    # rndr_enabled = false in the config.
+    [switch]$NoRndr
 )
 $ErrorActionPreference = 'Stop'
 
@@ -76,6 +85,13 @@ if (-not (Test-Path -LiteralPath $config)) {
     }
 }
 
+if ($KeepAlive -or $NoRndr) {
+    $j = Get-Content -LiteralPath $config -Raw | ConvertFrom-Json
+    if ($KeepAlive) { $j | Add-Member -NotePropertyName app_keepalive -NotePropertyValue $true -Force; Write-Host 'set        app_keepalive = true' }
+    if ($NoRndr)    { $j | Add-Member -NotePropertyName rndr_enabled  -NotePropertyValue $false -Force; Write-Host 'set        rndr_enabled = false' }
+    $j | ConvertTo-Json | Set-Content -LiteralPath $config -Encoding ASCII
+}
+
 $compKey = 'HKCU:\Software\MinRender\Companion'
 if (-not (Test-Path -LiteralPath $compKey)) { New-Item -Path $compKey -Force | Out-Null }
 New-ItemProperty -LiteralPath $compKey -Name Enabled -Value 1 -PropertyType DWord -Force | Out-Null
@@ -119,4 +135,5 @@ if (-not $NoStart) {
 Write-Host ""
 Write-Host "pause:   reg add HKCU\Software\MinRender\Companion /v Enabled /t REG_DWORD /d 0 /f"
 Write-Host "resume:  reg add HKCU\Software\MinRender\Companion /v Enabled /t REG_DWORD /d 1 /f"
+Write-Host "keep minRender closed:  reg add HKCU\Software\MinRender\Companion /v KeepAlive /t REG_DWORD /d 0 /f"
 Write-Host "log:     $(Join-Path $appData 'rndr-companion.log')"
