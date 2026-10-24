@@ -54,8 +54,9 @@ reinstalled or upgraded keeps its identity.
 `%LOCALAPPDATA%\MinRender`. The first launch of 0.5.8 copies it to the new
 location (everything except in-flight `staging\` frames) and keeps watching
 the old `submissions\` folder, so plug-ins you have not updated yet still
-submit. Once the plug-ins on your workstations are updated (they come from
-the farm share's `templates\plugins` folder), delete the old folder.
+submit. Once the plug-ins on your workstations are reinstalled from the farm
+share's `MinRender-v2\plugins` folder (version 0.5.8 or later, see
+[Submit a job](submit.md)), delete the old folder.
 
 ### Uninstall
 

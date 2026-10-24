@@ -24,7 +24,9 @@ Fill out the form. Fields marked with an asterisk are required; everything else 
 
 ## From a DCC plugin
 
-The DCC plugins build the same JSON submission the Monitor's form does, but they pull frame ranges, output paths, and scene metadata straight from the application. Plugin files live in the sync root under `plugins/`.
+The DCC plugins build the same JSON submission the Monitor's form does, but they pull frame ranges, output paths, and scene metadata straight from the application. Plugin files live in the sync root under `plugins/`; the first minRender node to start a new version refreshes them there.
+
+**Upgrading to 0.5.8:** reinstall each plugin from `plugins/` on every workstation that submits. 0.5.8 moved minRender's Windows data folder to `%USERPROFILE%\minRender`; the new plugins (version 0.5.8, shown in the Blender add-on list and in the After Effects and Cinema 4D window titles) look there first. Older plugins keep working through the transition because minRender also watches the old folder, but update them before deleting `%LOCALAPPDATA%\MinRender`.
 
 ### After Effects
 
@@ -37,7 +39,7 @@ Install `plugins/afterEffects/MinRender.jsx` into your After Effects `Scripts/Sc
 
 ### Blender
 
-Use **Edit → Preferences → Add-ons → Install from Disk** in Blender and point it at `plugins/blender/<addon>.zip`. The MinRender submitter appears in the Render Properties panel. It auto-collects your output path and frame range, but you can adjust them before pressing **Submit to Farm**.
+Use **Edit → Preferences → Add-ons → Install from Disk** in Blender and point it at `plugins/blender/MinRender.py`. The MinRender submitter appears in the Render Properties panel. It auto-collects your output path and frame range, but you can adjust them before pressing **Submit to Farm**.
 
 ![Blender submitter](/images/blender_RQADDXgy9f.png)
 

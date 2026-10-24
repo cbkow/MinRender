@@ -1,4 +1,4 @@
-# MinRender.py — Farm submitter for Cinema 4D
+# MinRender.py — Farm submitter for Cinema 4D (version 0.5.8, tracks the minRender app)
 # Install via: Script > Script Manager > Import Script
 # Or copy to your C4D scripts folder and run from the Script menu.
 #
@@ -10,6 +10,10 @@ import c4d
 import json
 import os
 import platform
+
+# Tracks the minRender app version. 0.5.8: reads the data folder from
+# %USERPROFILE%\minRender (falls back to the pre-0.5.8 AppData folder).
+PLUGIN_VERSION = "0.5.8"
 import socket
 import time
 
@@ -132,7 +136,7 @@ class MinRenderDialog(c4d.gui.GeDialog):
         self.scene_output = ""
 
     def CreateLayout(self):
-        self.SetTitle("MinRender")
+        self.SetTitle("MinRender " + PLUGIN_VERSION)
 
         doc = c4d.documents.GetActiveDocument()
         rd = doc.GetActiveRenderData()

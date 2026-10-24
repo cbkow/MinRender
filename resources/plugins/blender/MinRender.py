@@ -7,7 +7,7 @@
 bl_info = {
     "name": "MinRender",
     "author": "MinRender",
-    "version": (0, 4, 1),
+    "version": (0, 5, 8),   # tracks the minRender app version; 0.5.8 = %USERPROFILE%\minRender data folder
     "blender": (4, 0, 0),
     "location": "Render Properties > MinRender",
     "description": "Submit render jobs to MinRender farm",
