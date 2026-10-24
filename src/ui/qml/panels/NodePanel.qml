@@ -50,20 +50,8 @@ Item {
                 }
                 spacing: 6
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label {
-                        text: qsTr("This Node")
-                        font.bold: true
-                        color: Theme.textPrimary
-                    }
-                    Item { Layout.fillWidth: true }
-                    StatusBadge {
-                        visible: appBridge.thisNodeIsLeader
-                        text: qsTr("LEADER")
-                    }
-                }
-
+                // The hostname and LEADER badge live in the window's title
+                // row (Main.qml); this card is the detail.
                 GridLayout {
                     Layout.fillWidth: true
                     columns: 2

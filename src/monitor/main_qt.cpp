@@ -10,6 +10,7 @@
 #include "core/single_instance.h"
 #include "monitor/monitor_app.h"
 #include "ui/app_bridge.h"
+#include "ui/chrome/WindowChrome.h"
 #include "ui/painters/frame_grid.h"
 #include "ui/platform/color_space.h"
 #include "ui/platform/title_bar.h"
@@ -197,6 +198,12 @@ int main(int argc, char* argv[])
     if (!interName.isEmpty())
         QApplication::setFont(QFont(interName, 10));
 
+    // The chromeless window (src/ui/chrome/WindowChrome.h): declared above
+    // the engine so it outlives the window's bindings at teardown.
+    // `--native-frame` keeps the OS title bar (dev aid).
+    WindowChrome windowChrome(
+        !app.arguments().contains(QStringLiteral("--native-frame")));
+
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,
@@ -223,6 +230,8 @@ int main(int argc, char* argv[])
     if (!phosphorName.isEmpty()) bridge.setPhosphorFamily(phosphorName);
     engine.rootContext()->setContextProperty(
         QStringLiteral("appBridge"), &bridge);
+    engine.rootContext()->setContextProperty(
+        QStringLiteral("windowChrome"), &windowChrome);
 
 #ifdef MINRENDER_HAVE_PREVIEW
     // Frame-preview thumbnails (vendored QCView provider). Engine takes
@@ -259,6 +268,9 @@ int main(int argc, char* argv[])
             // (which happens once the window is created). loadFromModule
             // returns synchronously after construction, so this is safe.
             MR::pinSRgbColorSpace(w);
+            // Chromeless window's native side (macOS: hide AppKit's title
+            // text; Windows: the caption metrics at the window's dpi).
+            windowChrome.attach(w);
         }
     }
 

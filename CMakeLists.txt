@@ -178,6 +178,12 @@ qt_add_executable(minrender
     src/ui/platform/title_bar.cpp
     src/ui/platform/tray.cpp
     src/ui/updater/app_updater.h   # header-only Q_OBJECT — listed so AUTOMOC mocs it
+    # The chromeless window (from UFB / minNotes): flags live in Main.qml,
+    # the per-OS halves below.
+    src/ui/chrome/WindowChrome.h
+    src/ui/chrome/WindowChrome.cpp
+    $<$<BOOL:${APPLE}>:src/ui/chrome/WindowChrome_mac.mm>
+    $<$<BOOL:${WIN32}>:src/ui/chrome/WindowChrome_win.cpp>
     $<$<NOT:$<BOOL:${APPLE}>>:src/ui/platform/color_space.cpp>
     $<$<BOOL:${APPLE}>:src/ui/platform/color_space_mac.mm>
 )
@@ -250,6 +256,7 @@ qt_add_qml_module(minrender
         src/ui/qml/Main.qml
         src/ui/qml/Theme.qml
         src/ui/qml/Format.qml
+        src/ui/qml/components/DragMouseArea.qml
         src/ui/qml/components/FlatButton.qml
         src/ui/qml/components/FlatToolTip.qml
         src/ui/qml/components/Icon.qml

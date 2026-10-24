@@ -9,10 +9,40 @@ ApplicationWindow {
 
     width: 1440
     height: 900
+    // The chromeless window (2026-10-23, src/ui/chrome/WindowChrome.h — the
+    // minNotes / ufb model): the content extends under a transparent title
+    // bar on both platforms (Qt 6.9+'s ExpandedClientAreaHint +
+    // NoTitleBarBackgroundHint) and the title row below is the title bar.
+    // macOS keeps the native traffic lights (the row insets past them).
+    // Windows: Qt's own expanded-client-area handling — no painted top
+    // border, the DWM frame's shadow and corners, Qt draws and hit-tests the
+    // Windows 11 caption buttons (CustomizeWindowHint + the min / max /
+    // close hints, no WindowTitleHint) and any press on the row no item
+    // accepts is a native caption drag. BEFORE `visible` — the hints must be
+    // in place at creation.
+    flags: !windowChrome.chromeless ? Qt.Window
+         : windowChrome.nativeLights ? (Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint)
+         : (Qt.Window | Qt.CustomizeWindowHint | Qt.WindowSystemMenuHint | Qt.WindowMinMaxButtonsHint | Qt.WindowCloseButtonHint
+            | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint)
+    // ApplicationWindow pads its content by the safe area unless told
+    // otherwise — the title row goes UNDER the lights / caption buttons.
+    topPadding: 0
     // startMinimized: context property from main_qt.cpp (--minimized flag,
     // set by the launch-at-login paths). The tray icon restores the window.
     visible: !startMinimized
+    // Still set: the taskbar / Alt-Tab / Dock label. AppKit's drawn title
+    // text is hidden by WindowChrome; the row shows the hostname instead.
     title: qsTr("minRender Monitor")
+
+    // The OS's own controls inside the client area, as widths anything laid
+    // over the top edge must keep clear of: the traffic lights at the left
+    // on macOS (hidden in fullscreen), Qt's caption buttons at the right on
+    // Windows.
+    readonly property int osLeftInset: windowChrome.nativeLights && window.visibility !== Window.FullScreen ? 70 : 0
+    readonly property int osRightInset: windowChrome.captionButtons ? Math.ceil(windowChrome.captionWidth) : 0
+    // macOS has its native menu bar; Windows gets the app menu button in
+    // the title row instead of an in-window menu strip.
+    readonly property bool nativeMenuBar: Qt.platform.os === "osx"
 
     // QML controls (TextField/ComboBox/SpinBox/CheckBox/MenuBar) read
     // their colours from the inherited palette, NOT the Theme singleton
@@ -53,7 +83,7 @@ ApplicationWindow {
         category: "panels"
 
         property real nodePanelWidth: window.width * 0.28
-        property real jobListHeight: (window.height - menuBarArea.height) * 0.33
+        property real jobListHeight: (window.height - titleBar.height) * 0.33
         // Active tab in the bottom pane: 0 = Job Detail, 1 = Logs.
         property int detailTabIndex: 0
 
@@ -61,74 +91,249 @@ ApplicationWindow {
         property bool jobListVisible: true
     }
 
-    menuBar: MenuBar {
-        id: menuBarArea
+    // --- The app's actions, shared by the macOS menu bar and the Windows
+    // app menu (the hamburger in the title row). ---
+    Action { id: settingsAction;    text: qsTr("Settings…");     onTriggered: settingsDialog.open() }
+    Action { id: farmCleanupAction; text: qsTr("Farm Cleanup…"); onTriggered: farmCleanupDialog.open() }
+    Action { id: exitAction;        text: qsTr("E&xit");         onTriggered: Qt.quit() }
+    Action { id: newJobAction;      text: qsTr("New Job…");      onTriggered: appBridge.submissionMode = true }
+    Action {
+        id: nodePanelAction
+        text: qsTr("Node Panel")
+        checkable: true
+        checked: panelSettings.nodePanelVisible
+        onToggled: panelSettings.nodePanelVisible = checked
+    }
+    Action {
+        id: jobListAction
+        text: qsTr("Job List")
+        checkable: true
+        checked: panelSettings.jobListVisible
+        onToggled: panelSettings.jobListVisible = checked
+    }
+    // Version line stays disabled — it's a label, not an action.
+    // Qt.application.version is fed by main_qt.cpp's
+    // QCoreApplication::setApplicationVersion, which reads the
+    // CMake PROJECT_VERSION at compile time.
+    Action { id: versionAction; text: qsTr("minRender v%1").arg(Qt.application.version); enabled: false }
+    // No manual update check in Store builds (the Microsoft Store owns
+    // updates) or in builds with no updater compiled in —
+    // appUpdater.available is compile-time constant.
+    Action { id: checkUpdatesAction; text: qsTr("Check for &Updates…"); onTriggered: appUpdater.checkForUpdates() }
+    Action { id: docsAction; text: qsTr("Docs"); onTriggered: Qt.openUrlExternally("https://minrender.com/") }
 
-        Menu {
-            title: qsTr("&File")
-            Action { text: qsTr("Settings…");     onTriggered: settingsDialog.open() }
-            Action { text: qsTr("Farm Cleanup…"); onTriggered: farmCleanupDialog.open() }
-            MenuSeparator {}
-            Action { text: qsTr("E&xit"); onTriggered: Qt.quit() }
+    // macOS: the native menu bar, created on completion (an in-window
+    // MenuBar on Windows would sit above the title row).
+    Component {
+        id: macMenuBarComp
+        MenuBar {
+            Menu {
+                title: qsTr("&File")
+                MenuItem { action: settingsAction }
+                MenuItem { action: farmCleanupAction }
+                MenuSeparator {}
+                MenuItem { action: exitAction }
+            }
+            Menu {
+                title: qsTr("&Jobs")
+                MenuItem { action: newJobAction }
+            }
+            Menu {
+                title: qsTr("&View")
+                MenuItem { action: nodePanelAction }
+                MenuItem { action: jobListAction }
+            }
+            Menu {
+                id: aboutMenu
+                title: qsTr("&About")
+                MenuItem { action: versionAction }
+                MenuSeparator {}
+                MenuItem { id: checkUpdatesItem; action: checkUpdatesAction }
+                MenuItem { action: docsAction }
+                Component.onCompleted: {
+                    if (!appUpdater.available)
+                        aboutMenu.removeItem(checkUpdatesItem)
+                }
+            }
+        }
+    }
+    Component.onCompleted: {
+        if (window.nativeMenuBar)
+            window.menuBar = macMenuBarComp.createObject(window)
+    }
+
+    // Windows: the app menu behind the title row's hamburger — the same
+    // actions, one flat list.
+    ThemedMenu {
+        id: appMenu
+        ThemedMenuItem { action: settingsAction }
+        ThemedMenuItem { action: farmCleanupAction }
+        ThemedMenuSeparator {}
+        ThemedMenuItem { action: newJobAction }
+        ThemedMenuSeparator {}
+        ThemedMenuItem { action: nodePanelAction }
+        ThemedMenuItem { action: jobListAction }
+        ThemedMenuSeparator {}
+        ThemedMenuItem { action: versionAction }
+        ThemedMenuItem { action: checkUpdatesAction; visible: appUpdater.available; height: visible ? implicitHeight : 0 }
+        ThemedMenuItem { action: docsAction }
+        ThemedMenuSeparator {}
+        ThemedMenuItem { action: exitAction }
+    }
+
+    // ── Title row: the window's title bar ─────────────────────────────
+    // Left to right: on macOS the inset where the NATIVE traffic lights
+    // sit · the app menu button (Windows only) · this node's hostname, the
+    // LEADER badge and its state dot · bare drag room · New Job · on
+    // Windows the width Qt's caption buttons occupy. Every stretch of the
+    // row no control claims DRAGS the window and a double-click zooms — on
+    // macOS through the handle below (the drag starts after a small
+    // movement, so clicks stay clicks), on Windows natively. The controls
+    // sit on DragMouseAreas so they are drag surface too.
+    Rectangle {
+        id: titleBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        // Windows: Qt's title-bar height at the window's dpi, so its caption
+        // buttons sit inside the row; elsewhere the house tool-strip row.
+        height: windowChrome.captionButtons && windowChrome.captionHeight > 0
+                ? Math.ceil(windowChrome.captionHeight) : Theme.toolStripHeight
+        color: Theme.toolbar
+        // Drag room: a gap between the OS buttons and our controls on both
+        // ends, and a reserve in the middle the content can never fill.
+        readonly property int buttonGap: 16
+        readonly property int dragReserve: 120
+
+        Rectangle {
+            anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+            height: Theme.dividerWidth
+            color: Theme.divider
         }
 
-        Menu {
-            title: qsTr("&Jobs")
-            Action { text: qsTr("New Job…"); onTriggered: appBridge.submissionMode = true }
+        // The move handle (macOS): under everything else in the row, so a
+        // press on a control never reaches it. Windows needs none — a press
+        // no item accepts is the native caption (Qt's expanded-client-area
+        // hit test).
+        DragMouseArea {
+            anchors.fill: parent
+            enabled: windowChrome.nativeLights
+            onDoubleClicked: (mouse) => { if (windowChrome.chromeless) windowChrome.toggleZoom(window) }
         }
 
-        Menu {
-            title: qsTr("&View")
-            MenuItem {
-                text: qsTr("Node Panel")
-                checkable: true
-                checked: panelSettings.nodePanelVisible
-                onToggled: panelSettings.nodePanelVisible = checked
+        // The traffic lights' room (close · minimize · zoom end at x ≈ 59 on
+        // a standard title bar); they hide in fullscreen.
+        Item {
+            id: lightsInset
+            anchors.left: parent.left; anchors.top: parent.top
+            height: parent.height
+            width: window.osLeftInset + (window.osLeftInset > 0 ? titleBar.buttonGap : Theme.padding)
+        }
+
+        // Windows: Qt draws and hit-tests the caption buttons here; the row
+        // just keeps clear of them.
+        Item {
+            id: captionSpacer
+            anchors.right: parent.right; anchors.top: parent.top
+            height: parent.height
+            width: window.osRightInset + (window.osRightInset > 0 ? titleBar.buttonGap : Theme.padding)
+        }
+
+        Row {
+            id: titleLeft
+            anchors.left: lightsInset.right
+            anchors.top: parent.top
+            height: parent.height - Theme.dividerWidth
+            spacing: Theme.spacing
+
+            // The app menu (Windows): the hamburger, where the menu bar used
+            // to be. macOS has its native menu bar.
+            Rectangle {
+                id: menuBtn
+                visible: !window.nativeMenuBar
+                width: visible ? 30 : 0
+                height: parent.height
+                anchors.verticalCenter: parent.verticalCenter
+                radius: Theme.radiusSmall
+                readonly property bool menuOpen: appMenu.visible
+                color: menuOpen ? Theme.affordanceHover
+                     : menuMA.containsMouse ? Theme.surfaceHover : Theme.hoverIdle
+                Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
+                Icon {
+                    anchors.centerIn: parent
+                    name: "list"
+                    size: Theme.iconSizeToolbar
+                    color: menuBtn.menuOpen || menuMA.containsMouse ? Theme.textBright : Theme.textPrimary
+                }
+                DragMouseArea {
+                    id: menuMA
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: { if (appMenu.visible) appMenu.close(); else appMenu.popup(menuBtn, 0, menuBtn.height + 1) }
+                }
             }
-            MenuItem {
-                text: qsTr("Job List")
-                checkable: true
-                checked: panelSettings.jobListVisible
-                onToggled: panelSettings.jobListVisible = checked
+
+            // This node: hostname (the window's real title), the LEADER
+            // badge, and a dot for its render state. The details stay in
+            // the node panel.
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: appBridge.thisNodeHostname
+                color: Theme.textBright
+                font.family: Theme.fontFamily
+                font.bold: true
+                font.pixelSize: Theme.fontSizeBase
+                elide: Text.ElideRight
+                width: Math.min(implicitWidth, 320)
+            }
+            StatusBadge {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: appBridge.thisNodeIsLeader
+                text: qsTr("LEADER")
+            }
+            Item {
+                id: stateDot
+                width: 16; height: parent.height
+                readonly property string stateText:
+                    appBridge.thisNodeSuspended ? qsTr("Suspended by the leader")
+                  : appBridge.thisNodeActive    ? qsTr("Accepting work")
+                                                : qsTr("Stopped — not accepting work")
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 8; height: 8; radius: 4
+                    color: appBridge.thisNodeSuspended ? Theme.error
+                         : appBridge.thisNodeActive    ? Theme.success
+                                                       : Theme.textMuted
+                    Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
+                }
+                DragMouseArea { id: dotMA; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.LeftButton }
+                FlatToolTip { visible: dotMA.containsMouse; text: stateDot.stateText }
             }
         }
 
-        Menu {
-            id: aboutMenu
-            title: qsTr("&About")
-            // Version line stays disabled — it's a label, not an action.
-            // Qt.application.version is fed by main_qt.cpp's
-            // QCoreApplication::setApplicationVersion, which reads the
-            // CMake PROJECT_VERSION at compile time.
-            Action {
-                text: qsTr("minRender v%1").arg(Qt.application.version)
-                enabled: false
-            }
-            MenuSeparator {}
-            Action {
-                id: checkUpdatesAction
-                text: qsTr("Check for &Updates…")
-                onTriggered: appUpdater.checkForUpdates()
-            }
-            Action {
-                text: qsTr("Docs")
-                onTriggered: Qt.openUrlExternally("https://minrender.com/")
-            }
-            // No manual update check in Store builds (the Microsoft Store
-            // owns updates) or in builds with no updater compiled in —
-            // appUpdater.available is compile-time constant, so remove the
-            // item once rather than shipping a permanently dead menu entry.
-            Component.onCompleted: {
-                if (!appUpdater.available)
-                    aboutMenu.removeAction(checkUpdatesAction)
-            }
+        // New Job: the one action that should be reachable even with the
+        // Jobs panel hidden. An island (a Button eats its press), so the
+        // row keeps dragReserve px bare to its left.
+        FlatButton {
+            id: newJobButton
+            anchors.right: captionSpacer.left
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.verticalCenterOffset: -Theme.dividerWidth / 2
+            height: parent.height - 8
+            iconName: "plus"
+            text: qsTr("New Job")
+            variant: "primary"
+            onClicked: appBridge.submissionMode = true
         }
     }
 
     // Outer horizontal split: NodePanel on the left, everything else on the right.
     SplitView {
         id: outerSplit
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: titleBar.bottom
+        anchors.bottom: parent.bottom
         orientation: Qt.Horizontal
 
         NodePanel {

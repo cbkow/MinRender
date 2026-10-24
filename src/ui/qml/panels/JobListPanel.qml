@@ -254,26 +254,10 @@ Item {
         anchors.fill: parent
         spacing: 0
 
-        // --- Toolbar ---
-        PanelHeader {
-            Layout.fillWidth: true
-            title: qsTr("Jobs")
-            subtitle: {
-                let s = "· " + jobList.count
-                if (root.checkedCount() > 0)
-                    s += " · " + root.checkedCount() + " " + qsTr("selected")
-                return s
-            }
-
-            FlatButton {
-                iconName: "plus"
-                text: qsTr("New Job")
-                variant: "primary"
-                onClicked: root.newJobRequested()
-            }
-        }
-
         // --- Bulk-action strip (always present) ---
+        // The panel's header row folded into it (2026-10-23): New Job moved
+        // to the window's title row, so "Jobs · n · k selected" leads the
+        // strip instead of taking a row of its own.
         // Mirrors the right-click jobMenu for single jobs, but loops
         // every action over every checked id and clears the selection
         // afterwards. Always rendered so the available actions stay
@@ -302,15 +286,25 @@ Item {
                 spacing: 0
 
                 Label {
-                    text: root.checkedCount() > 0
-                        ? qsTr("%1 selected").arg(root.checkedCount())
-                        : qsTr("No selection")
-                    color: root.checkedCount() > 0
-                        ? Theme.textBright
-                        : Theme.textMuted
+                    text: qsTr("Jobs")
+                    color: Theme.textBright
+                    font.family: Theme.fontFamily
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeBase
+                }
+                Label {
+                    text: {
+                        let s = "· " + jobList.count
+                        if (root.checkedCount() > 0)
+                            s += " · " + qsTr("%1 selected").arg(root.checkedCount())
+                        return s
+                    }
+                    color: root.checkedCount() > 0 ? Theme.textPrimary : Theme.textMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeBase
+                    Layout.leftMargin: Theme.spacing
                     Layout.rightMargin: Theme.padding
+                    Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
                 }
                 FlatButton {
                     iconName: "pencil-simple"
