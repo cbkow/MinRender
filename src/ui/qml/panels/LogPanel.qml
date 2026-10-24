@@ -358,6 +358,25 @@ Item {
 
                     currentIndex: appBridge.selectedTaskChunkIndex
 
+                    // Single-select by design (it drives one file view);
+                    // Up / Down / Home / End move it once the list has focus.
+                    keyNavigationEnabled: false
+                    activeFocusOnTab: true
+                    Keys.onPressed: (event) => {
+                        const n = count, cur = appBridge.selectedTaskChunkIndex
+                        let next = -1
+                        if (event.key === Qt.Key_Down)      next = Math.min(n - 1, cur + 1)
+                        else if (event.key === Qt.Key_Up)   next = Math.max(0, cur < 0 ? 0 : cur - 1)
+                        else if (event.key === Qt.Key_Home) next = 0
+                        else if (event.key === Qt.Key_End)  next = n - 1
+                        else return
+                        if (n > 0 && next >= 0) {
+                            appBridge.selectedTaskChunkIndex = next
+                            positionViewAtIndex(next, ListView.Contain)
+                        }
+                        event.accepted = true
+                    }
+
                     delegate: Rectangle {
                         required property var    modelData
                         required property int    index
@@ -383,7 +402,10 @@ Item {
 
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: appBridge.selectedTaskChunkIndex = index
+                            onClicked: {
+                                taskChunkList.forceActiveFocus()
+                                appBridge.selectedTaskChunkIndex = index
+                            }
                         }
 
                         FlatToolTip {

@@ -12,119 +12,73 @@ Item {
     // keep the panel reusable.)
     signal newJobRequested
 
-    // Multi-select state. Key = jobId, value = true. A plain JS object
-    // so we can reassign root.checked = {...} to force QML reactivity.
-    property var checked: ({})
-
-    function checkedCount() {
-        let n = 0
-        for (const k in checked) if (checked[k]) n += 1
-        return n
+    // Multi-select (components/ListSelection.qml), keyed by job id so it
+    // survives the 3 s model refresh. The cursor is the "primary": it
+    // drives JobDetailPanel through appBridge.currentJobId.
+    ListSelection {
+        id: sel
+        rowCount: jobList.count
+        keyAt: function(row) { return appBridge.jobsModel.jobIdAt(row) }
+        pageRows: Math.max(1, Math.floor(jobList.height / 32) - 1)
+        onCurrentKeyChanged: {
+            if (appBridge.currentJobId !== currentKey)
+                appBridge.currentJobId = currentKey
+        }
+        onMoved: (row) => jobList.positionViewAtIndex(row, ListView.Contain)
+        onActivated: (key) => root.editSelected()
+    }
+    // A job made current elsewhere (a new submission, an edit) moves the
+    // cursor too, so the next Shift-arrow extends from what is on screen.
+    Connections {
+        target: appBridge
+        function onCurrentJobIdChanged() {
+            if (sel.currentKey !== appBridge.currentJobId)
+                sel.currentKey = appBridge.currentJobId
+        }
     }
 
-    function isChecked(jobId) {
-        return checked[jobId] === true
-    }
+    function checkedCount()      { return sel.count }
+    function isChecked(jobId)    { return sel.isSelected(jobId) }
+    function clearChecked()      { sel.clear() }
+    function checkedJobIds()     { return sel.keys() }
+    function jobIdAt(rowIdx)     { return appBridge.jobsModel.jobIdAt(rowIdx) }
 
-    function setChecked(jobId, on) {
-        const next = Object.assign({}, checked)
-        if (on) next[jobId] = true
-        else delete next[jobId]
-        checked = next
-    }
-
-    function clearChecked() {
-        checked = ({})
-    }
-
-    function checkedJobIds() {
-        const out = []
-        for (const k in checked)
-            if (checked[k]) out.push(k)
-        return out
-    }
-
-    // Apply a single-job AppBridge action across the checked set, then
-    // clear selection. Used by the bulk-action strip.
+    // Apply a single-job AppBridge action across the selection, then
+    // clear it. Used by the bulk strip, the context menu, the keyboard and
+    // the Jobs menu.
     function applyToChecked(actionFn) {
-        const ids = checkedJobIds()
+        const ids = sel.keys()
         for (let i = 0; i < ids.length; ++i)
             actionFn(ids[i])
-        clearChecked()
+        sel.clear()
     }
 
-    // Standard desktop-list selection model — driven entirely by row
-    // click + modifier keys, no checkboxes:
-    //   click           → select only this row
-    //   cmd / ctrl-click → toggle this row in the selection
-    //   shift-click     → range-select from currentJobId to this row
-    // currentJobId is the "primary" (drives JobDetailPanel) and is
-    // always one of the checked rows when any are checked.
-    function jobIdAt(rowIdx) {
-        return appBridge.jobsModel.jobIdAt(rowIdx)
+    // --- Named actions on the selection (strip, context menu, keys, Jobs menu) ---
+    readonly property bool listFocused: jobList.activeFocus
+    function selectAll()      { jobList.forceActiveFocus(); sel.selectAll() }
+    function editSelected() {
+        if (sel.count === 1 && appBridge.leaderSupportsJobEdit)
+            appBridge.openJobEditor(sel.keys()[0])
     }
-
-    function selectRange(fromJobId, toJobId) {
-        let fromIdx = -1, toIdx = -1
-        for (let i = 0; i < jobList.count; ++i) {
-            const id = jobIdAt(i)
-            if (id === fromJobId) fromIdx = i
-            if (id === toJobId)   toIdx = i
-        }
-        if (fromIdx < 0 || toIdx < 0) {
-            // Anchor missing — fall back to single select.
-            const fallback = {}
-            fallback[toJobId] = true
-            checked = fallback
-            return
-        }
-        const lo = Math.min(fromIdx, toIdx)
-        const hi = Math.max(fromIdx, toIdx)
-        const next = {}
-        for (let i = lo; i <= hi; ++i)
-            next[jobIdAt(i)] = true
-        checked = next
+    function pauseSelected()  { applyToChecked(function(id) { appBridge.pauseJob(id) }) }
+    function resumeSelected() { applyToChecked(function(id) { appBridge.resumeJob(id) }) }
+    // Cancel and Delete always confirm, whatever the selection size — one
+    // accidental Delete on the wrong row is as bad as five.
+    function cancelSelected() {
+        if (sel.count === 0) return
+        bulkConfirmDialog.openWith(
+            "cancel",
+            qsTr("Cancel %1 job%2?").arg(sel.count).arg(sel.count === 1 ? "" : "s"),
+            qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
+            function(id) { appBridge.cancelJob(id) })
     }
-
-    function handleRowClick(jobId, mouse) {
-        const isShift = (mouse.modifiers & Qt.ShiftModifier) !== 0
-        // Cmd on macOS reports as MetaModifier; Ctrl on Windows/Linux
-        // reports as ControlModifier. Both are treated as "additive
-        // toggle" — same UX expectation.
-        const isToggle = (mouse.modifiers
-            & (Qt.ControlModifier | Qt.MetaModifier)) !== 0
-
-        if (isShift) {
-            const anchor = appBridge.currentJobId || jobId
-            selectRange(anchor, jobId)
-            appBridge.currentJobId = jobId
-            return
-        }
-
-        if (isToggle) {
-            const next = Object.assign({}, checked)
-            if (next[jobId]) {
-                delete next[jobId]
-                checked = next
-                // If we cleared the primary, slide to any remaining
-                // selection so JobDetailPanel still has something to show.
-                if (appBridge.currentJobId === jobId) {
-                    const remaining = Object.keys(next)
-                    appBridge.currentJobId = remaining.length > 0 ? remaining[0] : ""
-                }
-            } else {
-                next[jobId] = true
-                checked = next
-                appBridge.currentJobId = jobId
-            }
-            return
-        }
-
-        // Plain click — collapse selection to this row.
-        const next = {}
-        next[jobId] = true
-        checked = next
-        appBridge.currentJobId = jobId
+    function deleteSelected() {
+        if (sel.count === 0) return
+        bulkConfirmDialog.openWith(
+            "delete",
+            qsTr("Delete %1 job%2?").arg(sel.count).arg(sel.count === 1 ? "" : "s"),
+            qsTr("Removes job records and SQLite history. Output files on disk are NOT deleted. This cannot be undone."),
+            function(id) { appBridge.deleteJob(id) })
     }
 
     function stateColor(state) {
@@ -217,10 +171,7 @@ Item {
         // Grabbing a row makes it the thing being interacted with: select
         // it (exclusively) right away, so the highlight and detail panel
         // are on it during the drag and travel with it after the drop.
-        const next = {}
-        next[jobId] = true
-        checked = next
-        appBridge.currentJobId = jobId
+        sel.selectOnly(jobId)
     }
 
     function updateDrag(contentY) {
@@ -358,26 +309,14 @@ Item {
                     iconName: "x"
                     text: qsTr("Cancel")
                     enabled: root.checkedCount() > 0
-                    onClicked: bulkConfirmDialog.openWith(
-                        "cancel",
-                        qsTr("Cancel %1 job%2?")
-                            .arg(root.checkedCount())
-                            .arg(root.checkedCount() === 1 ? "" : "s"),
-                        qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
-                        function(id) { appBridge.cancelJob(id) })
+                    onClicked: root.cancelSelected()
                 }
                 FlatButton {
                     iconName: "trash"
                     text: qsTr("Delete")
                     variant: "danger"
                     enabled: root.checkedCount() > 0
-                    onClicked: bulkConfirmDialog.openWith(
-                        "delete",
-                        qsTr("Delete %1 job%2?")
-                            .arg(root.checkedCount())
-                            .arg(root.checkedCount() === 1 ? "" : "s"),
-                        qsTr("Removes job records and SQLite history. Output files on disk are NOT deleted. This cannot be undone."),
-                        function(id) { appBridge.deleteJob(id) })
+                    onClicked: root.deleteSelected()
                 }
             }
         }
@@ -458,6 +397,32 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: MrScrollBar {}
 
+            // Keyboard: ListSelection's keys, plus Delete (Windows) or
+            // Cmd/Ctrl-Backspace (macOS) for the delete confirm. Focus comes
+            // from any click on a row or the empty area below them.
+            keyNavigationEnabled: false
+            activeFocusOnTab: true
+            Keys.onPressed: (event) => {
+                if (sel.handleKey(event)) { event.accepted = true; return }
+                if (event.key === Qt.Key_Delete
+                        || (event.key === Qt.Key_Backspace
+                            && (event.modifiers & (Qt.ControlModifier | Qt.MetaModifier)))) {
+                    root.deleteSelected()
+                    event.accepted = true
+                }
+            }
+
+            // The empty area under the last row: a click there clears the
+            // selection (the Finder / Explorer habit).
+            footer: Item {
+                width: jobList.width
+                height: Math.max(0, jobList.height - jobList.count * 32)
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { jobList.forceActiveFocus(); sel.clear() }
+                }
+            }
+
             delegate: Rectangle {
                 required property string jobId
                 required property string name
@@ -532,6 +497,7 @@ Item {
                     }
 
                     Label {
+                        id: stateLabel
                         readonly property string shown:
                             root.displayState(jobState, stoppedChunks)
                         text: shown
@@ -543,7 +509,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         FlatToolTip {
                             text: qsTr("%1 stopped chunk(s) excluded").arg(stoppedChunks)
-                            visible: shown === "partial" && stateHover.hovered
+                            visible: stateLabel.shown === "partial" && stateHover.hovered
                             delay: 400
                         }
                         HoverHandler { id: stateHover }
@@ -592,27 +558,27 @@ Item {
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (mouse) => {
+                        jobList.forceActiveFocus()
                         if (mouse.button === Qt.RightButton) {
-                            // If the right-clicked row is part of a
-                            // multi-selection, leave the selection
-                            // alone — the menu's targetId still points
-                            // at this row (single-job menu items will
-                            // operate on it). Bulk ops still come from
-                            // the action strip.
-                            if (!root.isChecked(jobId)) {
-                                const next = {}
-                                next[jobId] = true
-                                root.checked = next
-                                appBridge.currentJobId = jobId
-                            }
+                            // A right-click inside a multi-selection keeps
+                            // it (the menu then acts on all of it); outside
+                            // one it selects just this row.
+                            sel.handleContextClick(index)
                             jobMenu.targetId = jobId
                             jobMenu.targetState = jobState
                             jobMenu.popup()
                             mouse.accepted = true
                             return
                         }
-                        root.handleRowClick(jobId, mouse)
+                        sel.handleClick(index, mouse)
                         mouse.accepted = true
+                    }
+                    // Double-click opens Edit Job (single selection, leader
+                    // permitting) — the same as Return.
+                    onDoubleClicked: (mouse) => {
+                        if (mouse.button === Qt.LeftButton
+                                && !(mouse.modifiers & (Qt.ShiftModifier | Qt.ControlModifier | Qt.MetaModifier)))
+                            root.editSelected()
                     }
                 }
 
@@ -718,13 +684,7 @@ Item {
         // beats unintentional data loss.
         ThemedMenuItem {
             text: qsTr("Cancel") + jobMenu.bulkSuffix()
-            onTriggered: bulkConfirmDialog.openWith(
-                "cancel",
-                qsTr("Cancel %1 job%2?")
-                    .arg(root.checkedCount())
-                    .arg(root.checkedCount() === 1 ? "" : "s"),
-                qsTr("This stops dispatch and immediately kills in-flight renders on all nodes. The jobs can be requeued later."),
-                function(id) { appBridge.cancelJob(id) })
+            onTriggered: root.cancelSelected()
         }
         ThemedMenuItem {
             text: qsTr("Archive") + jobMenu.bulkSuffix()
@@ -733,13 +693,7 @@ Item {
         }
         ThemedMenuItem {
             text: qsTr("Delete") + jobMenu.bulkSuffix()
-            onTriggered: bulkConfirmDialog.openWith(
-                "delete",
-                qsTr("Delete %1 job%2?")
-                    .arg(root.checkedCount())
-                    .arg(root.checkedCount() === 1 ? "" : "s"),
-                qsTr("Removes job records and SQLite history. Output files on disk are NOT deleted. This cannot be undone."),
-                function(id) { appBridge.deleteJob(id) })
+            onTriggered: root.deleteSelected()
         }
     }
 

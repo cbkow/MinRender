@@ -170,4 +170,16 @@ void ChunksModel::clear()
     endResetModel();
 }
 
+QVariantMap ChunksModel::rowAt(int row) const
+{
+    QVariantMap out;
+    if (row < 0 || row >= rowCount())
+        return out;
+    const QModelIndex idx = index(row, 0);
+    const auto roles = roleNames();
+    for (auto it = roles.cbegin(); it != roles.cend(); ++it)
+        out.insert(QString::fromUtf8(it.value()), data(idx, it.key()));
+    return out;
+}
+
 } // namespace MR

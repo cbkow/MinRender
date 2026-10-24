@@ -52,6 +52,10 @@ public:
     // frameEnd, state, node, retryCount}.
     Q_INVOKABLE QVariantMap chunkForFrame(int frame) const;
 
+    // One row as {roleName: value} — the lists' keyboard / range selection
+    // walks rows by index (ListSelection.qml). Empty map out of range.
+    Q_INVOKABLE QVariantMap rowAt(int row) const;
+
 private:
     std::vector<ChunkRow> m_chunks;
     QHash<QString, QString> m_nodeNames;

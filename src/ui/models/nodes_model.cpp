@@ -1,6 +1,7 @@
 #include "ui/models/nodes_model.h"
 
 #include <QString>
+#include <QVariantMap>
 #include <QStringList>
 
 #include <algorithm>
@@ -161,6 +162,18 @@ void NodesModel::setPeers(const std::vector<PeerInfo>& incoming)
     beginResetModel();
     m_peers = std::move(sorted);
     endResetModel();
+}
+
+QVariantMap NodesModel::rowAt(int row) const
+{
+    QVariantMap out;
+    if (row < 0 || row >= rowCount())
+        return out;
+    const QModelIndex idx = index(row, 0);
+    const auto roles = roleNames();
+    for (auto it = roles.cbegin(); it != roles.cend(); ++it)
+        out.insert(QString::fromUtf8(it.value()), data(idx, it.key()));
+    return out;
 }
 
 } // namespace MR

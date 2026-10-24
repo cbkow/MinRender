@@ -98,6 +98,20 @@ ApplicationWindow {
     Action { id: farmCleanupAction; text: qsTr("Farm Cleanup…"); onTriggered: farmCleanupDialog.open() }
     Action { id: exitAction;        text: qsTr("E&xit");         onTriggered: Qt.quit() }
     Action { id: newJobAction;      text: qsTr("New Job…");      onTriggered: appBridge.submissionMode = true }
+    // The job list's selection actions. The shortcuts are live only while
+    // the job list has keyboard focus, so Cmd/Ctrl-A in a text field or in
+    // the chunk / peer lists keeps its own meaning there.
+    readonly property bool jobsFocused: jobListInstance.visible && jobListInstance.listFocused
+    readonly property int  jobsSelected: jobListInstance.checkedCount()
+    Action { id: selectAllJobsAction; text: qsTr("Select All Jobs"); shortcut: StandardKey.SelectAll
+             enabled: window.jobsFocused; onTriggered: jobListInstance.selectAll() }
+    Action { id: editJobAction;   text: qsTr("Edit Job…")
+             enabled: window.jobsSelected === 1 && appBridge.leaderSupportsJobEdit
+             onTriggered: jobListInstance.editSelected() }
+    Action { id: pauseJobsAction;  text: qsTr("Pause");     enabled: window.jobsSelected > 0; onTriggered: jobListInstance.pauseSelected() }
+    Action { id: resumeJobsAction; text: qsTr("Resume");    enabled: window.jobsSelected > 0; onTriggered: jobListInstance.resumeSelected() }
+    Action { id: cancelJobsAction; text: qsTr("Cancel…");   enabled: window.jobsSelected > 0; onTriggered: jobListInstance.cancelSelected() }
+    Action { id: deleteJobsAction; text: qsTr("Delete…");   enabled: window.jobsSelected > 0; onTriggered: jobListInstance.deleteSelected() }
     Action {
         id: nodePanelAction
         text: qsTr("Node Panel")
@@ -138,6 +152,15 @@ ApplicationWindow {
             Menu {
                 title: qsTr("&Jobs")
                 MenuItem { action: newJobAction }
+                MenuSeparator {}
+                MenuItem { action: selectAllJobsAction }
+                MenuItem { action: editJobAction }
+                MenuSeparator {}
+                MenuItem { action: pauseJobsAction }
+                MenuItem { action: resumeJobsAction }
+                MenuSeparator {}
+                MenuItem { action: cancelJobsAction }
+                MenuItem { action: deleteJobsAction }
             }
             Menu {
                 title: qsTr("&View")
@@ -171,6 +194,11 @@ ApplicationWindow {
         ThemedMenuItem { action: farmCleanupAction }
         ThemedMenuSeparator {}
         ThemedMenuItem { action: newJobAction }
+        ThemedMenuItem { action: editJobAction }
+        ThemedMenuItem { action: pauseJobsAction }
+        ThemedMenuItem { action: resumeJobsAction }
+        ThemedMenuItem { action: cancelJobsAction }
+        ThemedMenuItem { action: deleteJobsAction }
         ThemedMenuSeparator {}
         ThemedMenuItem { action: nodePanelAction }
         ThemedMenuItem { action: jobListAction }

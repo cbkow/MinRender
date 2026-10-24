@@ -260,6 +260,7 @@ qt_add_qml_module(minrender
         src/ui/qml/components/FlatButton.qml
         src/ui/qml/components/FlatToolTip.qml
         src/ui/qml/components/Icon.qml
+        src/ui/qml/components/ListSelection.qml
         src/ui/qml/components/MrDialog.qml
         src/ui/qml/components/MrScrollBar.qml
         src/ui/qml/components/PanelHeader.qml

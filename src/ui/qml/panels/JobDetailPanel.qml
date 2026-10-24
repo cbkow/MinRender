@@ -86,15 +86,36 @@ Item {
 
             readonly property var job: appBridge.currentJob
 
-            // Selected chunk row (by chunk id, so the highlight survives
-            // model resets). -1 = nothing selected. Left- or right-click
-            // selects, so the context menu always fires on the
-            // highlighted row.
-            property var selectedChunkId: -1
+            // Chunk selection (components/ListSelection.qml), keyed by chunk
+            // id so it survives the 3 s refresh. Plain click / arrow keys
+            // pin the preview to the cursor chunk; the context menu acts on
+            // the whole selection.
+            ListSelection {
+                id: chunkSel
+                rowCount: chunksList.count
+                keyAt: function(row) { return appBridge.chunksModel.rowAt(row).chunkId }
+                pageRows: Math.max(1, Math.floor(chunksList.height / 24) - 1)
+                onMoved: (row) => {
+                    chunksList.positionViewAtIndex(row, ListView.Contain)
+                    const r = appBridge.chunksModel.rowAt(row)
+                    appBridge.pinPreview(r.frameStart, r.frameEnd)
+                }
+            }
 
             Connections {
                 target: appBridge
-                function onCurrentJobIdChanged() { detailRoot.selectedChunkId = -1 }
+                function onCurrentJobIdChanged() { chunkSel.clear(); chunkSel.currentKey = "" }
+            }
+
+            // The selected chunks' rows ({chunkId, frameStart, frameEnd,
+            // chunkState, ...}) in list order.
+            function selectedChunkRows() {
+                const out = []
+                for (let i = 0; i < chunksList.count; ++i) {
+                    const r = appBridge.chunksModel.rowAt(i)
+                    if (chunkSel.isSelected(r.chunkId)) out.push(r)
+                }
+                return out
             }
 
             // Right-click menu on chunk rows. Lives at the panel level
@@ -102,39 +123,66 @@ Item {
             // get clipped by the ListView's clip:true.
             ThemedMenu {
                 id: chunkMenu
-                property var targetChunkId: 0
-                property int targetFrameStart: 0
-                property int targetFrameEnd: 0
-                property string targetState: ""
+                // Computed once per popup from the selection.
+                property int  targetCount: 0
+                property bool allStopped: false
+                property int  stoppable: 0       // pending or assigned
+                property int  spanStart: 0
+                property int  spanEnd: 0
+                property var  rows: []
+
+                function openForSelection() {
+                    rows = detailRoot.selectedChunkRows()
+                    targetCount = rows.length
+                    let stopped = 0, stop = 0, lo = Number.MAX_SAFE_INTEGER, hi = -1
+                    for (const r of rows) {
+                        if (r.chunkState === "stopped") stopped += 1
+                        if (r.chunkState === "pending" || r.chunkState === "assigned") stop += 1
+                        lo = Math.min(lo, r.frameStart); hi = Math.max(hi, r.frameEnd)
+                    }
+                    allStopped = targetCount > 0 && stopped === targetCount
+                    stoppable = stop
+                    spanStart = targetCount > 0 ? lo : 0
+                    spanEnd = hi
+                    popup()
+                }
+                function suffix() { return targetCount > 1 ? qsTr(" (%1 chunks)").arg(count) : "" }
 
                 ThemedMenuItem {
-                    text: chunkMenu.targetState === "stopped"
-                          ? qsTr("Requeue (resume stopped chunk)")
-                          : qsTr("Reassign to another node")
-                    onTriggered: appBridge.reassignChunk(chunkMenu.targetChunkId, "")
+                    text: (chunkMenu.allStopped
+                           ? qsTr("Requeue (resume stopped chunk)")
+                           : qsTr("Reassign to another node")) + chunkMenu.suffix()
+                    onTriggered: {
+                        for (const r of chunkMenu.rows) appBridge.reassignChunk(r.chunkId, "")
+                    }
                 }
                 ThemedMenuItem {
                     // Terminal 'stopped': render killed, never
                     // re-dispatched, frames leave the grid/progress;
-                    // the job finishes "partial" around it.
+                    // the job finishes "partial" around it. Only pending /
+                    // assigned chunks in the selection are stopped.
                     text: appBridge.leaderSupportsChunkStop
-                          ? qsTr("Stop chunk")
+                          ? (chunkMenu.targetCount > 1
+                             ? qsTr("Stop %1 chunk(s)").arg(chunkMenu.stoppable)
+                             : qsTr("Stop chunk"))
                           : qsTr("Stop chunk (needs leader upgrade)")
-                    enabled: appBridge.leaderSupportsChunkStop
-                             && (chunkMenu.targetState === "pending"
-                                 || chunkMenu.targetState === "assigned")
-                    onTriggered: appBridge.stopChunk(chunkMenu.targetChunkId)
+                    enabled: appBridge.leaderSupportsChunkStop && chunkMenu.stoppable > 0
+                    onTriggered: {
+                        for (const r of chunkMenu.rows)
+                            if (r.chunkState === "pending" || r.chunkState === "assigned")
+                                appBridge.stopChunk(r.chunkId)
+                    }
                 }
                 ThemedMenuSeparator {}
                 ThemedMenuItem {
                     // Opens the submission form seeded from this job's
-                    // manifest, frame range preset to the chunk — tweak
-                    // (e.g. chunk size 1) and submit as a new job.
-                    text: qsTr("Submit as separate job…")
+                    // manifest, frame range preset to the selection's span
+                    // — tweak (e.g. chunk size 1) and submit as a new job.
+                    text: chunkMenu.targetCount > 1
+                          ? qsTr("Submit frames %1–%2 as separate job…").arg(chunkMenu.spanStart).arg(chunkMenu.spanEnd)
+                          : qsTr("Submit as separate job…")
                     onTriggered: appBridge.openChunkResubmitEditor(
-                        appBridge.currentJobId,
-                        chunkMenu.targetFrameStart,
-                        chunkMenu.targetFrameEnd)
+                        appBridge.currentJobId, chunkMenu.spanStart, chunkMenu.spanEnd)
                 }
             }
 
@@ -483,6 +531,20 @@ Item {
                             boundsBehavior: Flickable.StopAtBounds
                             ScrollBar.vertical: MrScrollBar {}
 
+                            keyNavigationEnabled: false
+                            activeFocusOnTab: true
+                            Keys.onPressed: (event) => {
+                                if (chunkSel.handleKey(event)) event.accepted = true
+                            }
+                            footer: Item {
+                                width: chunksList.width
+                                height: Math.max(0, chunksList.height - chunksList.count * 24)
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: { chunksList.forceActiveFocus(); chunkSel.clear() }
+                                }
+                            }
+
                             delegate: Rectangle {
                                 id: chunkRow
 
@@ -498,8 +560,7 @@ Item {
                                 required property int    retryCount
                                 required property int    index
 
-                                readonly property bool selected:
-                                    detailRoot.selectedChunkId === chunkId
+                                readonly property bool selected: chunkSel.isSelected(chunkId)
 
                                 width: chunksList.width
                                 height: 24
@@ -515,18 +576,17 @@ Item {
                                     anchors.fill: parent
                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     onClicked: (mouse) => {
-                                        detailRoot.selectedChunkId = chunkId
+                                        chunksList.forceActiveFocus()
                                         if (mouse.button === Qt.RightButton) {
-                                            chunkMenu.targetChunkId = chunkId
-                                            chunkMenu.targetFrameStart = frameStart
-                                            chunkMenu.targetFrameEnd   = frameEnd
-                                            chunkMenu.targetState      = chunkState
-                                            chunkMenu.popup()
+                                            chunkSel.handleContextClick(index)
+                                            chunkMenu.openForSelection()
                                             return
                                         }
-                                        // Left-click: pin the preview to this
-                                        // chunk's newest on-disk frame. Refused
-                                        // silently when nothing is copied yet.
+                                        chunkSel.handleClick(index, mouse)
+                                        // Pin the preview to the clicked
+                                        // chunk's newest on-disk frame.
+                                        // Refused silently when nothing is
+                                        // copied yet.
                                         appBridge.pinPreview(frameStart, frameEnd)
                                     }
                                 }

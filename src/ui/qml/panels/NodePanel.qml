@@ -203,10 +203,52 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: MrScrollBar {}
 
-            // Click-to-select (single). Purely visual — actions still
-            // come from the context menu — but anchors the menu to a
-            // visibly selected row.
-            property string selectedNodeId: ""
+            // Multi-select (components/ListSelection.qml), keyed by node
+            // id. Visual plus the context menu's target set: Stop / Start /
+            // Restart / Unsuspend act on every selected node they apply to.
+            ListSelection {
+                id: peerSel
+                rowCount: peerList.count
+                keyAt: function(row) { return appBridge.nodesModel.rowAt(row).nodeId }
+                pageRows: Math.max(1, Math.floor(peerList.height / 52) - 1)
+                onMoved: (row) => peerList.positionViewAtIndex(row, ListView.Contain)
+            }
+            function selectedPeerRows() {
+                const out = []
+                for (let i = 0; i < peerList.count; ++i) {
+                    const r = appBridge.nodesModel.rowAt(i)
+                    if (peerSel.isSelected(r.nodeId)) out.push(r)
+                }
+                return out
+            }
+            // Right-click: alive targets get the live menu (dead ones in a
+            // mixed selection are skipped); an all-dead selection gets the
+            // filesystem-signal menu.
+            function openMenuForSelection() {
+                const rows = selectedPeerRows()
+                const live = rows.filter(r => r.isAlive)
+                if (live.length > 0) {
+                    livePeerMenu.rows = live
+                    livePeerMenu.popup()
+                } else if (rows.length > 0) {
+                    deadPeerMenu.rows = rows
+                    deadPeerMenu.popup()
+                }
+            }
+
+            keyNavigationEnabled: false
+            activeFocusOnTab: true
+            Keys.onPressed: (event) => {
+                if (peerSel.handleKey(event)) event.accepted = true
+            }
+            footer: Item {
+                width: peerList.width
+                height: Math.max(0, peerList.height - peerList.count * 52)
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: { peerList.forceActiveFocus(); peerSel.clear() }
+                }
+            }
 
             delegate: Rectangle {
                 required property string nodeId
@@ -225,7 +267,7 @@ Item {
 
                 width: peerList.width
                 height: 52
-                color: peerList.selectedNodeId === nodeId
+                color: peerSel.isSelected(nodeId)
                        ? Theme.selection
                        : (index % 2 === 0 ? Theme.bgAlt : Theme.surface)
                 Behavior on color { ColorAnimation { duration: Theme.hoverMs } }
@@ -304,21 +346,13 @@ Item {
                     anchors.fill: parent
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: (mouse) => {
-                        peerList.selectedNodeId = nodeId
-                        if (mouse.button !== Qt.RightButton)
+                        peerList.forceActiveFocus()
+                        if (mouse.button === Qt.RightButton) {
+                            peerSel.handleContextClick(index)
+                            peerList.openMenuForSelection()
                             return
-                        if (isAlive)
-                        {
-                            livePeerMenu.targetNodeId    = nodeId
-                            livePeerMenu.targetIsActive  = isActive
-                            livePeerMenu.targetSuspended = isSuspended
-                            livePeerMenu.popup()
                         }
-                        else
-                        {
-                            deadPeerMenu.targetNodeId = nodeId
-                            deadPeerMenu.popup()
-                        }
+                        peerSel.handleClick(index, mouse)
                     }
                 }
             }
@@ -328,44 +362,68 @@ Item {
             // children, leaving gaps at popup time. Choose at popup.
             ThemedMenu {
                 id: livePeerMenu
-                property string targetNodeId:    ""
-                property bool   targetIsActive:  false
-                property bool   targetSuspended: false
+                // The alive nodes of the selection, set at popup.
+                property var rows: []
+                readonly property int targetCount: rows.length
+                readonly property int activeCount: rows.filter(r => r.isActive).length
+                readonly property int suspendedCount: rows.filter(r => r.isSuspended).length
+                function suffix(n) { return targetCount > 1 ? qsTr(" (%1)").arg(n) : "" }
 
-                // Non-interactive header naming the target node.
+                // Non-interactive header naming the target node(s).
                 ThemedMenuItem {
                     enabled: false
-                    text: livePeerMenu.targetNodeId
+                    text: livePeerMenu.targetCount === 1
+                          ? livePeerMenu.rows[0].nodeId
+                          : qsTr("%1 nodes").arg(livePeerMenu.targetCount)
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.fontSizeSmall
                 }
                 ThemedMenuSeparator {}
                 ThemedMenuItem {
-                    text: livePeerMenu.targetIsActive ? qsTr("Stop") : qsTr("Start")
-                    onTriggered: appBridge.setPeerNodeActive(
-                        livePeerMenu.targetNodeId, !livePeerMenu.targetIsActive)
+                    text: qsTr("Stop") + livePeerMenu.suffix(livePeerMenu.activeCount)
+                    enabled: livePeerMenu.activeCount > 0
+                    onTriggered: {
+                        for (const r of livePeerMenu.rows)
+                            if (r.isActive) appBridge.setPeerNodeActive(r.nodeId, false)
+                    }
                 }
                 ThemedMenuItem {
-                    text: qsTr("Restart App")
-                    onTriggered: appBridge.restartPeerApp(livePeerMenu.targetNodeId)
+                    text: qsTr("Start") + livePeerMenu.suffix(livePeerMenu.targetCount - livePeerMenu.activeCount)
+                    enabled: livePeerMenu.activeCount < livePeerMenu.targetCount
+                    onTriggered: {
+                        for (const r of livePeerMenu.rows)
+                            if (!r.isActive) appBridge.setPeerNodeActive(r.nodeId, true)
+                    }
                 }
-                // Disabled rather than hidden when the node is not
+                ThemedMenuItem {
+                    text: qsTr("Restart App") + livePeerMenu.suffix(livePeerMenu.targetCount)
+                    onTriggered: {
+                        for (const r of livePeerMenu.rows) appBridge.restartPeerApp(r.nodeId)
+                    }
+                }
+                // Disabled rather than hidden when no target is
                 // suspended, so the row still reads as "not suspended"
                 // instead of the item silently vanishing.
                 ThemedMenuItem {
-                    text: qsTr("Unsuspend")
-                    enabled: livePeerMenu.targetSuspended
-                    onTriggered: appBridge.unsuspendNode(livePeerMenu.targetNodeId)
+                    text: qsTr("Unsuspend") + livePeerMenu.suffix(livePeerMenu.suspendedCount)
+                    enabled: livePeerMenu.suspendedCount > 0
+                    onTriggered: {
+                        for (const r of livePeerMenu.rows)
+                            if (r.isSuspended) appBridge.unsuspendNode(r.nodeId)
+                    }
                 }
             }
 
             ThemedMenu {
                 id: deadPeerMenu
-                property string targetNodeId: ""
+                property var rows: []
+                readonly property int targetCount: rows.length
 
                 ThemedMenuItem {
                     enabled: false
-                    text: deadPeerMenu.targetNodeId
+                    text: deadPeerMenu.targetCount === 1
+                          ? deadPeerMenu.rows[0].nodeId
+                          : qsTr("%1 offline nodes").arg(deadPeerMenu.targetCount)
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.fontSizeSmall
                 }
@@ -375,7 +433,9 @@ Item {
                 // next time it comes back online.
                 ThemedMenuItem {
                     text: qsTr("Write restart signal (filesystem)")
-                    onTriggered: appBridge.writePeerRestartSignal(deadPeerMenu.targetNodeId)
+                    onTriggered: {
+                        for (const r of deadPeerMenu.rows) appBridge.writePeerRestartSignal(r.nodeId)
+                    }
                 }
             }
         }
