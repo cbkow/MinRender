@@ -74,6 +74,24 @@ $manifest = $manifest.
     Replace('$MRPUBLISHER$', $Publisher).
     Replace('$MRPUBLISHERDISPLAY$', $PublisherDisplay).
     Replace('$MRVERSION$', $Version)
+# The template's comments are design notes for us; they name capabilities we
+# dropped (unvirtualizedResources), and the uploaded package should not carry
+# that text to certification. Strip them from the staged copy.
+$manifest = [regex]::Replace($manifest, '(?s)\s*<!--.*?-->', '')
+
+# Guard: certification denied unvirtualizedResources (0.5.6.0) and the
+# Store build needs exactly these capabilities. Fail here, not in Partner
+# Center, if the manifest ever drifts.
+[xml]$mx = $manifest
+$caps = @($mx.Package.Capabilities.ChildNodes | ForEach-Object { $_.Name } | Sort-Object)
+$expected = @('internetClientServer', 'privateNetworkClientServer', 'runFullTrust')
+if (($caps -join ',') -ne ($expected -join ',')) {
+    throw "Manifest capabilities are [$($caps -join ', ')], expected [$($expected -join ', ')]."
+}
+if ($manifest -match 'unvirtualizedResources|FileSystemWriteVirtualization|RegistryWriteVirtualization') {
+    throw 'Manifest disables virtualization - certification denied that in 0.5.6.0.'
+}
+Write-Host "Capabilities: $($caps -join ', ')"
 Set-Content -Path (Join-Path $Stage 'AppxManifest.xml') -Value $manifest -Encoding UTF8
 
 Write-Host "Staged MSIX layout: $Stage (version $Version)"
