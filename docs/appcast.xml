@@ -8,6 +8,27 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.9</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.9</sparkle:version>
+      <sparkle:shortVersionString>0.5.9</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<ul>
+<li><b>Plug-ins on the farm share stay current</b> &mdash; only a node running a newer minRender refreshes the farm's templates and plug-ins, so an older node can no longer copy its older files back over them. A copy that fails is retried on the next start instead of being skipped until the next version, and every copy is now recorded in the node's log on the farm.</li>
+<li><b>Correct plug-ins in the macOS app</b> &mdash; 0.5.8 for macOS shipped with an earlier build of the Blender, After Effects and Cinema 4D plug-ins. They worked, but showed the wrong version. The plug-ins are now 0.5.9 everywhere.</li>
+<li><b>Windows title bar</b> &mdash; Windows uses the standard Windows title bar and frame again, always dark. This fixes white borders and wrong or invisible minimize, maximize and close buttons on Windows 10 and on PCs set to light mode.</li>
+</ul>
+<p><b>Action needed</b> &mdash; reinstall the plug-ins from the farm share's <code>plugins</code> folder (version 0.5.9) on workstations that submit jobs. Nodes still on 0.5.5 can overwrite that folder with older plug-ins when they restart, until they are updated.</p>
+      ]]></description>
+      <pubDate>Sat, 24 Oct 2026 11:36:34 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.9/minRender-0.5.9-macOS.dmg"
+        sparkle:edSignature="xspiJBJeU/8s7whUJ7G5fTkq4mc3yD94OjTYgxfciUKg/e8FV5VyRrhWCp0ZpGpEnPhsIV35WGS9CxqO6jdACA=="
+        length="126470594"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.5.8</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.5.8</sparkle:version>
