@@ -8,6 +8,31 @@
     <language>en</language>
     <!-- @@APPCAST_INSERT@@ -->
     <item>
+      <title>Version 0.5.8</title>
+      <link>https://minrender.com/</link>
+      <sparkle:version>0.5.8</sparkle:version>
+      <sparkle:shortVersionString>0.5.8</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>minRender 0.5.8</h3>
+<p>Includes everything from 0.5.6 and 0.5.7, which were never published to this update channel.</p>
+<ul>
+<li><b>Refreshed interface</b> &mdash; Geist type, softly rounded controls, smooth hover feedback and menus and dialogs that fade in.</li>
+<li><b>New title bar</b> &mdash; the window's title row now shows this node's name, its leader badge and its status, with New Job always one click away.</li>
+<li><b>Multi-select and keyboard</b> &mdash; the job, chunk and node lists support Cmd-click, Shift-click, arrow keys, Cmd-A and Escape. Chunk and node menus act on the whole selection. Return or double-click opens Edit Job, and Cmd-Backspace deletes.</li>
+<li><b>Security hardening</b> &mdash; job and node ids are validated before they touch the farm share, farm cleanup can only delete inside the farm's own folders, oversized API requests are rejected, and the agent socket now lives in the per-user temp directory.</li>
+<li><b>Job list fix</b> &mdash; the State column and per-chunk states show again.</li>
+<li><b>Windows nodes</b> &mdash; Windows now installs and updates through the Microsoft Store, runs on Windows 10 and 11, and keeps its data in <code>%USERPROFILE%\minRender</code>. <b>Action needed</b> on mixed farms: reinstall the Blender, After Effects and Cinema 4D plug-ins from the farm share's <code>plugins</code> folder (version 0.5.8). On Windows nodes that used RNDR dual mode, install the companion from <code>tools/rndr-companion</code>.</li>
+</ul>
+      ]]></description>
+      <pubDate>Fri, 23 Oct 2026 21:50:37 -0400</pubDate>
+      <enclosure
+        url="https://github.com/cbkow/MinRender/releases/download/v0.5.8/minRender-0.5.8-macOS.dmg"
+        sparkle:edSignature="Jw0azpzllcUf+BcmSXJ0NcyRoGqSedDsk6t4uRpg2ql68Zxf6hc2e2kfyS5rVL+2yxbZpaR/KHWpKp8uzaPWDA=="
+        length="124831700"
+        type="application/octet-stream" />
+    </item>
+    <item>
       <title>Version 0.5.5</title>
       <link>https://minrender.com/</link>
       <sparkle:version>0.5.5</sparkle:version>
