@@ -7,11 +7,13 @@
 // 50 ms QTimer pump (matches the headless loop). AppBridge + settings
 // land in the next commit. See docs/qt-port-plan.md.
 
+#include "core/monitor_log.h"
 #include "core/single_instance.h"
 #include "monitor/monitor_app.h"
 #include "ui/app_bridge.h"
 #include "ui/chrome/WindowChrome.h"
 #include "ui/painters/frame_grid.h"
+#include "ui/platform/app_restart.h"
 #include "ui/platform/color_space.h"
 #include "ui/platform/tray.h"
 #include "ui/updater/app_updater.h"
@@ -311,6 +313,16 @@ int main(int argc, char* argv[])
     tray.onExit = [&monitor]() {
         monitor.requestExit();
     };
+
+    // Store auto-updates close the app and do not restart it (see
+    // app_restart.h). Windows asks first; leave without the render-in-
+    // progress confirmation, servicing ends the agent and renderer anyway.
+    MR::SessionEndWindow sessionEnd([&monitor]() {
+        MR::MonitorLog::instance().info("app", "Windows is closing minRender (update or sign-out)");
+        monitor.beginForceExit();
+    });
+    if (const std::string pkg = MR::registerAppRestart(); !pkg.empty())
+        MR::MonitorLog::instance().info("app", "Registered for restart after updates: " + pkg);
 
 #ifdef Q_OS_MACOS
     // Dock-click activation. Main.qml's onClosing hides the window via

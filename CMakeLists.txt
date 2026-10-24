@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MinRender VERSION 0.5.9 LANGUAGES C CXX)
+project(MinRender VERSION 0.5.10 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -175,6 +175,7 @@ qt_add_executable(minrender
     src/ui/models/templates_model.cpp
     src/ui/painters/frame_grid.cpp
     src/ui/platform/accent_color.cpp
+    src/ui/platform/app_restart.cpp
     src/ui/platform/tray.cpp
     src/ui/updater/app_updater.h   # header-only Q_OBJECT — listed so AUTOMOC mocs it
     # The chromeless window (from UFB / minNotes): flags live in Main.qml,
