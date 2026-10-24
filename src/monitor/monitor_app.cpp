@@ -283,7 +283,11 @@ bool MonitorApp::startFarm()
     std::filesystem::create_directories(m_farmPath / "nodes", ec);
     std::filesystem::create_directories(m_farmPath / "state", ec);
 
-    // Farm init — copy example templates + plugins on first run or version change
+    // Start file logging before farm init, so its copy results reach this
+    // node's log on the farm rather than only the in-app view.
+    MonitorLog::instance().startFileLogging(m_farmPath, m_identity.nodeId());
+
+    // Farm init — copy example templates + plugins on first run or when this app is newer
     auto initResult = FarmInit::init(m_farmPath, m_identity.nodeId());
     if (!initResult.success)
         MonitorLog::instance().warn("farm", "Farm init: " + initResult.error);
@@ -302,8 +306,6 @@ bool MonitorApp::startFarm()
     }
     m_httpServer.setApiSecret(m_farmSecret);
 
-    // Start file logging
-    MonitorLog::instance().startFileLogging(m_farmPath, m_identity.nodeId());
     MonitorLog::instance().info("farm", "Farm started at " + m_farmPath.string());
 
     // Apply staging setting

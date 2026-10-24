@@ -329,6 +329,13 @@ add_custom_command(TARGET minrender POST_BUILD
         "${MR_RUNTIME_RESOURCES_DEST}"
     COMMENT "Copying resources to build output"
 )
+# POST_BUILD only runs when minrender relinks, so a resources-only change
+# used to leave the old copy in place: the 0.5.8 macOS release shipped
+# pre-0.5.8 plug-ins that way. Listing every resource file as a link input
+# makes such a change relink (Makefile and Ninja generators).
+file(GLOB_RECURSE MR_RESOURCE_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/*")
+set_property(TARGET minrender APPEND PROPERTY LINK_DEPENDS ${MR_RESOURCE_FILES})
 
 if(WIN32)
     set_target_properties(minrender PROPERTIES WIN32_EXECUTABLE TRUE)
@@ -445,6 +452,8 @@ if(APPLE)
                 "$<TARGET_FILE_DIR:minrender>/mr-agent"
             COMMENT "Copying mr-agent into .app bundle"
             VERBATIM)
+        # A rebuilt agent must relink minrender too, or the copy above is skipped.
+        set_property(TARGET minrender APPEND PROPERTY LINK_DEPENDS "${MR_AGENT_RELEASE_BIN}")
     else()
         message(WARNING
             "mr-agent release binary not found at ${MR_AGENT_RELEASE_BIN}. "
@@ -468,6 +477,7 @@ if(WIN32)
                 "${MR_AGENT_RELEASE_BIN}"
                 "$<TARGET_FILE_DIR:minrender>/mr-agent.exe"
             COMMENT "Sync mr-agent.exe next to minRender.exe" VERBATIM)
+        set_property(TARGET minrender APPEND PROPERTY LINK_DEPENDS "${MR_AGENT_RELEASE_BIN}")
     else()
         message(WARNING
             "mr-agent release binary not found at ${MR_AGENT_RELEASE_BIN}. "
@@ -528,6 +538,8 @@ add_custom_command(TARGET minrender-headless POST_BUILD
         "$<TARGET_FILE_DIR:minrender-headless>/resources"
     COMMENT "Copying resources to headless build output"
 )
+# Same relink-on-resource-change as minrender (see MR_RESOURCE_FILES).
+set_property(TARGET minrender-headless APPEND PROPERTY LINK_DEPENDS ${MR_RESOURCE_FILES})
 
 if(MSVC)
     target_compile_options(minrender-headless PRIVATE /W4)

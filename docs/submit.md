@@ -24,7 +24,7 @@ Fill out the form. Fields marked with an asterisk are required; everything else 
 
 ## From a DCC plugin
 
-The DCC plugins build the same JSON submission the Monitor's form does, but they pull frame ranges, output paths, and scene metadata straight from the application. Plugin files live in the sync root under `plugins/`; the first minRender node to start a new version refreshes them there.
+The DCC plugins build the same JSON submission the Monitor's form does, but they pull frame ranges, output paths, and scene metadata straight from the application. Plugin files live in the sync root under `plugins/`; the first minRender node to start a newer version refreshes them there (an older node never overwrites them, so on a mixed-version farm the share keeps the newest).
 
 **Upgrading to 0.5.8:** reinstall each plugin from `plugins/` on every workstation that submits. 0.5.8 moved minRender's Windows data folder to `%USERPROFILE%\minRender`; the new plugins (version 0.5.8, shown in the Blender add-on list and in the After Effects and Cinema 4D window titles) look there first. Older plugins keep working through the transition because minRender also watches the old folder, but update them before deleting `%LOCALAPPDATA%\MinRender`.
 

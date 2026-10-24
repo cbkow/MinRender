@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <set>
 #include <sstream>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -127,29 +128,45 @@ static void pruneStaleJson(const fs::path& destDir, const fs::path& bundleDir)
     }
 }
 
-static void copyExampleTemplates(const fs::path& farmPath)
+// Copy one bundled file onto the farm, logging either outcome. A failure
+// (locked or read-only file on the share) must not pass silently: the
+// caller leaves farm.json unstamped so the next start tries again.
+static bool copyToFarm(const fs::path& src, const fs::path& dest, const std::string& what)
+{
+    std::error_code ec;
+    fs::copy_file(src, dest, fs::copy_options::overwrite_existing, ec);
+    if (ec)
+    {
+        MonitorLog::instance().warn("farm", "Failed to copy " + what + ": " + ec.message());
+        return false;
+    }
+    MonitorLog::instance().info("farm", "Copied " + what);
+    return true;
+}
+
+// Returns false if anything could not be copied.
+static bool copyExampleTemplates(const fs::path& farmPath)
 {
     auto bundled = findBundledTemplatesDir();
     if (bundled.empty())
     {
         MonitorLog::instance().warn("farm", "No bundled templates found, skipping example copy");
-        return;
+        return false;
     }
 
     auto destDir = farmPath / "templates" / "examples";
     std::error_code ec;
+    bool ok = true;
 
     // Copy top-level *.json files
     for (auto& entry : fs::directory_iterator(bundled, ec))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".json")
-        {
-            auto dest = destDir / entry.path().filename();
-            fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing, ec);
-            if (!ec)
-                MonitorLog::instance().info("farm", "Copied template: " + entry.path().filename().string());
-        }
+            ok &= copyToFarm(entry.path(), destDir / entry.path().filename(),
+                             "template: " + entry.path().filename().string());
     }
+    if (ec)
+        ok = false;
 
     // Remove .json files that no longer ship in the bundle (e.g. renamed templates)
     pruneStaleJson(destDir, bundled);
@@ -165,28 +182,29 @@ static void copyExampleTemplates(const fs::path& farmPath)
         for (auto& entry : fs::directory_iterator(pluginTemplatesDir, ec))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".json")
-            {
-                auto dest = pluginDestDir / entry.path().filename();
-                fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing, ec);
-                if (!ec)
-                    MonitorLog::instance().info("farm", "Copied plugin template: " + entry.path().filename().string());
-            }
+                ok &= copyToFarm(entry.path(), pluginDestDir / entry.path().filename(),
+                                 "plugin template: " + entry.path().filename().string());
         }
+        if (ec)
+            ok = false;
 
         pruneStaleJson(pluginDestDir, pluginTemplatesDir);
     }
+    return ok;
 }
 
-static void copyPlugins(const fs::path& farmPath)
+// Returns false if anything could not be copied.
+static bool copyPlugins(const fs::path& farmPath)
 {
     auto bundled = findBundledPluginsDir();
     if (bundled.empty())
     {
         MonitorLog::instance().warn("farm", "No bundled plugins found, skipping plugin copy");
-        return;
+        return false;
     }
 
     std::error_code ec;
+    bool ok = true;
     for (auto& appDir : fs::directory_iterator(bundled, ec))
     {
         if (!appDir.is_directory(ec)) continue;
@@ -194,16 +212,55 @@ static void copyPlugins(const fs::path& farmPath)
         auto destDir = farmPath / "plugins" / appDir.path().filename();
         fs::create_directories(destDir, ec);
 
-        for (auto& entry : fs::directory_iterator(appDir.path(), ec))
+        std::error_code iec;
+        for (auto& entry : fs::directory_iterator(appDir.path(), iec))
         {
-            if (!entry.is_regular_file(ec)) continue;
-            auto dest = destDir / entry.path().filename();
-            fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing, ec);
-            if (!ec)
-                MonitorLog::instance().info("farm", "Copied plugin: " +
-                    appDir.path().filename().string() + "/" + entry.path().filename().string());
+            if (!entry.is_regular_file(iec)) continue;
+            ok &= copyToFarm(entry.path(), destDir / entry.path().filename(),
+                             "plugin: " + appDir.path().filename().string() + "/" +
+                                 entry.path().filename().string());
         }
+        if (iec)
+            ok = false;
     }
+    if (ec)
+        ok = false;
+    return ok;
+}
+
+// Numeric x.y.z compare. Returns <0, 0 or >0. A part that is missing or
+// not a number counts as 0, so an empty or garbled stamp sorts as oldest.
+static int compareVersions(const std::string& a, const std::string& b)
+{
+    auto parts = [](const std::string& v) {
+        std::vector<int> out;
+        std::istringstream ss(v);
+        std::string part;
+        while (std::getline(ss, part, '.'))
+        {
+            int n = 0;
+            try { n = std::stoi(part); } catch (...) {}
+            out.push_back(n);
+        }
+        return out;
+    };
+    auto pa = parts(a), pb = parts(b);
+    for (size_t i = 0; i < pa.size() || i < pb.size(); ++i)
+    {
+        int x = i < pa.size() ? pa[i] : 0;
+        int y = i < pb.size() ? pb[i] : 0;
+        if (x != y)
+            return x < y ? -1 : 1;
+    }
+    return 0;
+}
+
+// Copies everything bundle-managed onto the farm. True only if all of it landed.
+static bool refreshFarmContent(const fs::path& farmPath)
+{
+    bool ok = copyExampleTemplates(farmPath);
+    ok &= copyPlugins(farmPath);
+    return ok;
 }
 
 FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nodeId)
@@ -235,12 +292,15 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
             return result;
         }
 
+        // Copy before stamping: an empty stamp makes the next start retry.
+        const bool copied = refreshFarmContent(farmPath);
+
         nlohmann::json farmJson = {
             {"_version", 1},
             {"protocol_version", PROTOCOL_VERSION},
             {"created_by", nodeId},
             {"created_at_ms", nowMs},
-            {"last_example_update", APP_VERSION},
+            {"last_example_update", copied ? APP_VERSION : ""},
             {"api_secret", apiSecret}
         };
 
@@ -255,9 +315,6 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
             result.error = "Failed to write farm.json";
             return result;
         }
-
-        copyExampleTemplates(farmPath);
-        copyPlugins(farmPath);
 
         MonitorLog::instance().info("farm", "Farm initialized");
     }
@@ -293,16 +350,32 @@ FarmInit::Result FarmInit::init(const fs::path& farmPath, const std::string& nod
             if (fj.contains("last_example_update"))
                 lastUpdate = fj["last_example_update"].get<std::string>();
 
-            if (lastUpdate != APP_VERSION)
+            // Only a newer app refreshes the farm's templates and plug-ins.
+            // On a mixed-version farm an older node would otherwise copy its
+            // older files back over a newer node's on every start.
+            const int cmp = compareVersions(APP_VERSION, lastUpdate);
+            if (cmp > 0)
             {
                 MonitorLog::instance().info("farm",
                     "Updating examples (" + lastUpdate + " -> " + std::string(APP_VERSION) + ")");
 
-                copyExampleTemplates(farmPath);
-                copyPlugins(farmPath);
-
-                fj["last_example_update"] = APP_VERSION;
-                needsWrite = true;
+                if (refreshFarmContent(farmPath))
+                {
+                    fj["last_example_update"] = APP_VERSION;
+                    needsWrite = true;
+                }
+                else
+                {
+                    MonitorLog::instance().warn("farm",
+                        "Example update incomplete; farm.json left at " + lastUpdate +
+                        " so the next start retries");
+                }
+            }
+            else if (cmp < 0)
+            {
+                MonitorLog::instance().info("farm",
+                    "Farm examples are from newer " + lastUpdate + "; leaving them (this node is " +
+                    std::string(APP_VERSION) + ")");
             }
 
             if (needsWrite)

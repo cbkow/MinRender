@@ -87,6 +87,17 @@ cmake -S . -B "$BUILD_DIR" \
 echo "==> [3/9] Building minRender.app"
 cmake --build "$BUILD_DIR" --target minrender -j8
 
+# The bundle's plug-ins and templates are what the first node of a new
+# version copies onto the farm, so a stale copy must stop the release
+# (0.5.8 shipped pre-0.5.8 plug-ins from an incremental build).
+for sub in plugins templates; do
+    if ! diff -rq "$REPO/resources/$sub" "$APP/Contents/Resources/$sub" > /dev/null; then
+        echo "ERROR: $APP/Contents/Resources/$sub differs from resources/$sub:" >&2
+        diff -rq "$REPO/resources/$sub" "$APP/Contents/Resources/$sub" >&2 || true
+        exit 1
+    fi
+done
+
 # ---------------------------------------------------------------------------
 # 3. macdeployqt — bundles every Qt framework the app uses into
 #    Contents/Frameworks, rewrites @rpath references, and copies the QML
